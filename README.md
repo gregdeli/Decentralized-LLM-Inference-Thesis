@@ -66,7 +66,7 @@ The framework employs a **three-phase, server-driven** strategy to manage the co
 ---
 
 ## 📊 Evaluation
-The framework's performance will be tested on a simulated heterogeneous environment using virtual machines or a collection of devices like Raspberry Pis and laptops.
+The framework's performance will be tested on a simulated heterogeneous environment using docker containers or a collection of devices like Raspberry Pis and laptops.
 
 **Metrics:**
 - **Throughput:** Tokens per second.
