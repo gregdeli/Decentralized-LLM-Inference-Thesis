@@ -1,0 +1,1 @@
+''' Finds the server chain head and validates the path '''

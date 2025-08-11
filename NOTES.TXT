@@ -1,0 +1,2 @@
+Na katevasw llama 3.2 1B me lit gpt kai na dokimasw text generation 
+kai na vrw to implementation pou exoun gia to modelo na dw an mporw na to xrisimopoihsw

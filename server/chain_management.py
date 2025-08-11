@@ -1,0 +1,1 @@
+''' Handles the initial chain formation and self-healing '''
