@@ -1,2 +1,11 @@
 Na katevasw llama 3.2 1B me lit gpt kai na dokimasw text generation 
 kai na vrw to implementation pou exoun gia to modelo na dw an mporw na to xrisimopoihsw
+
+download: mesw terminal
+generation: me python script
+from litgpt import LLM
+
+llm = LLM.load("microsoft/phi-2")
+
+text = llm.generate("What do Llamas eat?", top_k=1, max_new_tokens=30)
+print(text)
