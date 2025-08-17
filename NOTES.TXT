@@ -1,11 +1,28 @@
-Na katevasw llama 3.2 1B me lit gpt kai na dokimasw text generation 
+1. Na katevasw llama 3.2 1B me lit gpt kai na dokimasw text generation 
 kai na vrw to implementation pou exoun gia to modelo na dw an mporw na to xrisimopoihsw
 
+* vasika files: litgpt/api.py -> exei to LLM model class for inference, pretraining, and finetuning.
+                litgpt/model.py -> GPT class
+
 download: mesw terminal
-generation: me python script
+generation me python script:
+
 from litgpt import LLM
 
 llm = LLM.load("microsoft/phi-2")
 
 text = llm.generate("What do Llamas eat?", top_k=1, max_new_tokens=30)
 print(text)
+
+2. Tha mporousa isws na klepsw kwdika apo apo litgpt kai na ftiaksw ena model loader mono gia to llama 3.2 1B.
+DOING THIS RN
+
+3. Na kanw load sugkekrimena transformer layers 
+p.x model.layers.0-5
+* mporw na dw isws to cake project pws to kanei
+
+3. Na kanw split to modelo sthn mesh kai na treksw collaborative inference sto pc mou.
+Thelw na orizw poia layers tha parei o enas poia o allos na ta kanw load 
+kai meta na treksw inference sto prwto -> pairnei activations o deuteros -> inference o deuteros -> ouput token h ena sequence
+
+4. Na kanw to idio me 2 docker containers
