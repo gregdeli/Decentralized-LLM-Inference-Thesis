@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, Union, Literal
+from typing import Dict, Any, Union, Literal, Optional
 from pathlib import Path
 import torch
 from safetensors.torch import load_file
@@ -18,14 +18,12 @@ class LLM:
         config: Dict[str, Any] = None,
         checkpoint_dir: Path = None,
         kv_cache_initialized: bool = False,
-        fixed_kv_cache_size: Union[int, Literal["max_model_supported"], None] = None,
     ) -> None:
         self.model = model
         self.preprocessor = preprocessor
         self.config = config
         self.checkpoint_dir = checkpoint_dir
         self.kv_cache_initialized = kv_cache_initialized
-        self.fixed_kv_cache_size = fixed_kv_cache_size
 
     """High-level API for loading a Llama 3.2 model and generating text"""
 
@@ -58,8 +56,40 @@ class LLM:
             config=config,
             checkpoint_dir=checkpoint_dir,
             kv_cache_initialized=False,
-            fixed_kv_cache_size=False,
         )
+
+    @torch.inference_mode()
+    def generate(
+        self,
+        prompt: str,
+        sys_prompt: Optional[str] = None,
+        max_new_tokens: int = 50,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        top_p: float = 1.0,
+        return_as_token_ids: bool = False,
+    ) -> Union[str, torch.Tensor]:
+
+        input_ids = self.preprocessor.encode(prompt)
+        prompt_length = input_ids.size(0)
+        max_returned_tokens = prompt_length + max_new_tokens
+
+        if max_returned_tokens > self.model.max_seq_length:
+            raise ValueError(
+                f"The combined prompt and max_new_tokens length ({max_returned_tokens}) exceeds "
+                f"the model's maximum sequence length of {self.model.max_seq_length}."
+            )
+
+        if not self.kv_cache_initialized:
+            device = self.preprocessor.device
+            # Always allocate the cache to the maximum possible size.
+            # This could change in the future if the kv cache takes up to much memory
+            self.model.set_kv_cache(batch_size=1, max_seq_length=self.model.max_seq_length, device=device)
+            self.kv_cache_initialized = True
+
+        # Generate tokens
+        self.model.eval()
+        # Sunexizw edw + implement ta forward methods
 
 
 class Preprocessor:

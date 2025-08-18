@@ -23,6 +23,24 @@ class Llama3(nn.Module):
 
         self.post_init()
 
+    def set_kv_cache(
+        self,
+        batch_size: int,
+        max_seq_length: int,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+    ) -> None:
+        """
+        Pre-allocates the K-V cache for each transformer block.
+        """
+        # Initialize kv cache for all blocks
+        for block in self.layers:
+            block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
+
+        # Create the causal attention mask and cache it
+        if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
+            self.mask_cache = build_mask_cache(max_seq_length, device)
+
     def post_init(self):
         # Tie the weights between the input embeddings and the ouput embeddings.
         if self.config.get("tie_word_embeddings", True):
@@ -66,6 +84,16 @@ class CausalSelfAttention(nn.Module):
         self.config = config
         self.block_idx = block_idx
 
+    def build_kv_cache(
+        self, batch_size: int, max_seq_length: int, device: Optional[torch.device] = None, dtype: Optional[torch.device] = None
+    ) -> "KVCache":
+        """
+        Builds the K-V cache for this attention layer
+        """
+        k_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
+        v_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
+        return KVCache(k_shape, v_shape, device=device, dtype=dtype)
+
 
 class MLP(nn.Module):
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -88,7 +116,9 @@ class MLP(nn.Module):
 
 
 class RMSNorm(torch.nn.Module):
-    """Root Mean Square Layer Normalization."""
+    """
+    Root Mean Square Layer Normalization.
+    """
 
     def __init__(self, size: int, dim: int = -1, eps: float = 1e-05, add_unit_offset: bool = False) -> None:
         super().__init__()
@@ -114,3 +144,11 @@ class KVCache(nn.Module):
         super().__init__()
         self.register_buffer("k", torch.zeros(k_shape, device=device, dtype=dtype), persistent=False)
         self.register_buffer("v", torch.zeros(v_shape, device=device, dtype=dtype), persistent=False)
+
+
+def build_mask_cache(max_seq_length: int, device: Optional[torch.device] = None) -> torch.Tensor:
+    """
+    Builds a causal attention mask for a given sequence length.
+    """
+    ones = torch.ones((max_seq_length, max_seq_length), device=device, dtype=torch.bool)
+    return torch.tril(ones).unsqueeze(0).unsqueeze(0)

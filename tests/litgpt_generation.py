@@ -1,11 +1,9 @@
 from litgpt import LLM
 
-llm = LLM.load(
-    "E:\GitHub\Decentralized-LLM-Inference-Thesis\models\litgpt_llama_3.2_1b\meta-llama\Llama-3.2-1B"
-)
+llm = LLM.load("E:\GitHub\Decentralized-LLM-Inference-Thesis\models\litgpt_llama_3.2_1b\meta-llama\Llama-3.2-1B")
 
 # Print the full generated text
-text = llm.generate("What is the capital of Greece?")
+text = llm.generate("You are a helpful AI assistant. What is the capital of Greece?")
 print(text)
 
 # Stream the response one token at a time
