@@ -1,21 +1,12 @@
-1. Na katevasw llama 3.2 1B me lit gpt kai na dokimasw text generation 
-kai na vrw to implementation pou exoun gia to modelo na dw an mporw na to xrisimopoihsw
+* Na ftiaksw to custom model implementation:
+    1. Einai argo 2 lepta gia 2 tokens anti gia 1 lepto opws oi alloi (litgpt, transformers)
+    2. Vgazei oti nanai meta to prwto token 
+        px. "The capital of France is" -> " Paris et ode, orisk.
+        Afr, DECLARE, dz, the ´Revisedged 5604X
+        Myelin (subdiversity [Url The   کد w
+        perlative. A. CHARGE Superior’s central"
 
-* vasika files: litgpt/api.py -> exei to LLM model class for inference, pretraining, and finetuning.
-                litgpt/model.py -> GPT class
-
-download: mesw terminal
-generation me python script:
-
-from litgpt import LLM
-
-llm = LLM.load("microsoft/phi-2")
-
-text = llm.generate("What do Llamas eat?", top_k=1, max_new_tokens=30)
-print(text)
-
-2. Tha mporousa isws na klepsw kwdika apo apo litgpt kai na ftiaksw ena model loader mono gia to llama 3.2 1B.
-DOING THIS RN
+        Kati gamietai sto generation phase
 
 3. Na kanw load sugkekrimena transformer layers 
 p.x model.layers.0-5

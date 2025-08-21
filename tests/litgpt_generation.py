@@ -3,7 +3,7 @@ from litgpt import LLM
 llm = LLM.load("E:\GitHub\Decentralized-LLM-Inference-Thesis\models\litgpt_llama_3.2_1b\meta-llama\Llama-3.2-1B")
 
 # Print the full generated text
-text = llm.generate("The capital of France is", max_new_tokens=2, temperature=0.0)
+text = llm.generate("The capital of France is", max_new_tokens=50, temperature=0.0)
 print(text)
 
 # Time: 00:58 mins
