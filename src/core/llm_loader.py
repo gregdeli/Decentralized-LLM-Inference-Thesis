@@ -7,7 +7,8 @@ from safetensors.torch import load_file
 from model import Llama3
 from utils import remove_model_prefix
 
-from litgpt.tokenizer import Tokenizer
+# from litgpt.tokenizer import Tokenizer
+from transformers import AutoTokenizer
 
 
 class LLM:
@@ -36,7 +37,8 @@ class LLM:
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        tokenizer = Tokenizer(checkpoint_dir)
+        # tokenizer = Tokenizer(checkpoint_dir)
+        tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
         model = Llama3(config)
         model.eval()
@@ -62,16 +64,17 @@ class LLM:
     def generate(
         self,
         prompt: str,
-        sys_prompt: Optional[str] = None,
+        # sys_prompt: Optional[str] = None,
         max_new_tokens: int = 50,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
-        top_p: float = 1.0,
-        return_as_token_ids: bool = False,
+        # top_p: float = 1.0,
+        # return_as_token_ids: bool = False,
     ) -> Union[str, torch.Tensor]:
 
         input_ids = self.preprocessor.encode(prompt)
-        prompt_length = input_ids.size(0)
+        prompt_length = input_ids.size(1)
+
         max_returned_tokens = prompt_length + max_new_tokens
 
         if max_returned_tokens > self.model.max_seq_length:
@@ -84,12 +87,43 @@ class LLM:
             device = self.preprocessor.device
             # Always allocate the cache to the maximum possible size.
             # This could change in the future if the kv cache takes up to much memory
+            # Na allaksw to batch_size otan kanw batched inference
             self.model.set_kv_cache(batch_size=1, max_seq_length=self.model.max_seq_length, device=device)
             self.kv_cache_initialized = True
 
-        # Generate tokens
-        self.model.eval()
-        # Sunexizw edw + implement ta forward methods
+        # Auto-regressive generation loop
+        input = input_ids
+        input_pos = None
+        generated_ids = []
+        for _ in range(max_new_tokens):
+            logits = self.model(input, input_pos=input_pos)
+            logits = logits[:, -1, :]  # Last token logits
+
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                # Set all logits not in the top-k to -inf
+                logits[logits < v[:, [-1]]] = -float("Inf")
+
+            # Apply temperature scaling
+            if temperature > 0.0:
+                probs = torch.softmax(logits / temperature, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+            else:
+                # Greedy sampling
+                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+            # Stop if end-of-sequence token is generated
+            if next_token.item() == self.preprocessor.tokenizer.eos_token:
+                break
+
+            generated_ids.append(next_token)
+            input = next_token
+
+            current_pos = prompt_length + len(generated_ids)
+            input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
+
+        all_generated_ids = torch.cat(generated_ids, dim=1)
+        return self.preprocessor.decode(all_generated_ids)
 
 
 class Preprocessor:
@@ -97,12 +131,18 @@ class Preprocessor:
     Preprocessor class for tokenization and de-tokenization.
     """
 
-    def __init__(self, tokenizer: Tokenizer, device: str = "cpu") -> None:
+    def __init__(self, tokenizer: AutoTokenizer, device: str = "cpu") -> None:
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
         self.tokenizer = tokenizer
         self.device = device
 
     def encode(self, text: str) -> torch.Tensor:
-        return self.tokenizer.encode(text, device=self.device)
+        # return self.tokenizer.encode(text, device=self.device)
+        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+        return inputs["input_ids"]
 
-    def decode(self, token_ids: torch.Tensor) -> str:
-        return self.tokenizer.decode(token_ids)
+    def decode(self, outputs: torch.Tensor) -> str:
+        # return self.tokenizer.decode(token_ids)
+        return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
