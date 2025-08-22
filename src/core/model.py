@@ -194,6 +194,10 @@ class CausalSelfAttention(nn.Module):
         if input_pos is None:
             k = k[:, :, :T, :]
             v = v[:, :, :T, :]
+        else:
+            current_seq_len = input_pos.max() + 1
+            k = k[:, :, :current_seq_len, :]
+            v = v[:, :, :current_seq_len, :]
 
         # Scaled Dot-Product Attention
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)

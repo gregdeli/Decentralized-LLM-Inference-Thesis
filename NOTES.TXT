@@ -1,12 +1,5 @@
-* Na ftiaksw to custom model implementation:
-    1. Einai argo 2 lepta gia 2 tokens anti gia 1 lepto opws oi alloi (litgpt, transformers)
-    2. Vgazei oti nanai meta to prwto token 
-        px. "The capital of France is" -> " Paris et ode, orisk.
-        Afr, DECLARE, dz, the ´Revisedged 5604X
-        Myelin (subdiversity [Url The   کد w
-        perlative. A. CHARGE Superior’s central"
-
-        Kati gamietai sto generation phase
+2. Na ftiaksw profiling kwdika:
+    Na metraei loading time (loading wights, kv cache initialization), generation time(prefill, total generation time, throughput)
 
 3. Na kanw load sugkekrimena transformer layers 
 p.x model.layers.0-5

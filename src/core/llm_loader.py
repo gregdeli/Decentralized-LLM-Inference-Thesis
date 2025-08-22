@@ -146,3 +146,16 @@ class Preprocessor:
     def decode(self, outputs: torch.Tensor) -> str:
         # return self.tokenizer.decode(token_ids)
         return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+
+if __name__ == "__main__":
+    model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
+    llm = LLM.load(model_path)
+
+    prompt = "The capital of France is"
+    texts = llm.generate(prompt, max_new_tokens=10, temperature=0.0)
+    print(prompt + texts[0])
+
+    # prompt = "The meaning of life is"
+    # texts = llm.generate(prompt, max_new_tokens=10, temperature=0.0)
+    # print(prompt + texts[0])
