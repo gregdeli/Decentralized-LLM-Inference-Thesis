@@ -82,10 +82,6 @@ class LLM:
         stream: bool = False,
         time_it: bool = False,
     ) -> Union[str, List[str], iter]:
-        # Don't allow streaming and batched prompts at the same time
-
-        if time_it:
-            gen_start = time.perf_counter()
 
         input_ids = self.preprocessor.encode(prompt)
         prompt_length = input_ids.size(1)
@@ -112,11 +108,8 @@ class LLM:
             return self._generate_stream(input_ids, max_new_tokens, temperature, top_k)
 
         # If not streaming the output
-        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_k)
+        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_k, time_it)
 
-        if time_it:
-            elapsed = time.perf_counter() - gen_start
-            print(f"Total generation time: {elapsed:.2f} seconds")
         return decoded_text
 
     @torch.no_grad()
@@ -127,8 +120,11 @@ class LLM:
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
-        # time_it: bool = False,
+        time_it: bool = False,
     ):
+        if time_it:
+            gen_start = time.perf_counter()
+
         generated_ids = []
         input = input_ids
         input_pos = None
@@ -157,6 +153,9 @@ class LLM:
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
 
         all_generated_ids = torch.cat(generated_ids, dim=1)
+        if time_it:
+            elapsed = time.perf_counter() - gen_start
+            print(f"Total generation time: {elapsed:.2f} seconds")
         return self.preprocessor.decode(all_generated_ids)
 
     @torch.no_grad()
@@ -192,7 +191,7 @@ class LLM:
 
             # Decode and yield the new token
             decoded_token = self.preprocessor.decode(next_token)
-            yield decoded_token[0]
+            yield decoded_token
 
             input = next_token
             # The position is `prompt_length` + tokens generated so far (which is i)
@@ -217,9 +216,10 @@ class Preprocessor:
         inputs = self.tokenizer(text, return_tensors="pt", padding=True).to(self.device)
         return inputs["input_ids"]
 
-    def decode(self, outputs: torch.Tensor) -> str:
+    def decode(self, output: torch.Tensor) -> str:
         # return self.tokenizer.decode(token_ids)
-        return self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        decoded_texts = self.tokenizer.batch_decode(output, skip_special_tokens=True)
+        return decoded_texts[0]
 
 
 if __name__ == "__main__":
@@ -227,17 +227,13 @@ if __name__ == "__main__":
     llm = LLM.load(model_path, time_it=False)
 
     # prompt = "The capital of France is"
-    # text = llm.generate(prompt, max_new_tokens=50, temperature=0.0, time_it=True)
+    # text = llm.generate(prompt, max_new_tokens=2, temperature=0.0, time_it=True)
     # print(prompt + text)
 
-    # Batch
-    prompts = ["The capital of France is", "Llamas eat"]
-    texts = llm.generate(prompts, max_new_tokens=2, temperature=0.0, time_it=False)
-
     # Streaming
-    # prompt = "The capital of France is"
-    # generator = llm.generate(prompt, max_new_tokens=50, temperature=0.0, stream=True)
+    prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
+    generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
 
-    # print(prompt, end="", flush=True)
-    # for e in generator:
-    #     print(e, end="", flush=True)
+    print(prompt, end="", flush=True)
+    for e in generator:
+        print(e, end="", flush=True)

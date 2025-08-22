@@ -44,10 +44,8 @@ class Llama3(nn.Module):
             cos = cos[:T]
             sin = sin[:T]
         else:  # generation
-            # cos = cos[input_pos]
-            # sin = sin[input_pos]
-            cos = cos.index_select(0, input_pos)
-            sin = sin.index_select(0, input_pos)
+            cos = cos[input_pos]
+            sin = sin[input_pos]
 
         # Get the attention mask
         mask = self.mask_cache
@@ -323,6 +321,7 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
     x1 = x[..., : head_size // 2]
     x2 = x[..., head_size // 2 :]
     rotated = torch.cat((-x2, x1), dim=-1)
+
     cos = cos.unsqueeze(0).unsqueeze(0)
     sin = sin.unsqueeze(0).unsqueeze(0)
     roped = (x * cos) + (rotated * sin)
