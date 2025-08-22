@@ -1,5 +1,7 @@
 2. Na ftiaksw profiling kwdika:
     Na metraei loading time (loading wights, kv cache initialization), generation time(prefill, total generation time, throughput)
+    * litgpt kanei combined qkv proj 
+    * Na mhn kanw initialize thn kv cache me to max_seq_length = 131072
 
 3. Na kanw load sugkekrimena transformer layers 
 p.x model.layers.0-5

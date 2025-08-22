@@ -1,5 +1,6 @@
 import json
-from typing import Dict, Any, Union, Literal, Optional
+import time
+from typing import Dict, Any, Union, List, Optional
 from pathlib import Path
 import torch
 from safetensors.torch import load_file
@@ -29,13 +30,15 @@ class LLM:
     """High-level API for loading a Llama 3.2 model and generating text"""
 
     @classmethod
-    def load(
-        cls,
-        checkpoint_dir: Path,
-    ) -> "LLM":
+    def load(cls, checkpoint_dir: Path, time_it: bool = False) -> "LLM":
+        if time_it:
+            start_time = time.perf_counter()
+
         config_path = checkpoint_dir / "config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
+
+        torch.set_float32_matmul_precision("high")
 
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
@@ -52,6 +55,11 @@ class LLM:
         state_dict = remove_model_prefix(state_dict)
         model.load_state_dict(state_dict, strict=False)
 
+        if time_it:
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+            print(f"Model loading time: {elapsed_time: .2f} seconds")
+
         return cls(
             model=model,
             preprocessor=preprocessor,
@@ -60,21 +68,27 @@ class LLM:
             kv_cache_initialized=False,
         )
 
-    @torch.inference_mode()
+    # @torch.inference_mode()
+    @torch.no_grad()
     def generate(
         self,
-        prompt: str,
+        prompt: Union[str, List[str]],
         # sys_prompt: Optional[str] = None,
         max_new_tokens: int = 50,
         temperature: float = 1.0,
         top_k: Optional[int] = None,
         # top_p: float = 1.0,
         # return_as_token_ids: bool = False,
-    ) -> Union[str, torch.Tensor]:
+        stream: bool = False,
+        time_it: bool = False,
+    ) -> Union[str, List[str], iter]:
+        # Don't allow streaming and batched prompts at the same time
+
+        if time_it:
+            gen_start = time.perf_counter()
 
         input_ids = self.preprocessor.encode(prompt)
         prompt_length = input_ids.size(1)
-
         max_returned_tokens = prompt_length + max_new_tokens
 
         if max_returned_tokens > self.model.max_seq_length:
@@ -85,45 +99,105 @@ class LLM:
 
         if not self.kv_cache_initialized:
             device = self.preprocessor.device
-            # Always allocate the cache to the maximum possible size.
-            # This could change in the future if the kv cache takes up to much memory
+            if time_it:
+                start = time.perf_counter()
             # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(batch_size=1, max_seq_length=self.model.max_seq_length, device=device)
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
             self.kv_cache_initialized = True
+            if time_it:
+                elapsed = time.perf_counter() - start
+                print(f"KV cache initialization time: {elapsed:.5f} seconds")
 
-        # Auto-regressive generation loop
+        if stream:
+            return self._generate_stream(input_ids, max_new_tokens, temperature, top_k)
+
+        # If not streaming the output
+        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_k)
+
+        if time_it:
+            elapsed = time.perf_counter() - gen_start
+            print(f"Total generation time: {elapsed:.2f} seconds")
+        return decoded_text
+
+    @torch.no_grad()
+    def _generate_fn(
+        self,
+        prompt_length: int,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+        # time_it: bool = False,
+    ):
+        generated_ids = []
         input = input_ids
         input_pos = None
-        generated_ids = []
+
         for _ in range(max_new_tokens):
             logits = self.model(input, input_pos=input_pos)
-            logits = logits[:, -1, :]  # Last token logits
+            logits = logits[:, -1, :]
 
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                # Set all logits not in the top-k to -inf
                 logits[logits < v[:, [-1]]] = -float("Inf")
 
-            # Apply temperature scaling
             if temperature > 0.0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
             else:
-                # Greedy sampling
                 next_token = torch.argmax(logits, dim=-1, keepdim=True)
 
-            # Stop if end-of-sequence token is generated
-            if next_token.item() == self.preprocessor.tokenizer.eos_token:
+            # Stop if the end-of-sequence token is generated
+            if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
                 break
 
             generated_ids.append(next_token)
             input = next_token
-
             current_pos = prompt_length + len(generated_ids)
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
 
         all_generated_ids = torch.cat(generated_ids, dim=1)
         return self.preprocessor.decode(all_generated_ids)
+
+    @torch.no_grad()
+    def _generate_stream(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_k: Optional[int] = None,
+    ):
+        """A generator function that yields decoded string chunks."""
+        prompt_length = input_ids.size(1)
+        input = input_ids
+        input_pos = None
+
+        for i in range(max_new_tokens):
+            logits = self.model(input, input_pos=input_pos)
+            logits = logits[:, -1, :]
+
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+
+            if temperature > 0.0:
+                probs = torch.softmax(logits / temperature, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1)
+            else:
+                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+            # Stop if the end-of-sequence token is generated
+            if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
+                break
+
+            # Decode and yield the new token
+            decoded_token = self.preprocessor.decode(next_token)
+            yield decoded_token[0]
+
+            input = next_token
+            # The position is `prompt_length` + tokens generated so far (which is i)
+            current_pos = prompt_length + (i + 1)
+            input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
 
 
 class Preprocessor:
@@ -140,7 +214,7 @@ class Preprocessor:
 
     def encode(self, text: str) -> torch.Tensor:
         # return self.tokenizer.encode(text, device=self.device)
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(text, return_tensors="pt", padding=True).to(self.device)
         return inputs["input_ids"]
 
     def decode(self, outputs: torch.Tensor) -> str:
@@ -150,12 +224,20 @@ class Preprocessor:
 
 if __name__ == "__main__":
     model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
-    llm = LLM.load(model_path)
+    llm = LLM.load(model_path, time_it=False)
 
-    prompt = "The capital of France is"
-    texts = llm.generate(prompt, max_new_tokens=10, temperature=0.0)
-    print(prompt + texts[0])
+    # prompt = "The capital of France is"
+    # text = llm.generate(prompt, max_new_tokens=50, temperature=0.0, time_it=True)
+    # print(prompt + text)
 
-    # prompt = "The meaning of life is"
-    # texts = llm.generate(prompt, max_new_tokens=10, temperature=0.0)
-    # print(prompt + texts[0])
+    # Batch
+    prompts = ["The capital of France is", "Llamas eat"]
+    texts = llm.generate(prompts, max_new_tokens=2, temperature=0.0, time_it=False)
+
+    # Streaming
+    # prompt = "The capital of France is"
+    # generator = llm.generate(prompt, max_new_tokens=50, temperature=0.0, stream=True)
+
+    # print(prompt, end="", flush=True)
+    # for e in generator:
+    #     print(e, end="", flush=True)

@@ -44,8 +44,10 @@ class Llama3(nn.Module):
             cos = cos[:T]
             sin = sin[:T]
         else:  # generation
-            cos = cos[input_pos]
-            sin = sin[input_pos]
+            # cos = cos[input_pos]
+            # sin = sin[input_pos]
+            cos = cos.index_select(0, input_pos)
+            sin = sin.index_select(0, input_pos)
 
         # Get the attention mask
         mask = self.mask_cache
@@ -74,13 +76,16 @@ class Llama3(nn.Module):
     def set_kv_cache(
         self,
         batch_size: int,
-        max_seq_length: int,
+        max_seq_length: Optional[int] = None,
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
     ) -> None:
         """
         Pre-allocates the K-V cache for each transformer block.
         """
+        if max_seq_length is None:
+            max_seq_length = self.max_seq_length
+
         # Initialize kv cache for all blocks
         for block in self.layers:
             block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
