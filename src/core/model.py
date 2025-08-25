@@ -9,14 +9,33 @@ class Llama3(nn.Module):
     def __init__(
         self,
         config: Dict[str, Any],
+        num_layers: int,
+        is_client: bool = True,
+        layers_start_idx: int = 0,
     ) -> None:
+        """
+        Args:
+            is_client: If it is True, the model is being loaded on a client node, meaning that the
+                       embedding layer, some optinal transformer layers and the final norm and lm_head layers will be loaded.
+                       If it is False, the model is being loaded on a server node, meaning that only num_layers transformer layer
+                       will be loaded.
+            num_layers: Defines the number of transformer to be loading in this node.
+        """
         super().__init__()
         self.config = config
+        self.is_client = is_client
+        self.num_layers = num_layers
 
-        self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
-        self.layers = nn.ModuleList(TransformerBlock(config, block_idx) for block_idx in range(config["num_hidden_layers"]))
-        self.norm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])
-        self.lm_head = nn.Linear(config["hidden_size"], config["vocab_size"], bias=False)
+        if is_client:
+            self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
+        if num_layers > 0:
+            # self.layers = nn.ModuleList(TransformerBlock(config, block_idx) for block_idx in range(layers_start_idx, layers_start_idx + num_layers))
+            self.layers = nn.ModuleDict(
+                {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_start_idx, layers_start_idx + num_layers)}
+            )
+        if is_client:
+            self.norm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])
+            self.lm_head = nn.Linear(config["hidden_size"], config["vocab_size"], bias=False)
 
         self.mask_cache: Optional[torch.Tensor] = None
         self.rope_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
@@ -56,12 +75,99 @@ class Llama3(nn.Module):
 
         # Forward pass
         x = self.embed_tokens(input_ids)
-        for block in self.layers:
-            x = block(x, cos, sin, mask, input_pos)
+
+        if self.num_layers > 0:
+            for block in self.layers:
+                x = block(x, cos, sin, mask, input_pos)
 
         x = self.norm(x)
         logits = self.lm_head(x)
         return logits
+
+    def forward_client_initial(
+        self,
+        input_ids: torch.Tensor,
+        input_pos: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        T = input_ids.size(1)
+        if self.max_seq_length < T:
+            raise ValueError(f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}.")
+
+        if self.rope_cache is None:
+            self.rope_cache = self.build_rope_cache(device=input_ids.device)
+
+        # Get the RoPE embeddings for the current sequence
+        cos, sin = self.rope_cache
+        if input_pos is None:  # prefill
+            cos = cos[:T]
+            sin = sin[:T]
+        else:  # generation
+            cos = cos[input_pos]
+            sin = sin[input_pos]
+
+        # Get the attention mask
+        mask = self.mask_cache
+        if mask is not None and T > 1:  # prefill
+            mask = mask[:, :, :T, :T]
+        else:
+            mask = None
+
+        # Forward pass
+        x = self.embed_tokens(input_ids)
+
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                x = block(x, cos, sin, mask, input_pos)
+        return x
+
+    def forward_client_final(
+        self,
+        input: torch.Tensor,
+    ) -> torch.Tensor:
+        x = self.norm(input)
+        logits = self.lm_head(x)
+        return logits
+
+    def forward_server(
+        self,
+        input: torch.Tensor,
+        seq_length: Optional[int],
+        input_pos: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Prefill:
+            The seq_length must be sent to the server in order to get the correct range of positional embeddings
+            in the prefill phase. The input_pos arguement remains None at this stage.
+        Generation:
+            In the generation phase the input_pos of the current token that is being generated must be sent
+            to the server. The seq_length arguement remains None at this stage.
+        """
+
+        if self.rope_cache is None:
+            self.rope_cache = self.build_rope_cache(device=input.device)
+
+        T = seq_length
+        # Get the RoPE embeddings for the current sequence
+        cos, sin = self.rope_cache
+        if input_pos is None:  # prefill
+            cos = cos[:T]
+            sin = sin[:T]
+        else:  # generation
+            cos = cos[input_pos]
+            sin = sin[input_pos]
+
+        # Get the attention mask
+        mask = self.mask_cache
+        if mask is not None and T > 1:  # prefill
+            mask = mask[:, :, :T, :T]
+        else:
+            mask = None
+
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                h = block(input, cos, sin, mask, input_pos)
+
+        return h
 
     def build_rope_cache(self, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         return build_rope_cache(
@@ -85,8 +191,9 @@ class Llama3(nn.Module):
             max_seq_length = self.max_seq_length
 
         # Initialize kv cache for all blocks
-        for block in self.layers:
-            block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
 
         # Create the causal attention mask and cache it
         # Pairnei ligh wra auto
@@ -95,7 +202,7 @@ class Llama3(nn.Module):
 
     def post_init(self):
         # Tie the weights between the input embeddings and the ouput embeddings.
-        if self.config.get("tie_word_embeddings", True):
+        if self.config.get("tie_word_embeddings", True) and self.is_client:
             self.lm_head.weight = self.embed_tokens.weight
 
 

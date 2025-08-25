@@ -1,14 +1,14 @@
-2. Na ftiaksw profiling kwdika:
-    Na metraei loading time (loading wights, kv cache initialization), generation time(prefill, total generation time, throughput)
+Future Features:
     * litgpt kanei combined qkv proj 
-    * Na mhn kanw initialize thn kv cache me to max_seq_length = 131072
 
-3. Na kanw load sugkekrimena transformer layers 
-p.x model.layers.0-5
-* mporw na dw isws to cake project pws to kanei
+TODO:
+* Collaborative inference me client, ena head_server, ena tail_server sto pc mou.
+  To test file einai sto src/collaborative_inference_test.py
 
-3. Na kanw split to modelo sthn mesh kai na treksw collaborative inference sto pc mou.
-Thelw na orizw poia layers tha parei o enas poia o allos na ta kanw load 
-kai meta na treksw inference sto prwto -> pairnei activations o deuteros -> inference o deuteros -> ouput token h ena sequence
+  * To ekana oxi decentralized kanonika, alla to ouput den vgazei noima:
+    px. The capital of France is ready savediesalthionderbybyofftensensthens·aries·ynensyn
 
-4. Na kanw to idio me 2 docker containers
+    Na dw prosektika kv_cache kai rope embedding se kathe node an einai ok.
+
+
+* Na kanw to idio me docker containers
