@@ -8,6 +8,7 @@ TODO:
   * To ekana oxi decentralized kanonika, alla to ouput den vgazei noima:
     px. The capital of France is ready savediesalthionderbybyofftensensthens·aries·ynensyn
 
+    Na kanw test me 1 client node kai ena tail node 
     Na dw prosektika kv_cache kai rope embedding se kathe node an einai ok.
 
 
