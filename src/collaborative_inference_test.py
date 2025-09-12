@@ -12,13 +12,13 @@ client:      all_generated_tokens -> decode
 """
 
 model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
-client = Client(model_path, num_layers=5)  # layers.0-4
+client = Client(model_path, num_layers=6)  # layers.0-5
 
 start_idx = start_idx = client.llm.layers_loaded[1] + 1
-head_server = Server(model_path, num_layers=6, layers_start_idx=start_idx, is_head=True)  # layers.5-10
+head_server = Server(model_path, num_layers=5, layers_start_idx=start_idx, is_head=True)  # layers.6-10
 
 start_idx = head_server.llm.layers_loaded[1] + 1
-tail_server = Server(model_path, num_layers=5, layers_start_idx=start_idx)  # layers.11-15
+tail_server = Server(model_path, num_layers=5, layers_start_idx=start_idx, is_head=False)  # layers.11-15
 
 head_server.successor = tail_server
 

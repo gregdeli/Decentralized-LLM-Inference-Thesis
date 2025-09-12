@@ -163,9 +163,10 @@ class Llama3(nn.Module):
         else:
             mask = None
 
+        h = input
         if self.num_layers > 0:
             for block in self.layers.values():
-                h = block(input, cos, sin, mask, input_pos)
+                h = block(h, cos, sin, mask, input_pos)
 
         return h
 
