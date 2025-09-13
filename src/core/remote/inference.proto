@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package inference;
+
+// The service definition for a server node in the inference chain.
+service Inference {
+  // Processes a tensor through the node's layers.
+  rpc RunLayers(InferenceRequest) returns (InferenceResponse) {}
+}
+
+// The request message containing the tensor and metadata.
+message InferenceRequest {
+  bytes tensor_data = 1;      // The raw bytes of the tensor.
+  repeated int64 tensor_shape = 2; 
+  string dtype = 3;           
+
+  // Metadata for the inference step
+  int32 max_returned_tokens = 4;
+  optional int32 seq_length = 5;
+  optional int64 input_pos = 6;
+}
+
+// The response message containing the resulting tensor.
+message InferenceResponse {
+  bytes tensor_data = 1;
+  repeated int64 tensor_shape = 2;
+}

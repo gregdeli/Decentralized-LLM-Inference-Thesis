@@ -1,1 +1,7 @@
-litgpt[extra]
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch 
+safetensors
+transformers
+numpy
+grpcio
+grpcio-tools

@@ -252,24 +252,24 @@ class Preprocessor:
         return decoded_texts[0]
 
 
-if __name__ == "__main__":
-    model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
-    # llm = LLM.load(model_path, time_it=True)
+# if __name__ == "__main__":
+#     model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
+# llm = LLM.load(model_path, time_it=True)
 
-    # prompt = "The capital of France is"
-    # text = llm.generate(prompt, max_new_tokens=20, temperature=0.0, time_it=True)
-    # print(prompt + text)
+# prompt = "The capital of France is"
+# text = llm.generate(prompt, max_new_tokens=20, temperature=0.0, time_it=True)
+# print(prompt + text)
 
-    # Streaming
-    # prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
-    # generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
+# #Streaming
+# prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
+# generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
 
-    # print(prompt, end="", flush=True)
-    # for e in generator:
-    #     print(e, end="", flush=True)
+# print(prompt, end="", flush=True)
+# for e in generator:
+#     print(e, end="", flush=True)
 
-    # Split inference Test
-    # client = LLM.load(model_path, is_client=True, num_layers=8)
+# #Split inference Test
+# client = LLM.load(model_path, is_client=True, num_layers=8)
 
-    # server_layers_start_idx = client.layers_loaded[1] + 1
-    # server = LLM.load(model_path, is_client=False, num_layers=8, layers_start_idx=server_layers_start_idx)
+# server_layers_start_idx = client.layers_loaded[1] + 1
+# server = LLM.load(model_path, is_client=False, num_layers=8, layers_start_idx=server_layers_start_idx)

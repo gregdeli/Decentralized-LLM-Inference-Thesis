@@ -1,23 +1,31 @@
 """Main client application logic"""
 
+import grpc
+import os
 import torch
 from pathlib import Path
 from typing import Dict, Any, Union, List, Optional, Tuple
 import time
 
 from core.llm_loader import LLM
-from core.dht import DHT
+from core.remote import inference_pb2, inference_pb2_grpc
+from core.remote.serialization import tensor_to_request, response_to_tensor
+
+# from core.dht import DHT
 
 
 class Client:
     def __init__(
         self,
         model_path: Path,
-        num_layers: int = None,
+        head_server_addr: str,
         time_it: bool = False,
     ) -> None:
-        self.llm = LLM.load(model_path, is_client=True, num_layers=num_layers, time_it=time_it)
+        self.llm = LLM.load(model_path, is_client=True, num_layers=0, time_it=time_it)
         self.model = self.llm.model
+
+        channel = grpc.insecure_channel(head_server_addr)
+        self.head_server_stub = inference_pb2_grpc.InferenceStub(channel)
 
     @torch.no_grad()
     def generate(
@@ -47,16 +55,21 @@ class Client:
             self.llm.kv_cache_initialized = True
 
         generated_ids = []
-        input = input_ids
+        input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
         for _ in range(max_new_tokens):
-            x = self.model.forward_client_initial(input, input_pos=input_pos)
+            x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
-            # Send the output of the client initial phase pass to the head of the server chain
-            head_server = DHT.find_chain_head()
-            x = head_server.run_layers(x, max_returned_tokens, seq_length=seq_length, input_pos=input_pos)
+            # Call the remote server chain
+            request = tensor_to_request(
+                x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
+            )
 
+            response = self.head_server_stub.RunLayers(request)
+            x = response_to_tensor(response)
+
+            # Run clients final layers
             logits = self.model.forward_client_final(x)
 
             logits = logits[:, -1, :]

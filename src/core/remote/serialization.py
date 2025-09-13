@@ -1,0 +1,49 @@
+import torch
+import numpy as np
+from . import inference_pb2
+from typing import Optional
+
+# A mapping from PyTorch dtypes to string representations
+DTYPE_MAP = {
+    torch.float32: "float32",
+    torch.float16: "float16",
+    torch.int64: "int64",
+}
+# INV_DTYPE_MAP = {v: k for k, v in DTYPE_MAP.items()}
+
+
+def tensor_to_request(
+    tensor: torch.Tensor,
+    max_returned_tokens: int,
+    seq_length: Optional[int],
+    input_pos: Optional[int],
+) -> inference_pb2.InferenceRequest:
+    """Serializes a tensor and metadata into an InferenceRequest."""
+    tensor_data = tensor.numpy().tobytes()
+    tensor_shape = list(tensor.shape)
+    dtype = DTYPE_MAP[tensor.dtype]
+
+    # Create the request with explicit arguments
+    request_args = {
+        "tensor_data": tensor_data,
+        "tensor_shape": tensor_shape,
+        "dtype": dtype,
+        "max_returned_tokens": max_returned_tokens,
+    }
+    if seq_length is not None:
+        request_args["seq_length"] = seq_length
+    if input_pos is not None:
+        request_args["input_pos"] = input_pos
+
+    return inference_pb2.InferenceRequest(**request_args)
+
+
+def response_to_tensor(response: inference_pb2.InferenceResponse) -> torch.Tensor:
+    """Deserializes an InferenceResponse into a tensor."""
+    shape = tuple(response.tensor_shape)
+    dtype_str = response.dtype
+    # dtype = INV_DTYPE_MAP[dtype_str]
+
+    np_array = np.frombuffer(response.tensor_data, dtype=getattr(np, dtype_str))
+    tensor = torch.from_numpy(np_array).reshape(shape)
+    return tensor
