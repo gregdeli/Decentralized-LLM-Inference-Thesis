@@ -29,13 +29,29 @@ def tensor_to_request(
         "tensor_shape": tensor_shape,
         "dtype": dtype,
         "max_returned_tokens": max_returned_tokens,
+        "seq_length": seq_length,
+        "input_pos": input_pos,
     }
-    if seq_length is not None:
-        request_args["seq_length"] = seq_length
-    if input_pos is not None:
-        request_args["input_pos"] = input_pos
+    # if seq_length is not None:
+    #     request_args["seq_length"] = seq_length
+    # if input_pos is not None:
+    #     request_args["input_pos"] = input_pos
 
     return inference_pb2.InferenceRequest(**request_args)
+
+
+def tensor_to_response(tensor: torch.Tensor) -> inference_pb2.InferenceRequest:
+    tensor_data = tensor.numpy().tobytes()
+    tensor_shape = list(tensor.shape)
+    dtype = DTYPE_MAP[tensor.dtype]
+
+    response = {
+        "tensor_data": tensor_data,
+        "tensor_shape": tensor_shape,
+        "dtype": dtype,
+    }
+
+    return inference_pb2.InferenceRequest(**response)
 
 
 def response_to_tensor(response: inference_pb2.InferenceResponse) -> torch.Tensor:
@@ -44,6 +60,6 @@ def response_to_tensor(response: inference_pb2.InferenceResponse) -> torch.Tenso
     dtype_str = response.dtype
     # dtype = INV_DTYPE_MAP[dtype_str]
 
-    np_array = np.frombuffer(response.tensor_data, dtype=getattr(np, dtype_str))
+    np_array = np.frombuffer(response.tensor_data, dtype=getattr(np, dtype_str)).copy()
     tensor = torch.from_numpy(np_array).reshape(shape)
     return tensor

@@ -1,0 +1,29 @@
+1. Sto docker-compose.yml sto container pou thelw na kanw debug
+    command: sleep infinit
+    ...
+    ports:
+        -5678:5678
+
+2. docker compose up --build
+
+3. Se allo terminal widow:
+docker exec -it decentralized-llm-inference-thesis-head-server-1 python -m debugpy -- listen 0.0.0.0:5678  server/server.py
+
+4. Sto vscode attach ston debugger 
+*launch.json:
+        {
+            "name": "Python: Attach to Client Container",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/src",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
+        }

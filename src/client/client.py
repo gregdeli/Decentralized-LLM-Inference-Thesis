@@ -89,7 +89,7 @@ class Client:
                 break
 
             generated_ids.append(next_token)
-            input = next_token
+            input_tensor = next_token
             current_pos = prompt_length + len(generated_ids)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1

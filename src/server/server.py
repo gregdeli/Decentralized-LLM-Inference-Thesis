@@ -9,7 +9,7 @@ from typing import Dict, Any, Union, List, Optional, Tuple
 
 from core.llm_loader import LLM
 from core.remote import inference_pb2, inference_pb2_grpc
-from core.remote.serialization import tensor_to_request, response_to_tensor
+from core.remote.serialization import *
 
 
 class InferenceServicer(inference_pb2_grpc.InferenceServicer):
@@ -27,11 +27,15 @@ class InferenceServicer(inference_pb2_grpc.InferenceServicer):
         input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
         # Run the actual inference logic
-        output_tensor = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
+        output_response = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
 
         # Serialize the output tensor into a response
-        response = tensor_to_request(output_tensor)
-        return inference_pb2.InferenceResponse(tensor_data=response.tensor_data, tensor_shape=response.tensor_shape, dtype=response.dtype)
+        # response = tensor_to_response(output_tensor)
+        return inference_pb2.InferenceResponse(
+            tensor_data=output_response.tensor_data,
+            tensor_shape=output_response.tensor_shape,
+            dtype=output_response.dtype,
+        )
 
 
 class Server:
@@ -68,7 +72,7 @@ class Server:
         max_returned_tokens: int,
         seq_length: int = None,
         input_pos: torch.Tensor = None,
-    ) -> torch.Tensor:
+    ) -> Union[inference_pb2.InferenceRequest, inference_pb2.InferenceResponse]:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
@@ -81,7 +85,8 @@ class Server:
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         if self.is_tail:
-            return h
+            # return h
+            return tensor_to_response(h)
 
         # Call the successor via gRPC
         request = tensor_to_request(
@@ -90,8 +95,8 @@ class Server:
             seq_length=seq_length,
             input_pos=input_pos.item() if input_pos is not None else None,
         )
-        response = self.successor_stub.RunLayers(request)
-        return response
+        output_response = self.successor_stub.RunLayers(request)
+        return output_response
         # return self.successor.run_layers(h, max_returned_tokens, seq_length, input_pos)
 
 
@@ -102,6 +107,8 @@ def serve():
     model_path = Path(model_path_str)
     num_layers = int(os.getenv("NUM_LAYERS"))
     layers_start_idx = int(os.getenv("LAYERS_START_IDX"))
+    is_head_str = os.getenv("IS_HEAD", "False")
+    is_head = is_head_str.lower() in ("true", "1")
     successor_addr = os.getenv("SUCCESSOR_ADDR", None)
     port = os.getenv("PORT", "50051")
 
@@ -109,10 +116,11 @@ def serve():
         model_path=model_path,
         num_layers=num_layers,
         layers_start_idx=layers_start_idx,
+        is_head=is_head,
         successor_addr=successor_addr,
     )
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     inference_pb2_grpc.add_InferenceServicer_to_server(InferenceServicer(server_node), server)
     server.add_insecure_port(f"[::]:{port}")
     print(f"Server listening on port {port}")
