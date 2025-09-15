@@ -27,14 +27,13 @@ class InferenceServicer(inference_pb2_grpc.InferenceServicer):
         input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
         # Run the actual inference logic
-        output_response = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
+        final_layer_response = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
 
         # Serialize the output tensor into a response
-        # response = tensor_to_response(output_tensor)
         return inference_pb2.InferenceResponse(
-            tensor_data=output_response.tensor_data,
-            tensor_shape=output_response.tensor_shape,
-            dtype=output_response.dtype,
+            tensor_data=final_layer_response.tensor_data,
+            tensor_shape=final_layer_response.tensor_shape,
+            dtype=final_layer_response.dtype,
         )
 
 
@@ -85,7 +84,6 @@ class Server:
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         if self.is_tail:
-            # return h
             return tensor_to_response(h)
 
         # Call the successor via gRPC
@@ -95,9 +93,8 @@ class Server:
             seq_length=seq_length,
             input_pos=input_pos.item() if input_pos is not None else None,
         )
-        output_response = self.successor_stub.RunLayers(request)
-        return output_response
-        # return self.successor.run_layers(h, max_returned_tokens, seq_length, input_pos)
+        final_layer_response = self.successor_stub.RunLayers(request)
+        return final_layer_response
 
 
 def serve():
