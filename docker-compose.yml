@@ -12,8 +12,12 @@ services:
       - PORT=50051
     volumes:
       - ./models:/models:ro # Mount your local models directory into the container
-    ports:
-      - "50051:50051" # host_port:container_port
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # ports:
+    #   - "50051:50051" # host_port:container_port
       # - "5678:5678"
 
   intermidiate-server:
@@ -29,8 +33,12 @@ services:
       - PORT=50051
     volumes:
       - ./models:/models:ro # Mount your local models directory into the container
-    ports:
-      - "50052:50051" # host_port:container_port
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # ports:
+    #   - "50052:50051" # host_port:container_port
       # - "5678:5678"  
 
   tail-server:
@@ -45,8 +53,12 @@ services:
       - PORT=50051
     volumes:
       - ./models:/models:ro
-    ports:
-      - "50053:50051" # host_port:container_port
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # ports:
+    #   - "50053:50051" # host_port:container_port
 
   client:
     build: .
@@ -61,4 +73,5 @@ services:
     #   - "5678:5678"
     depends_on: 
       - head-server
+      - intermidiate-server
       - tail-server

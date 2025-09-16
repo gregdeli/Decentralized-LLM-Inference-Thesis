@@ -48,11 +48,19 @@ class Client:
                 f"the model's maximum sequence length of {self.model.max_seq_length}."
             )
 
-        if not self.llm.kv_cache_initialized:
-            device = self.llm.preprocessor.device
-            # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
-            self.llm.kv_cache_initialized = True
+        # if not self.llm.kv_cache_initialized:
+        #     device = self.llm.preprocessor.device
+        # Na allaksw to batch_size otan kanw batched inference
+        # self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
+        # self.llm.kv_cache_initialized = True
+
+        # Dynamically grow the kv cache size if necessary
+        # elif self.llm.prev_generated_seq_length < max_returned_tokens:
+        #     tmp_device = self.model.mask_cache.device
+        #     self.model.clear_kv_cache()
+        #     self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+
+        # self.llm.prev_generated_seq_length = max_returned_tokens
 
         generated_ids = []
         input_tensor = input_ids

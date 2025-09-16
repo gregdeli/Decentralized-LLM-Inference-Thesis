@@ -6,3 +6,4 @@ numpy
 grpcio
 grpcio-tools
 debugpy
+psutil

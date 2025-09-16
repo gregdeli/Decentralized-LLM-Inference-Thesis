@@ -29,6 +29,7 @@ class LLM:
         self.config = config
         self.checkpoint_dir = checkpoint_dir
         self.kv_cache_initialized = kv_cache_initialized
+        self.prev_generated_seq_length = 0
 
         self.is_client = is_client
         self.num_layers = num_layers
@@ -133,6 +134,14 @@ class LLM:
             if time_it:
                 elapsed = time.perf_counter() - start
                 print(f"KV cache initialization time: {elapsed:.5f} seconds")
+
+        # Dynamically grow the kv cache size if necessary
+        elif self.prev_generated_seq_length < max_returned_tokens:
+            tmp_device = self.model.mask_cache.device
+            self.model.clear_kv_cache()
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+
+        self.prev_generated_seq_length = max_returned_tokens
 
         if stream:
             return self._generate_stream(input_ids, max_new_tokens, temperature, top_k)
@@ -252,24 +261,26 @@ class Preprocessor:
         return decoded_texts[0]
 
 
-# if __name__ == "__main__":
-#     model_path = Path(r"E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B")
-# llm = LLM.load(model_path, time_it=True)
+if __name__ == "__main__":
+    model_path = Path(r"/home/greg/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B")
+    llm = LLM.load(model_path)
 
-# prompt = "The capital of France is"
-# text = llm.generate(prompt, max_new_tokens=20, temperature=0.0, time_it=True)
-# print(prompt + text)
+    prompt = "The capital of France is"
+    text = llm.generate(prompt, max_new_tokens=2)
+    print(prompt + text)
 
-# #Streaming
-# prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
-# generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
+    # prompt = "The meaning of life is"
+    # text = llm.generate(prompt, max_new_tokens=6)
+    # print(prompt + text)
 
-# print(prompt, end="", flush=True)
-# for e in generator:
-#     print(e, end="", flush=True)
+    prompt = "The tallest mountain in the world is"
+    text = llm.generate(prompt, max_new_tokens=2)
+    print(prompt + text)
 
-# #Split inference Test
-# client = LLM.load(model_path, is_client=True, num_layers=8)
+    # Streaming
+    # prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
+    # generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
 
-# server_layers_start_idx = client.layers_loaded[1] + 1
-# server = LLM.load(model_path, is_client=False, num_layers=8, layers_start_idx=server_layers_start_idx)
+    # print(prompt, end="", flush=True)
+    # for e in generator:
+    #     print(e, end="", flush=True)

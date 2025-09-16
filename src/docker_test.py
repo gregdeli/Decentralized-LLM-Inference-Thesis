@@ -10,5 +10,9 @@ if __name__ == "__main__":
     client = Client(model_path=model_path, head_server_addr=head_server_addr)
 
     prompt = "The capital of France is"
-    text = client.generate(prompt, max_new_tokens=20)
+    text = client.generate(prompt, max_new_tokens=2)
+    print(prompt + text)
+
+    prompt = "The capital of Greece is"
+    text = client.generate(prompt, max_new_tokens=15)
     print(prompt + text)

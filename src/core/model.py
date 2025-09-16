@@ -10,7 +10,7 @@ class Llama3(nn.Module):
         self,
         config: Dict[str, Any],
         num_layers: int,
-        is_client: bool = True,
+        is_client: bool,
         layers_start_idx: int = 0,
     ) -> None:
         """
@@ -77,7 +77,7 @@ class Llama3(nn.Module):
         x = self.embed_tokens(input_ids)
 
         if self.num_layers > 0:
-            for block in self.layers:
+            for block in self.layers.values():
                 x = block(x, cos, sin, mask, input_pos)
 
         x = self.norm(x)
@@ -115,9 +115,9 @@ class Llama3(nn.Module):
         # Forward pass
         x = self.embed_tokens(input_ids)
 
-        if self.num_layers > 0:
-            for block in self.layers.values():
-                x = block(x, cos, sin, mask, input_pos)
+        # if self.num_layers > 0:
+        #     for block in self.layers.values():
+        #         x = block(x, cos, sin, mask, input_pos)
         return x
 
     def forward_client_final(
@@ -200,6 +200,12 @@ class Llama3(nn.Module):
         # Pairnei ligh wra auto
         if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
             self.mask_cache = build_mask_cache(max_seq_length, device)
+
+    def clear_kv_cache(self) -> None:
+        self.mask_cache = None
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                block.self_attn.kv_cache = None
 
     def post_init(self):
         # Tie the weights between the input embeddings and the ouput embeddings.

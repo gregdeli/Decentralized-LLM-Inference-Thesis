@@ -6,6 +6,9 @@ from concurrent import futures
 import torch
 from pathlib import Path
 from typing import Dict, Any, Union, List, Optional, Tuple
+import time
+import signal
+import psutil
 
 from core.llm_loader import LLM
 from core.remote import inference_pb2, inference_pb2_grpc
@@ -64,6 +67,48 @@ class Server:
             channel = grpc.insecure_channel(self.successor_addr)
             self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
 
+        # Processing Rate
+        self.num_local_layers = self.llm.num_layers
+        self.layers_per_second = 0.0
+        self.computational_delay = 0.0
+
+        # Memory
+        self.process = psutil.Process(os.getpid())
+        self.memory_usage_mb = 0.0
+        self.memory_limit_mb = self._get_container_memory_limit_mb()
+        self.available_memory_mb = 0.0
+        self._update_memory_usage()
+
+    def _get_container_memory_limit_mb(self) -> Optional[float]:
+        """Reads the container's memory limit from cgroup files."""
+        cgroup_v2_path = "/sys/fs/cgroup/memory.max"
+
+        limit_bytes = None
+        with open(cgroup_v2_path, "r") as f:
+            content = f.read().strip()
+            if content != "max":
+                limit_bytes = int(content)
+
+        if limit_bytes:
+            return limit_bytes / (1024 * 1024)
+        return None
+
+    def _update_memory_usage(self):
+        # Get current memory usage in MB
+        memory_bytes = self.process.memory_info().rss
+        self.memory_usage_mb = memory_bytes / (1024 * 1024)
+
+        # Get the container's memory
+        if self.memory_limit_mb:
+            self.available_memory_mb = self.memory_limit_mb - self.memory_usage_mb
+        else:
+            # Fallback to host's available memory if no limit is set
+            available_bytes = psutil.virtual_memory().available
+            self.available_memory_mb = available_bytes / (1024 * 1024)
+
+    def _print_mem_usage(self, title: str):
+        print(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}MB  Available Memory: {self.available_memory_mb:.2f}MB")
+
     @torch.no_grad()
     def run_local_layers(
         self,
@@ -76,12 +121,36 @@ class Server:
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
         if not self.llm.kv_cache_initialized:
+            self._update_memory_usage()
+            self._print_mem_usage("After Loading Model")
             device = self.llm.preprocessor.device
             # Na allaksw to batch_size otan kanw batched inference
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
             self.llm.kv_cache_initialized = True
+            self._update_memory_usage()
+            self._print_mem_usage("After Setting KV Cache")
+
+        # Dynamically grow the kv cache size if necessary
+        elif self.llm.prev_generated_seq_length < max_returned_tokens:
+            tmp_device = self.model.mask_cache.device
+            self.model.clear_kv_cache()
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+            self._update_memory_usage()
+            self._print_mem_usage("After Growing KV Cache")
+
+        self.llm.prev_generated_seq_length = max_returned_tokens
+
+        start_time = time.perf_counter()
 
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
+
+        end_time = time.perf_counter()
+        self.computational_delay = end_time - start_time
+
+        # Get the server's layer processing rate for this inference run
+        if self.computational_delay > 0 and self.num_local_layers > 0:
+            self.layers_per_second = self.num_local_layers / self.computational_delay
+            print(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
         if self.is_tail:
             return tensor_to_response(h)
@@ -120,7 +189,14 @@ def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     inference_pb2_grpc.add_InferenceServicer_to_server(InferenceServicer(server_node), server)
     server.add_insecure_port(f"[::]:{port}")
-    print(f"Server listening on port {port}")
+
+    # Shutdown handler
+    def _handle_shutdown(signum, frame):
+        server.stop(5)
+
+    signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
+    signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
+
     server.start()
     server.wait_for_termination()
 
