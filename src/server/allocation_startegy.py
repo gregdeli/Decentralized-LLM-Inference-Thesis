@@ -1,1 +1,0 @@
-''' Implements the adaptive layer re-allocation strategy '''

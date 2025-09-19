@@ -7,7 +7,6 @@ TODO:
 
 * Na kanw to idio me docker containers    OK
 
-* 
 
-* Na kanw to diktuo p2p με hivemind DHT.
+* Na kanw to diktuo p2p με hivemind DHT. Apo to plan sto onenote
 

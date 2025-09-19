@@ -7,3 +7,4 @@ grpcio
 grpcio-tools
 debugpy
 psutil
+hivemind
