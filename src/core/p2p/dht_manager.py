@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, List, Any
 import hivemind
+from hivemind.utils.timed_storage import get_dht_time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +25,7 @@ class DHTManager:
     async def start(self):
         """Asynchronously starts the DHT node."""
         logger.info("Starting DHT node...")
-        self.dht = await hivemind.DHT(host_maddrs=self.host_maddrs, initial_peers=self.initial_peers, start=True)
+        self.dht = hivemind.DHT(host_maddrs=self.host_maddrs, initial_peers=self.initial_peers, start=True)
         logger.info(f"DHT node started. Visible addresses: {self.dht.get_visible_maddrs()}")
 
     def get_id(self) -> str:
@@ -39,8 +40,8 @@ class DHTManager:
         """
         if not self.dht:
             raise RuntimeError("DHT has not been started.")
-        expiration_time = hivemind.get_dht_time() + expiration_s
-        return await self.dht.store(key, value, expiration_time)
+        expiration_time = get_dht_time() + expiration_s
+        return self.dht.store(key, value, expiration_time)
 
     async def get(self, key: str) -> Optional[Any]:
         """
@@ -48,7 +49,7 @@ class DHTManager:
         """
         if not self.dht:
             raise RuntimeError("DHT has not been started.")
-        result = await self.dht.get(key, latest=True)
+        result = self.dht.get(key, latest=True)
         if result is None:
             return None
         return result.value
@@ -57,6 +58,6 @@ class DHTManager:
         """Shuts down the DHT node gracefully."""
         if self.dht:
             logger.info("Shutting down DHT node...")
-            await self.dht.shutdown()
+            self.dht.shutdown()
             self.dht = None
             logger.info("DHT node shut down.")

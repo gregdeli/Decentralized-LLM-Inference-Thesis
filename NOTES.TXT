@@ -9,4 +9,6 @@ TODO:
 
 
 * Na kanw to diktuo p2p με hivemind DHT. Apo to plan sto onenote
+  Egrapsa kwdika gia p2p collaborative inference se server kai client prepei na testarw me 
+  docker compose up --build me to new docker-compose 
 

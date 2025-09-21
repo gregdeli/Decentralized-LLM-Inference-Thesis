@@ -10,6 +10,8 @@ import time
 from core.llm_loader import LLM
 from core.remote import inference_pb2, inference_pb2_grpc
 from core.remote.serialization import tensor_to_request, response_to_tensor
+from core.p2p.dht_manager import DHTManager
+from core.p2p.chain_manager import ChainManager
 
 # from core.dht import DHT
 
@@ -18,12 +20,25 @@ class Client:
     def __init__(
         self,
         model_path: Path,
-        head_server_addr: str,
+        # head_server_addr: str,
+        host_maddrs: str = "/ip4/0.0.0.0/tcp/4001",
+        initial_peers: str = None,
         time_it: bool = False,
     ) -> None:
+        self.dht = DHTManager(host_maddrs=[host_maddrs], initial_peers=initial_peers)
+        self.dht.start()
+        self.chain = ChainManager(self.dht)
+
+        head_info = self.chain.get_head_server_info()
+        if head_info:
+            print(f"\nClient successfully found head server. Address: {head_info["address"]}")
+        else:
+            print("\nClient could not find the head server.")
+
         self.llm = LLM.load(model_path, is_client=True, num_layers=0, time_it=time_it)
         self.model = self.llm.model
 
+        head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)
         self.head_server_stub = inference_pb2_grpc.InferenceStub(channel)
 
@@ -47,20 +62,6 @@ class Client:
                 f"The combined prompt and max_new_tokens length ({max_returned_tokens}) exceeds "
                 f"the model's maximum sequence length of {self.model.max_seq_length}."
             )
-
-        # if not self.llm.kv_cache_initialized:
-        #     device = self.llm.preprocessor.device
-        # Na allaksw to batch_size otan kanw batched inference
-        # self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
-        # self.llm.kv_cache_initialized = True
-
-        # Dynamically grow the kv cache size if necessary
-        # elif self.llm.prev_generated_seq_length < max_returned_tokens:
-        #     tmp_device = self.model.mask_cache.device
-        #     self.model.clear_kv_cache()
-        #     self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
-
-        # self.llm.prev_generated_seq_length = max_returned_tokens
 
         generated_ids = []
         input_tensor = input_ids

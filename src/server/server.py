@@ -9,10 +9,13 @@ from typing import Dict, Any, Union, List, Optional, Tuple
 import time
 import signal
 import psutil
+import socket
 
 from core.llm_loader import LLM
 from core.remote import inference_pb2, inference_pb2_grpc
 from core.remote.serialization import *
+from core.p2p.dht_manager import DHTManager
+from core.p2p.chain_manager import ChainManager
 
 
 class InferenceServicer(inference_pb2_grpc.InferenceServicer):
@@ -20,6 +23,18 @@ class InferenceServicer(inference_pb2_grpc.InferenceServicer):
         self.server_node = server_node
 
     def RunLayers(self, request, context):
+        # Create the successor stub if it doesn't exist
+        if self.server_node.successor_stub is None:
+            # Get this nodes successor address from the DHT
+            successor_addr = self.server_node.chain.get_successor_address()
+
+            if successor_addr is not None:
+                channel = grpc.insecure_channel(successor_addr)
+                self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
+            else:
+                context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
+                return inference_pb2.InferenceResponse()
+
         # Deserialize the incoming request to a tensor
         input_tensor = response_to_tensor(request)
 
@@ -45,27 +60,44 @@ class Server:
         self,
         model_path: Path,
         num_layers: int = None,
-        layers_start_idx: int = 0,
-        is_head: bool = False,
-        successor_addr: Optional[str] = None,
+        # layers_start_idx: int = 0,
+        # is_head: bool = False,
+        # successor_addr: Optional[str] = None,
         time_it: bool = False,
+        host_maddrs: str = "/ip4/0.0.0.0/tcp/4001",
+        initial_peers: str = None,
+        grpc_port: str = 5001,
     ) -> None:
+        # Create a DHT Node for the server
+        self.dht = DHTManager(host_maddrs=[host_maddrs], initial_peers=initial_peers)
+        self.dht.start()
+        self.chain = ChainManager(self.dht)
+
+        # Join the inference chain
+        hostname = socket.gethostname()
+        server_info = {"num_layers": num_layers, "address": f"{hostname}:{grpc_port}"}
+        self.chain.join_chain(server_info)
+
+        layers_loaded = self.chain.get_layers_loaded()
+
         self.llm = LLM.load(
             model_path,
             is_client=False,
             num_layers=num_layers,
-            layers_start_idx=layers_start_idx,
+            layers_start_idx=layers_loaded[0],
             time_it=time_it,
         )
         self.model = self.llm.model
-        self.is_head = is_head
-        self.is_tail = self.llm.layers_loaded[1] == (self.llm.config["num_hidden_layers"] - 1)
+        # self.is_head = is_head
+        # self.is_tail = self.llm.layers_loaded[1] == (self.llm.config["num_hidden_layers"] - 1)
 
-        self.successor_addr = successor_addr
+        # self.successor_addr = successor_addr
+
+        # Create successor stub
         self.successor_stub = None
-        if self.successor_addr:
-            channel = grpc.insecure_channel(self.successor_addr)
-            self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
+        # if self.successor_addr:
+        #     channel = grpc.insecure_channel(self.successor_addr)
+        #     self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
 
         # Processing Rate
         self.num_local_layers = self.llm.num_layers
@@ -128,7 +160,7 @@ class Server:
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
             self.llm.kv_cache_initialized = True
             self._update_memory_usage()
-            self._print_mem_usage("After Setting KV Cache")
+            # self._print_mem_usage("After Setting KV Cache")
 
         # Dynamically grow the kv cache size if necessary
         elif self.llm.prev_generated_seq_length < max_returned_tokens:
@@ -136,7 +168,7 @@ class Server:
             self.model.clear_kv_cache()
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
             self._update_memory_usage()
-            self._print_mem_usage("After Growing KV Cache")
+            # self._print_mem_usage("After Growing KV Cache")
 
         self.llm.prev_generated_seq_length = max_returned_tokens
 
@@ -150,9 +182,9 @@ class Server:
         # Get the server's layer processing rate for this inference run
         if self.computational_delay > 0 and self.num_local_layers > 0:
             self.layers_per_second = self.num_local_layers / self.computational_delay
-            print(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+            # print(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
-        if self.is_tail:
+        if self.chain.is_tail():
             return tensor_to_response(h)
 
         # Call the successor via gRPC
@@ -172,23 +204,28 @@ def serve():
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
     num_layers = int(os.getenv("NUM_LAYERS"))
-    layers_start_idx = int(os.getenv("LAYERS_START_IDX"))
-    is_head_str = os.getenv("IS_HEAD", "False")
-    is_head = is_head_str.lower() in ("true", "1")
-    successor_addr = os.getenv("SUCCESSOR_ADDR", None)
-    port = os.getenv("PORT", "50051")
+    # layers_start_idx = int(os.getenv("LAYERS_START_IDX"))
+    # is_head_str = os.getenv("IS_HEAD", "False")
+    # is_head = is_head_str.lower() in ("true", "1")
+    # successor_addr = os.getenv("SUCCESSOR_ADDR", None)
+    grpc_port = os.getenv("GRPC_PORT", "5001")
+    host_maddrs = os.getenv("HOST_MADDRS")
+    initial_peers = os.getenv("INITIAL_PEERS")
 
     server_node = Server(
         model_path=model_path,
         num_layers=num_layers,
-        layers_start_idx=layers_start_idx,
-        is_head=is_head,
-        successor_addr=successor_addr,
+        # layers_start_idx=layers_start_idx,
+        # is_head=is_head,
+        # successor_addr=successor_addr,
+        host_maddrs=host_maddrs,
+        initial_peers=initial_peers,
+        grpc_port=grpc_port,
     )
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     inference_pb2_grpc.add_InferenceServicer_to_server(InferenceServicer(server_node), server)
-    server.add_insecure_port(f"[::]:{port}")
+    server.add_insecure_port(f"[::]:{grpc_port}")
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):
