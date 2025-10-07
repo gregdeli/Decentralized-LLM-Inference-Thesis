@@ -22,7 +22,7 @@ class DHTManager:
         self.host_maddrs = host_maddrs
         self.initial_peers = initial_peers
 
-    async def start(self):
+    def start(self):
         """Asynchronously starts the DHT node."""
         logger.info("Starting DHT node...")
         self.dht = hivemind.DHT(host_maddrs=self.host_maddrs, initial_peers=self.initial_peers, start=True)
@@ -34,7 +34,7 @@ class DHTManager:
             raise RuntimeError("DHT has not been started. Call start() first.")
         return self.dht.peer_id.to_string()
 
-    async def store(self, key: str, value: Any, expiration_s: float) -> bool:
+    def store(self, key: str, value: Any, expiration_s: float) -> bool:
         """
         Stores a key-value pair on the DHT with a given expiration time.
         """
@@ -43,7 +43,7 @@ class DHTManager:
         expiration_time = get_dht_time() + expiration_s
         return self.dht.store(key, value, expiration_time)
 
-    async def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Optional[Any]:
         """
         Retrieves a value from the DHT by its key.
         """
@@ -54,7 +54,7 @@ class DHTManager:
             return None
         return result.value
 
-    async def shutdown(self):
+    def shutdown(self):
         """Shuts down the DHT node gracefully."""
         if self.dht:
             logger.info("Shutting down DHT node...")

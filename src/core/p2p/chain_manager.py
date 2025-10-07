@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Dict, Any, Optional, Tuple
 
@@ -20,7 +19,7 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    async def join_chain(self, self_info: Dict[str, Any]):
+    def join_chain(self, self_info: Dict[str, Any]):
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
@@ -29,73 +28,73 @@ class ChainManager:
         :return: The updated info dictionary for this server.
         """
         logger.info(f"Node {self.node_id} attempting to join the chain...")
-        head_id = await self.dht.get(HEAD_KEY)
+        head_id = self.dht.get(HEAD_KEY)
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one.")
-            await self._form_initial_chain(self_info)
+            self._form_initial_chain(self_info)
         else:
             logger.info(f"Found existing chain with head {head_id}. Joining at the tail.")
-            await self._join_existing_chain(self_info)
+            self._join_existing_chain(self_info)
 
-    async def _form_initial_chain(self, self_info: Dict[str, Any]):
+    def _form_initial_chain(self, self_info: Dict[str, Any]):
         """Logic for the first server to establish the chain."""
-        await self.dht.store(HEAD_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
-        await self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
+        self.dht.store(HEAD_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
+        self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
 
         self_info["successor"] = None
         self_info["layers_loaded"] = (0, self_info["num_layers"] - 1)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-        await self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
+        self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
         logger.info(f"Node {self.node_id} is now the head and tail of the chain.")
 
-    async def _join_existing_chain(self, self_info: Dict[str, Any]):
+    def _join_existing_chain(self, self_info: Dict[str, Any]):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
-        tail_id = await self.dht.get(TAIL_KEY)
+        tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
             raise RuntimeError("Chain head exists, but tail was not found. The network is in an inconsistent state.")
 
         # Get the current tail's info to update its successor
         tail_server_key = f"{SERVER_INFO_PREFIX}{tail_id}"
-        tail_info = await self.dht.get(tail_server_key)
+        tail_info = self.dht.get(tail_server_key)
         if not tail_info:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = self.node_id
-        await self.dht.store(tail_server_key, tail_info, HEARTBEAT_INTERVAL_S)
+        self.dht.store(tail_server_key, tail_info, HEARTBEAT_INTERVAL_S)
         logger.info(f"Updated previous tail {tail_id} to point to new node {self.node_id}.")
 
         # Store our own info and update the tail pointer to us
         self_info["successor"] = None
 
-        head_info = await self.get_head_server_info()
+        head_info = self.get_head_server_info()
 
         start_idx = head_info["layers_loaded"][1] + 1
         end_idx = start_idx + self_info["num_layers"] - 1
         self_info["layers_loaded"] = (start_idx, end_idx)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-        await self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
-        await self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
+        self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
+        self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
         logger.info(f"Node {self.node_id} has joined as the new tail.")
 
-    async def get_head_server_info(self) -> Optional[Dict[str, Any]]:
+    def get_head_server_info(self) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
         :return: A dictionary containing the head server's info, or None if not found.
         """
         logger.info("Client searching for the head of the server chain...")
-        head_id = await self.dht.get(HEAD_KEY)
+        head_id = self.dht.get(HEAD_KEY)
         if not head_id:
             logger.warning("Could not find the head of the chain on the DHT.")
             return None
 
         head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
-        head_info = await self.dht.get(head_server_key)
+        head_info = self.dht.get(head_server_key)
         if not head_info:
             logger.error(f"Found head ID {head_id} but could not retrieve its info.")
             return None
@@ -103,35 +102,35 @@ class ChainManager:
         logger.info(f"Found head server {head_id} with info: {head_info}")
         return head_info
 
-    async def _get_self_info(self) -> Dict[str, Any]:
+    def _get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
-        self_info = await self.dht.get(f"{SERVER_INFO_PREFIX}{self.node_id}")
+        self_info = self.dht.get(f"{SERVER_INFO_PREFIX}{self.node_id}")
         if not self_info:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
 
-    async def get_layers_loaded(self) -> Tuple[int, int]:
+    def get_layers_loaded(self) -> Tuple[int, int]:
         """Get the layers_loaded tuple for this node from the DHT"""
-        self_info = await self._get_self_info()
+        self_info = self._get_self_info()
         return self_info.get("layers_loaded")
 
-    async def get_successor_address(self) -> Optional[str]:
-        self_info = await self._get_self_info()
+    def get_successor_address(self) -> Optional[str]:
+        self_info = self._get_self_info()
         successor_id = self_info.get("successor")
 
         if not successor_id:
             # If this node is the chain tail
             return None
 
-        successor_info = await self.dht.get(f"{SERVER_INFO_PREFIX}{successor_id}")
+        successor_info = self.dht.get(f"{SERVER_INFO_PREFIX}{successor_id}")
         if not successor_info:
             logger.error(f"Found successor ID {successor_id} but could not retrieve its info.")
             return None
 
         return successor_info.get("address")
 
-    async def is_tail(self) -> bool:
-        tail_id = await self.dht.get(TAIL_KEY)
+    def is_tail(self) -> bool:
+        tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
@@ -139,42 +138,41 @@ class ChainManager:
 
 
 # Example usage to demonstrate the flow
-async def main():
+def main():
     # --- Start Server 1 (Head) ---
     dht1 = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"])
-    await dht1.start()
+    dht1.start()
     chain1 = ChainManager(dht1)
 
-    server1_info = {"layers": (0, 3), "address": "localhost:50051"}
-    await chain1.join_chain(server1_info)
+    server1_info = {"num_layers": 4, "layers": (0, 3), "address": "localhost:50051"}
+    chain1.join_chain(server1_info)
 
     # --- Start Server 2 (Joiner) ---
     # It uses Server 1's address to connect
     initial_peers = dht1.dht.get_visible_maddrs()
     dht2 = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"], initial_peers=initial_peers)
-    await dht2.start()
-    # await asyncio.sleep(3)  # Delay to allow for bootstraping (only for debugging)
+    dht2.start()
     chain2 = ChainManager(dht2)
 
-    server2_info = {"layers": (4, 7), "address": "localhost:50052"}
-    await chain2.join_chain(server2_info)
+    server2_info = {"num_layers": 4, "layers": (4, 7), "address": "localhost:50052"}
+    chain2.join_chain(server2_info)
 
     # --- Client discovers the head ---
     client_dht = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"], initial_peers=initial_peers)
-    await client_dht.start()
+    client_dht.start()
     client_chain_manager = ChainManager(client_dht)
 
-    head_info = await client_chain_manager.get_head_server_info()
+    head_info = client_chain_manager.get_head_server_info()
     if head_info:
         print(f"\nClient successfully found head server. Address: {head_info.get('address')}")
     else:
         print("\nClient could not find the head server.")
 
     # --- Shutdown ---
-    await dht1.shutdown()
-    await dht2.shutdown()
-    await client_dht.shutdown()
+    dht1.shutdown()
+    dht2.shutdown()
+    client_dht.shutdown()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
