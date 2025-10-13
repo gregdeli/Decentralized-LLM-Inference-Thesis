@@ -5,6 +5,12 @@ WORKDIR /app
 # Set the python path to include the app root
 ENV PYTHONPATH "${PYTHONPATH}:/app"
 
+# Install hivemind from source
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/learning-at-home/hivemind.git && \
+    cd hivemind && \
+    pip install .
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -1,8 +1,8 @@
 services:
   head-server:
     build: .
-    command: python server/server.py
-    # command: sleep infinity
+    # command: python server/server.py
+    command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
       - NUM_LAYERS=8
@@ -17,9 +17,9 @@ services:
       resources:
         limits:
           memory: 4G
-    # ports:
+    ports:
     #   - "50051:50051" # host_port:container_port
-      # - "5678:5678"
+      - "5678:5678"
 
   # intermidiate-server:
   #   build: .
