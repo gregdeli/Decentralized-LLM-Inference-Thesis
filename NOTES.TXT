@@ -12,3 +12,5 @@ TODO:
   Egrapsa kwdika gia p2p collaborative inference se server kai client prepei na testarw me 
   docker compose up --build me to new docker-compose 
 
+* Tail server na stelnei to response kateuthian ston client
+

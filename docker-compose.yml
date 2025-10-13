@@ -53,7 +53,7 @@ services:
       # - SUCCESSOR_ADDR= # No successor, it's the tail
       - GRPC_PORT=5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - INITIAL_PEERS = /ip4/head-server/4001
+      - INITIAL_PEERS=/ip4/head-server/4001
     volumes:
       - ./models:/models:ro
     deploy:
