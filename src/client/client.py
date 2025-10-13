@@ -8,7 +8,7 @@ from typing import Dict, Any, Union, List, Optional, Tuple
 import time
 
 from core.llm_loader import LLM
-from core.remote import inference_pb2, inference_pb2_grpc
+from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import tensor_to_request, response_to_tensor
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
@@ -31,7 +31,7 @@ class Client:
 
         head_info = self.chain.get_head_server_info()
         if head_info:
-            print(f"\nClient successfully found head server. Address: {head_info["address"]}")
+            print(f"\nClient successfully found head server. Address: {head_info['address']}")
         else:
             print("\nClient could not find the head server.")
 
@@ -40,7 +40,7 @@ class Client:
 
         head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)
-        self.head_server_stub = inference_pb2_grpc.InferenceStub(channel)
+        self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
     @torch.no_grad()
     def generate(

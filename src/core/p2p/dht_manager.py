@@ -54,6 +54,11 @@ class DHTManager:
             return None
         return result.value
 
+    def get_visible_maddrs(self) -> List[str]:
+        if self.dht is None:
+            raise RuntimeError("DHT has not been started.")
+        return self.dht.get_visible_maddrs()
+
     def shutdown(self):
         """Shuts down the DHT node gracefully."""
         if self.dht:

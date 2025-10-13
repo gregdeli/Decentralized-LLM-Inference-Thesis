@@ -7,10 +7,7 @@ TODO:
 
 * Na kanw to idio me docker containers    OK
 
-
-* Na kanw to diktuo p2p με hivemind DHT. Apo to plan sto onenote
-  Egrapsa kwdika gia p2p collaborative inference se server kai client prepei na testarw me 
-  docker compose up --build me to new docker-compose 
+* Fix race conditions servers and client dont start up sequentially.
 
 * Tail server na stelnei to response kateuthian ston client
 

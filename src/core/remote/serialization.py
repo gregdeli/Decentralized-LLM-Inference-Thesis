@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from . import inference_pb2
+from . import nodeservice_pb2
 from typing import Optional
 
 # A mapping from PyTorch dtypes to string representations
@@ -17,7 +17,7 @@ def tensor_to_request(
     max_returned_tokens: int,
     seq_length: Optional[int],
     input_pos: Optional[int],
-) -> inference_pb2.InferenceRequest:
+) -> nodeservice_pb2.InferenceRequest:
     """Serializes a tensor and metadata into an InferenceRequest."""
     tensor_data = tensor.numpy().tobytes()
     tensor_shape = list(tensor.shape)
@@ -37,10 +37,10 @@ def tensor_to_request(
     # if input_pos is not None:
     #     request_args["input_pos"] = input_pos
 
-    return inference_pb2.InferenceRequest(**request_args)
+    return nodeservice_pb2.InferenceRequest(**request_args)
 
 
-def tensor_to_response(tensor: torch.Tensor) -> inference_pb2.InferenceRequest:
+def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRequest:
     tensor_data = tensor.numpy().tobytes()
     tensor_shape = list(tensor.shape)
     dtype = DTYPE_MAP[tensor.dtype]
@@ -51,10 +51,10 @@ def tensor_to_response(tensor: torch.Tensor) -> inference_pb2.InferenceRequest:
         "dtype": dtype,
     }
 
-    return inference_pb2.InferenceRequest(**response)
+    return nodeservice_pb2.InferenceRequest(**response)
 
 
-def response_to_tensor(response: inference_pb2.InferenceResponse) -> torch.Tensor:
+def response_to_tensor(response: nodeservice_pb2.InferenceResponse) -> torch.Tensor:
     """Deserializes an InferenceResponse into a tensor."""
     shape = tuple(response.tensor_shape)
     dtype_str = response.dtype

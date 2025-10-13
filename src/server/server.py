@@ -12,15 +12,22 @@ import psutil
 import socket
 
 from core.llm_loader import LLM
-from core.remote import inference_pb2, inference_pb2_grpc
+from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
 
 
-class InferenceServicer(inference_pb2_grpc.InferenceServicer):
+class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def __init__(self, server_node: "Server"):
         self.server_node = server_node
+
+    def GetPeerMultiaddr(self, request, context):
+        visible_maddrs = self.server_node.dht.get_visible_maddrs()
+        if not visible_maddrs:
+            context.abort(grpc.StatusCode.UNAVAILABLE, "P2P address not yet available.")
+
+        return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[1]))
 
     def RunLayers(self, request, context):
         # Create the successor stub if it doesn't exist
@@ -30,10 +37,10 @@ class InferenceServicer(inference_pb2_grpc.InferenceServicer):
 
             if successor_addr is not None:
                 channel = grpc.insecure_channel(successor_addr)
-                self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
+                self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             else:
                 context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
-                return inference_pb2.InferenceResponse()
+                return nodeservice_pb2.InferenceResponse()
 
         # Deserialize the incoming request to a tensor
         input_tensor = response_to_tensor(request)
@@ -48,7 +55,7 @@ class InferenceServicer(inference_pb2_grpc.InferenceServicer):
         final_layer_response = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
 
         # Serialize the output tensor into a response
-        return inference_pb2.InferenceResponse(
+        return nodeservice_pb2.InferenceResponse(
             tensor_data=final_layer_response.tensor_data,
             tensor_shape=final_layer_response.tensor_shape,
             dtype=final_layer_response.dtype,
@@ -64,18 +71,19 @@ class Server:
         # is_head: bool = False,
         # successor_addr: Optional[str] = None,
         time_it: bool = False,
-        host_maddrs: str = "/ip4/0.0.0.0/tcp/4001",
-        initial_peers: str = None,
-        grpc_port: str = 5001,
+        host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
+        initial_peers: List[str] = None,
+        # grpc_port: str = 5001,
+        grpc_addr: str = "head-server:5001",
     ) -> None:
         # Create a DHT Node for the server
-        self.dht = DHTManager(host_maddrs=[host_maddrs], initial_peers=initial_peers)
+        self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
         # Join the inference chain
-        hostname = socket.gethostname()
-        server_info = {"num_layers": num_layers, "address": f"{hostname}:{grpc_port}"}
+        # hostname = socket.gethostname()
+        server_info = {"num_layers": num_layers, "address": grpc_addr}
         self.chain.join_chain(server_info)
 
         layers_loaded = self.chain.get_layers_loaded()
@@ -148,7 +156,7 @@ class Server:
         max_returned_tokens: int,
         seq_length: int = None,
         input_pos: torch.Tensor = None,
-    ) -> Union[inference_pb2.InferenceRequest, inference_pb2.InferenceResponse]:
+    ) -> Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse]:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
@@ -208,9 +216,21 @@ def serve():
     # is_head_str = os.getenv("IS_HEAD", "False")
     # is_head = is_head_str.lower() in ("true", "1")
     # successor_addr = os.getenv("SUCCESSOR_ADDR", None)
-    grpc_port = os.getenv("GRPC_PORT", "5001")
-    host_maddrs = os.getenv("HOST_MADDRS")
-    initial_peers = os.getenv("INITIAL_PEERS")
+    # grpc_port = os.getenv("GRPC_PORT", "5001")
+    grpc_addr = os.getenv("GRPC_ADDR")
+
+    host_maddrs_str = os.getenv("HOST_MADDRS")
+    host_maddrs = [host_maddrs_str]
+
+    bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
+
+    if bootstrap_node_addr_str:
+        with grpc.insecure_channel(bootstrap_node_addr_str) as channel:
+            stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+            response = stub.GetPeerMultiaddr(nodeservice_pb2.Empty())
+            initial_peers = [response.multiaddr]
+    else:
+        initial_peers = None
 
     server_node = Server(
         model_path=model_path,
@@ -220,12 +240,13 @@ def serve():
         # successor_addr=successor_addr,
         host_maddrs=host_maddrs,
         initial_peers=initial_peers,
-        grpc_port=grpc_port,
+        # grpc_port=grpc_port,
+        grpc_addr=grpc_addr,
     )
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
-    inference_pb2_grpc.add_InferenceServicer_to_server(InferenceServicer(server_node), server)
-    server.add_insecure_port(f"[::]:{grpc_port}")
+    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
+    server.add_insecure_port(grpc_addr)
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):

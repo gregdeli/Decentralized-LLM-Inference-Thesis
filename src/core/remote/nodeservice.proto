@@ -1,11 +1,20 @@
 syntax = "proto3";
 
-package inference;
+package nodeservice;
 
 // The service definition for a server node in the inference chain.
-service Inference {
+service NodeService {
   // Processes a tensor through the node's layers.
   rpc RunLayers(InferenceRequest) returns (InferenceResponse) {}
+
+  // Returns the full P2P multiaddress of the server node.
+  rpc GetPeerMultiaddr(Empty) returns (MultiaddrResponse) {}
+}
+
+message Empty {}
+
+message MultiaddrResponse {
+    string multiaddr = 1;
 }
 
 // The request message containing the tensor and metadata.
@@ -26,3 +35,4 @@ message InferenceResponse {
   repeated int64 tensor_shape = 2;
   string dtype = 3;  
 }
+

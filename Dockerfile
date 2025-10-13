@@ -24,5 +24,5 @@ RUN python -m grpc_tools.protoc \
     --python_out=. \
     --pyi_out=. \
     --grpc_python_out=. \
-    ./core/remote/inference.proto
+    ./core/remote/nodeservice.proto
 

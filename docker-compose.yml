@@ -1,15 +1,16 @@
 services:
   head-server:
     build: .
-    # command: python server/server.py
-    command: sleep infinity
+    command: python server/server.py
+    # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
       - NUM_LAYERS=8
       # - LAYERS_START_IDX=0
       # - IS_HEAD=True
       # - SUCCESSOR_ADDR=intermidiate-server:5001 
-      - GRPC_PORT=5001
+      # - GRPC_PORT=5001
+      - GRPC_ADDR=head-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/4001
     volumes:
       - ./models:/models:ro # Mount your local models directory into the container
@@ -17,9 +18,9 @@ services:
       resources:
         limits:
           memory: 4G
-    ports:
+    # ports:
     #   - "50051:50051" # host_port:container_port
-      - "5678:5678"
+      # - "5678:5678"
 
   # intermidiate-server:
   #   build: .
@@ -45,15 +46,18 @@ services:
   tail-server:
     build: .
     command: python server/server.py
+    # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
       - NUM_LAYERS=8
       # - LAYERS_START_IDX=8
       # - IS_HEAD=False
       # - SUCCESSOR_ADDR= # No successor, it's the tail
-      - GRPC_PORT=5001
+      # - GRPC_PORT=5001
+      - GRPC_ADDR=tail-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - INITIAL_PEERS=/ip4/head-server/4001
+      # - INITIAL_PEERS=/ip4/head-server/tcp/4001
+      - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -61,7 +65,10 @@ services:
         limits:
           memory: 4G
     # ports:
-    #   - "50053:50051" # host_port:container_port
+      # - "50053:50051" # host_port:container_port
+      # - "5678:5678"
+    depends_on:
+      - head-server
 
   client:
     build: .
@@ -71,7 +78,8 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B
       # - HEAD_SERVER_ADDR=head-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - INITIAL_PEERS=/ip4/head-server/tcp/4001
+      # - INITIAL_PEERS=/ip4/head-server/tcp/4001
+      - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
       - ./models:/models:ro
     # ports:

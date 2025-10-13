@@ -6,6 +6,16 @@ from typing import ClassVar as _ClassVar, Optional as _Optional
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class Empty(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class MultiaddrResponse(_message.Message):
+    __slots__ = ("multiaddr",)
+    MULTIADDR_FIELD_NUMBER: _ClassVar[int]
+    multiaddr: str
+    def __init__(self, multiaddr: _Optional[str] = ...) -> None: ...
+
 class InferenceRequest(_message.Message):
     __slots__ = ("tensor_data", "tensor_shape", "dtype", "max_returned_tokens", "seq_length", "input_pos")
     TENSOR_DATA_FIELD_NUMBER: _ClassVar[int]
