@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Any, Optional, Tuple
+import time
 
 from core.p2p.dht_manager import DHTManager
 
@@ -36,10 +37,15 @@ class ChainManager:
         else:
             logger.info(f"Found existing chain with head {head_id}. Joining at the tail.")
             self._join_existing_chain(self_info)
+        
+        logger.info(f"Self Info: {self._get_self_info()}")
 
     def _form_initial_chain(self, self_info: Dict[str, Any]):
         """Logic for the first server to establish the chain."""
+        # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
+
+        # logger.info(f"store(\"{TAIL_KEY}\":{self.node_id})")
         self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
 
         self_info["successor"] = None
@@ -65,23 +71,25 @@ class ChainManager:
         # Update the old tail to point to the new server node
         tail_info["successor"] = self.node_id
         self.dht.store(tail_server_key, tail_info, HEARTBEAT_INTERVAL_S)
-        logger.info(f"Updated previous tail {tail_id} to point to new node {self.node_id}.")
+        logger.info(f"Updated previous tail's {tail_id} successor to point to new node {self.node_id}.")
 
         # Store our own info and update the tail pointer to us
         self_info["successor"] = None
 
-        head_info = self.get_head_server_info()
-
-        start_idx = head_info["layers_loaded"][1] + 1
+        # Get the previous tails layers_loaded to determine this nodes layer range
+        start_idx = tail_info["layers_loaded"][1] + 1
         end_idx = start_idx + self_info["num_layers"] - 1
         self_info["layers_loaded"] = (start_idx, end_idx)
 
-        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-        self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
+        # Store self info and update the chain_tail value
+        self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_server_key, self_info, HEARTBEAT_INTERVAL_S)
         self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
         logger.info(f"Node {self.node_id} has joined as the new tail.")
 
-    def get_head_server_info(self) -> Optional[Dict[str, Any]]:
+        logger.info(f"Previous Tail Info: {tail_info}")
+
+    def get_head_server_info(self, num_total_layers: int) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
@@ -94,13 +102,24 @@ class ChainManager:
             return None
 
         head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
-        head_info = self.dht.get(head_server_key)
-        if not head_info:
-            logger.error(f"Found head ID {head_id} but could not retrieve its info.")
-            return None
 
-        logger.info(f"Found head server {head_id} with info: {head_info}")
-        return head_info
+        # If the head server doesn't hold all the layers, 
+        # retry until its successor is not None
+        for attempt in range(5):
+            logger.info(f"Attempting to get head server info... (Attempt: {attempt + 1})")
+            head_info = self.dht.get(head_server_key)
+            if not head_info:
+                logger.error(f"Found head ID {head_id} but could not retrieve its info.")
+                return None
+
+            head_layers_loaded = head_info["layers_loaded"]
+            head_successor = head_info["successor"]
+            if head_layers_loaded[1] >= num_total_layers - 1 or head_successor is not None:
+                logger.info(f"Found head server {head_id} with info: {head_info}")
+                return head_info
+            logger.info(f"Attempt {attempt + 1}: Found head server but with layers_loaded < total and no successor.")
+            logger.info(f"Retrying in 2 seconds...")
+            time.sleep(2)
 
     def _get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""

@@ -7,7 +7,9 @@ TODO:
 
 * Na kanw to idio me docker containers    OK
 
-* Fix race conditions servers and client dont start up sequentially.
+* Write better debugging messages me logger
+
+
 
 * Tail server na stelnei to response kateuthian ston client
 

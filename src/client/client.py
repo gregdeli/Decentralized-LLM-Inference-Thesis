@@ -6,6 +6,7 @@ import torch
 from pathlib import Path
 from typing import Dict, Any, Union, List, Optional, Tuple
 import time
+import logging
 
 from core.llm_loader import LLM
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
@@ -13,30 +14,29 @@ from core.remote.serialization import tensor_to_request, response_to_tensor
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
 
-# from core.dht import DHT
+logger = logging.getLogger(__name__)
 
 
 class Client:
     def __init__(
         self,
         model_path: Path,
-        # head_server_addr: str,
-        host_maddrs: str = "/ip4/0.0.0.0/tcp/4001",
-        initial_peers: str = None,
+        host_maddrs: List[str] = "/ip4/0.0.0.0/tcp/4001",
+        initial_peers: List[str] = None,
         time_it: bool = False,
     ) -> None:
         self.dht = DHTManager(host_maddrs=[host_maddrs], initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
-        head_info = self.chain.get_head_server_info()
-        if head_info:
-            print(f"\nClient successfully found head server. Address: {head_info['address']}")
-        else:
-            print("\nClient could not find the head server.")
-
         self.llm = LLM.load(model_path, is_client=True, num_layers=0, time_it=time_it)
         self.model = self.llm.model
+
+        head_info = self.chain.get_head_server_info(num_total_layers=self.llm.config["num_hidden_layers"])
+        if head_info:
+            logger.info(f"Client successfully found head server. Address: {head_info['address']}")
+        else:
+            raise RuntimeError("Client could not find the head server.")
 
         head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)

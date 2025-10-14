@@ -1,5 +1,6 @@
 # Env folder
 .env
+.python-version
 
 # LLM weights
 models
