@@ -12,6 +12,7 @@ import psutil
 import logging
 
 from core.llm_loader import LLM
+from core.utils import get_bootstrap_peer_address
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
@@ -34,21 +35,25 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def RunLayers(self, request, context):
         # Create the successor stub if it doesn't exist
         if self.server_node.successor_stub is None:
-            # Get this nodes successor address from the DHT
-            successor_addr = self.server_node.chain.get_successor_address()
-
-            if successor_addr is not None:
-                channel = grpc.insecure_channel(successor_addr)
-                self.server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                logger.info(f"Connection to successor: {successor_addr} established.")
-                # logger.info(f"Successor Stub: {self.server_node.successor_stub}")
-                
-            elif self.server_node.chain.is_tail():
-                logger.info(f"Running final layers {self.server_node.llm.layers_loaded}...")
-
+            if self.server_node.chain.is_tail():
+                self.server_node.successor_stub = None
             else:
-                context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
-                return nodeservice_pb2.InferenceResponse()
+                successor_addr = self.server_node.chain.get_successor_address()
+                if not successor_addr:
+                    context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
+                    return nodeservice_pb2.InferenceResponse()
+                
+                try:
+                    channel = grpc.insecure_channel(successor_addr)
+                    grpc.channel_ready_future(channel).result(timeout=10)
+
+                    self.server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                    logger.info(f"Connection to successor: {successor_addr} established.") # Debugging
+                except grpc.FutureTimeoutError:
+                    logger.warning(f"Connection to {successor_addr} timed out.")
+                except grpc.RpcError as e:
+                    logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
+
 
         # Deserialize the incoming request to a tensor
         input_tensor = response_to_tensor(request)
@@ -147,7 +152,8 @@ class Server:
             self.available_memory_mb = available_bytes / (1024 * 1024)
 
     def _print_mem_usage(self, title: str):
-        print(f"{title}: Memory Usage: {self.available_memory_mb:.2f}/{self.memory_usage_mb:.2f}MB")
+        logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
+        logger.info(f"{title}: Available Memory: {self.available_memory_mb:.2f}MB")
 
     @torch.no_grad()
     def run_local_layers(
@@ -162,7 +168,7 @@ class Server:
         """
         if not self.llm.kv_cache_initialized:
             self._update_memory_usage()
-            self._print_mem_usage("After Loading Model")
+            # self._print_mem_usage("After Loading Model")
             device = self.llm.preprocessor.device
             # Na allaksw to batch_size otan kanw batched inference
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
@@ -182,6 +188,7 @@ class Server:
 
         start_time = time.perf_counter()
 
+        logger.info(f"Processing layers {self.llm.layers_loaded}...") # Debugging
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         end_time = time.perf_counter()
@@ -221,30 +228,16 @@ def serve():
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
-        connected = False
-        for attempt in range(5):
-            try:
-                print(f"Attempting to discover bootstrap peer at {bootstrap_node_addr_str} (Attempt {attempt + 1})...")
-                with grpc.insecure_channel(bootstrap_node_addr_str) as channel:
-                    stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                    response = stub.GetPeerMultiaddr(nodeservice_pb2.Empty())
-                    initial_peers = [response.multiaddr]
-                print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
-                connected = True
-                break
-            except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.UNAVAILABLE:
-                    print("Bootstrap node not ready yet, retrying in 2 seconds...")
-                    time.sleep(2)
-                else:
-                    print(f"An unexpected gRPC error occurred: {e}")
-                    break 
-        
-        if not connected:
-            print("FATAL: Could not connect to bootstrap node after several attempts.")
+        peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=10)
+
+        if not peer_addr:
             return
+            
+        initial_peers = [peer_addr]
+        print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
+
     else:
-        initial_peers = None
+        initial_peers = None # Head server
 
     server_node = Server(
         model_path=model_path,

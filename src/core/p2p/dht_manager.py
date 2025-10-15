@@ -26,7 +26,7 @@ class DHTManager:
         """Asynchronously starts the DHT node."""
         logger.info("Starting DHT node...")
         self.dht = hivemind.DHT(host_maddrs=self.host_maddrs, initial_peers=self.initial_peers, start=True)
-        logger.info(f"DHT node started. Visible addresses: {self.dht.get_visible_maddrs()}")
+        logger.info(f"DHT node started. Visible address: {self.dht.get_visible_maddrs()[1]}")
 
     def get_id(self) -> str:
         """Returns the unique PeerID of this DHT node as a string."""

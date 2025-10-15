@@ -33,10 +33,10 @@ class Client:
         self.model = self.llm.model
 
         head_info = self.chain.get_head_server_info(num_total_layers=self.llm.config["num_hidden_layers"])
-        if head_info:
-            logger.info(f"Client successfully found head server. Address: {head_info['address']}")
-        else:
+        if not head_info:
             raise RuntimeError("Client could not find the head server.")
+            
+        # logger.info(f"Client successfully found head server. Address: {head_info['address']}")
 
         head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)
@@ -47,12 +47,12 @@ class Client:
         self,
         prompt: Union[str, List[str]],
         max_new_tokens: int = 50,
-        temperature: float = 0.0,
-        top_k: Optional[int] = None,
+        temperature: float = 0.5,
+        top_p: float = 0.9,
         stream: bool = False,
         time_it: bool = False,
     ) -> Union[str, List[str], iter]:
-
+        
         input_ids = self.llm.preprocessor.encode(prompt)
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
@@ -67,7 +67,9 @@ class Client:
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
-        for _ in range(max_new_tokens):
+        for i in range(max_new_tokens):
+            # logger.info(f"Generating token {i + 1}/{max_new_tokens}") # Debugging
+
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
             # Call the remote server chain
@@ -83,9 +85,20 @@ class Client:
 
             logits = logits[:, -1, :]
 
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float("Inf")
+            if top_p > 0.0:
+                # Sort logits and compute probabilities
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+
+                # Find the indices to remove (those outside the nucleus)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                # Shift the indices to the right to keep the first one that exceeds top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+
+                # Create a mask to set the logits of tokens to remove to -inf
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = -float("Inf")
 
             if temperature > 0.0:
                 probs = torch.softmax(logits / temperature, dim=-1)

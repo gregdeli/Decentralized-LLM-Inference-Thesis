@@ -2,13 +2,8 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
-* Collaborative inference me client, ena head_server, ena tail_server sto pc mou.
-  To test file einai sto src/docker_test.py   OK
-
-* Na kanw to idio me docker containers    OK
-
-* Write better debugging messages me logger
-
+* An intermidiate kai tail server kanoun join to dht tautoxrono, vlepoun kai oi duo ton head ws tail server kai kanoun load ta idia layers 
+  me ton teleutaio na ginetai o actual successor tou head. 
 
 
 * Tail server na stelnei to response kateuthian ston client
