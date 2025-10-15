@@ -47,17 +47,3 @@ def get_bootstrap_peer_address(address: str, attempts: int = 5) -> str | None:
     print(f"FATAL: Could not connect to bootstrap node at {address} after {attempts} attempts.")
     return None
 
-# def get_successor_stub(server_node: Server, grpc_context):
-#     if server_node.chain.is_tail():
-#         server_node.successor_stub = None
-    
-#     else:
-#         successor_addr = server_node.chain.get_successor_address()
-
-#         if not successor_addr:
-#             grpc_context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
-#             return nodeservice_pb2.InferenceResponse()
-        
-#         channel = grpc.insecure_channel(successor_addr)
-#         server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-#         # logger.info(f"Connection to successor: {successor_addr} established.") # Debugging

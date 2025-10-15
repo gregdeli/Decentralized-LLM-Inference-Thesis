@@ -68,7 +68,7 @@ class Client:
         input_pos = None
         seq_length = prompt_length
         for i in range(max_new_tokens):
-            # logger.info(f"Generating token {i + 1}/{max_new_tokens}") # Debugging
+            logger.info(f"Generating token {i + 1}/{max_new_tokens}") # Debugging
 
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 

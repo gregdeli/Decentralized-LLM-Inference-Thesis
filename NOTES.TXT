@@ -2,9 +2,12 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
+*** Na thetw num_layers me vash thn mnhmh tou kathe container.
+
 * An intermidiate kai tail server kanoun join to dht tautoxrono, vlepoun kai oi duo ton head ws tail server kai kanoun load ta idia layers 
   me ton teleutaio na ginetai o actual successor tou head. 
-
+  
+  Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose
 
 * Tail server na stelnei to response kateuthian ston client
 
