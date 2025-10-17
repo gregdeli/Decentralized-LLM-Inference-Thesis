@@ -29,7 +29,6 @@ class Llama3(nn.Module):
         if is_client:
             self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
         if num_layers > 0:
-            # self.layers = nn.ModuleList(TransformerBlock(config, block_idx) for block_idx in range(layers_start_idx, layers_start_idx + num_layers))
             self.layers = nn.ModuleDict(
                 {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_start_idx, layers_start_idx + num_layers)}
             )

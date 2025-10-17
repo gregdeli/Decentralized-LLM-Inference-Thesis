@@ -10,6 +10,7 @@ import time
 import signal
 import psutil
 import logging
+import json
 
 from core.llm_loader import LLM
 from core.utils import get_bootstrap_peer_address
@@ -79,7 +80,7 @@ class Server:
     def __init__(
         self,
         model_path: Path,
-        num_layers: int = None,
+        # num_layers: int = None,
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
@@ -90,12 +91,33 @@ class Server:
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
+        # Memory
+        self.process = psutil.Process(os.getpid())
+        self.memory_usage_mb = 0.0
+        self.memory_limit_mb = self._get_container_memory_limit_mb()
+        self.available_memory_mb = 0.0
+        self._update_memory_usage()
+        
+        # Get the conig file
+        config_path = model_path / "config.json"
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        # Calculate number of Transformer Layers to load
+        num_layers = self._layers_to_load(config, bytes_per_param=4)
+        
         # Join the inference chain
-        # hostname = socket.gethostname()
         server_info = {"num_layers": num_layers, "address": grpc_addr}
-        self.chain.join_chain(server_info)
+        
+        self.chain.join_chain(server_info, num_total_layers=config["num_hidden_layers"])
+        # Edw an kapoios kanei join alla einai hdh loaded ola ta layers den kanei load tipota 
+        # tha prepei o node na einai backup -> server_info_this_node: {"is_backup": True}
+        # return
 
         layers_loaded = self.chain.get_layers_loaded()
+
+        num_layers = self.chain.get_num_layers()
+        
 
         self.llm = LLM.load(
             model_path,
@@ -108,21 +130,36 @@ class Server:
 
         # Create successor stub
         self.successor_stub = None
-        # if self.successor_addr:
-        #     channel = grpc.insecure_channel(self.successor_addr)
-        #     self.successor_stub = inference_pb2_grpc.InferenceStub(channel)
 
         # Processing Rate
         self.num_local_layers = self.llm.num_layers
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
 
-        # Memory
-        self.process = psutil.Process(os.getpid())
-        self.memory_usage_mb = 0.0
-        self.memory_limit_mb = self._get_container_memory_limit_mb()
-        self.available_memory_mb = 0.0
-        self._update_memory_usage()
+    
+    def _layers_to_load(self, config: Dict[str, Any], bytes_per_param: int) -> int:
+        """
+        Determine the number of layers to load based the in memory size of a Transformer layer and the available memory of the server.
+        
+        Greedy Layer Allocation: Load as many layers as memory allows
+        """
+        # config_path = model_path / "config.json"
+        # with open(config_path, "r") as f:
+        #     config = json.load(f)
+        
+        total_layer_params = config["total_transformer_layer_params"]
+        
+        single_layer_memory_size = total_layer_params * bytes_per_param # Bytes
+
+        available_memory_bytes = self.available_memory_mb * 1024 * 1024
+
+        layers_to_load = int(available_memory_bytes // single_layer_memory_size)
+
+        if layers_to_load > config["num_hidden_layers"]:
+            layers_to_load = config["num_hidden_layers"]
+        
+        return layers_to_load 
+
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -218,7 +255,7 @@ def serve():
     # Read configuration from environment variables
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
-    num_layers = int(os.getenv("NUM_LAYERS"))
+    # num_layers = int(os.getenv("NUM_LAYERS"))
     grpc_addr = os.getenv("GRPC_ADDR")
 
     host_maddrs_str = os.getenv("HOST_MADDRS")
@@ -241,7 +278,7 @@ def serve():
 
     server_node = Server(
         model_path=model_path,
-        num_layers=num_layers,
+        # num_layers=num_layers,
         host_maddrs=host_maddrs,
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,

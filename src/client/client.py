@@ -32,7 +32,8 @@ class Client:
         self.llm = LLM.load(model_path, is_client=True, num_layers=0, time_it=time_it)
         self.model = self.llm.model
 
-        head_info = self.chain.get_head_server_info(num_total_layers=self.llm.config["num_hidden_layers"])
+        # head_info = self.chain.get_head_server_info(num_total_layers=self.llm.config["num_hidden_layers"])
+        head_info = self.chain.get_head_server_info()
         if not head_info:
             raise RuntimeError("Client could not find the head server.")
             

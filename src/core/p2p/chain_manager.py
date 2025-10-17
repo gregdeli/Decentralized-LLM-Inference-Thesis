@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 # Constants for keys on the DHT
 HEAD_KEY = "chain_head"
 TAIL_KEY = "chain_tail"
+TOTAL_LAYERS_KEY = "num_total_layers"
 SERVER_INFO_PREFIX = "server_info_"
 HEARTBEAT_INTERVAL_S = 30.0
 
@@ -22,12 +23,14 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any]):
+    def join_chain(self, self_info: Dict[str, Any], num_total_layers: int):
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
 
-        :param self_info: A dictionary with the server's data (e.g., {'num_layers': 4, 'address': 'head-server:5001'}).
+        :param:
+          self_info: A dictionary with the server's data (e.g., {'num_layers': 4, 'address': 'head-server:5001'}).
+          num_total_layers: The number of total Transformer Layers of the LLM
         :return: The updated info dictionary for this server.
         """
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} attempting to join the chain...")
@@ -35,14 +38,14 @@ class ChainManager:
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one...")
-            self._form_initial_chain(self_info)
+            self._form_initial_chain(self_info, num_total_layers)
         else:
             logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
             self._join_existing_chain(self_info)
         
         logger.info(f"Self Info: {self._get_self_info()}")
 
-    def _form_initial_chain(self, self_info: Dict[str, Any]):
+    def _form_initial_chain(self, self_info: Dict[str, Any], num_total_layers: int):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
@@ -50,8 +53,16 @@ class ChainManager:
         # logger.info(f"store(\"{TAIL_KEY}\":{self.node_id})")
         self.dht.store(TAIL_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
 
+        self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, HEARTBEAT_INTERVAL_S)
+
         self_info["successor"] = None
-        self_info["layers_loaded"] = (0, self_info["num_layers"] - 1)
+
+        end_idx = self_info["num_layers"] - 1
+        if end_idx >= num_total_layers:
+            end_idx = num_total_layers - 1
+            self_info["num_layers"] = end_idx + 1 
+
+        self_info["layers_loaded"] = (0, end_idx)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
@@ -69,6 +80,22 @@ class ChainManager:
         tail_info = self.dht.get(tail_server_key)
         if not tail_info:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
+        
+        num_total_layers = self._get_num_total_layers()
+
+        # Get the previous tails layers_loaded to determine this nodes layer range
+        start_idx = tail_info["layers_loaded"][1] + 1
+
+        # If all the layers have already been loaded then dont add this node to the chain
+        # and set it as a backup node 
+        if start_idx >= num_total_layers - 1:
+            logger.warning("All the layers have already been loaded on the the previous tail")
+            self_info["num_layers"] = 0
+            # self_info["layers_loaded"] = (0, 0)
+            # "is_backup: True"
+            self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+            self.dht.store(self_server_key, self_info, HEARTBEAT_INTERVAL_S)
+            return
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = self.node_id
@@ -77,10 +104,12 @@ class ChainManager:
 
         # Store our own info and update the tail pointer to us
         self_info["successor"] = None
-
-        # Get the previous tails layers_loaded to determine this nodes layer range
-        start_idx = tail_info["layers_loaded"][1] + 1
+        
         end_idx = start_idx + self_info["num_layers"] - 1
+        if end_idx >= num_total_layers:
+            end_idx = num_total_layers - 1
+            self_info["num_layers"] = (end_idx - start_idx) + 1 
+
         self_info["layers_loaded"] = (start_idx, end_idx)
 
         # Store self info and update the chain_tail value
@@ -91,12 +120,14 @@ class ChainManager:
 
         logger.info(f"Previous Tail Info: {tail_info}")
 
-    def get_head_server_info(self, num_total_layers: int) -> Optional[Dict[str, Any]]:
+    def get_head_server_info(self) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
         :return: A dictionary containing the head server's info, or None if not found.
         """
+        num_total_layers = self._get_num_total_layers()
+
         logger.info("Client searching for the head of the server chain...")
         head_id = self.dht.get(HEAD_KEY)
         if not head_id:
@@ -129,11 +160,21 @@ class ChainManager:
         if not self_info:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
+    
+    def _get_num_total_layers(self) -> int:
+        num_total_layers = self.dht.get(TOTAL_LAYERS_KEY)
+        if not num_total_layers:
+            raise RuntimeError(f"Could not retrieve the total number of transformer layers.")
+        return num_total_layers
 
     def get_layers_loaded(self) -> Tuple[int, int]:
         """Get the layers_loaded tuple for this node from the DHT"""
         self_info = self._get_self_info()
         return self_info.get("layers_loaded")
+    
+    def get_num_layers(self) -> int:
+        self_info = self._get_self_info()
+        return self_info.get("num_layers")
 
     def get_successor_address(self) -> Optional[str]:
         self_info = self._get_self_info()

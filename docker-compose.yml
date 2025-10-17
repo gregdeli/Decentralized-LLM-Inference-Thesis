@@ -5,7 +5,7 @@ services:
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
-      - NUM_LAYERS=8
+      # - NUM_LAYERS=8
       - GRPC_ADDR=head-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/4001
     volumes:
@@ -13,49 +13,49 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
     # ports:
     #   - "5678:5678"
 
-  intermidiate-server:
-    build: .
-    command: python server/server.py
-    # command: sleep infinity
-    environment:
-      - MODEL_PATH=/models/Llama-3.2-1B
-      - NUM_LAYERS=4
-      - GRPC_ADDR=intermidiate-server:5001
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=head-server:5001
-    volumes:
-      - ./models:/models:ro # Mount your local models directory into the container
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-    # ports:
-      # - "5678:5678"  
+  # intermidiate-server:
+  #   build: .
+  #   command: python server/server.py
+  #   # command: sleep infinity
+  #   environment:
+  #     - MODEL_PATH=/models/Llama-3.2-1B
+  #     # - NUM_LAYERS=4
+  #     - GRPC_ADDR=intermidiate-server:5001
+  #     - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=head-server:5001
+  #   volumes:
+  #     - ./models:/models:ro # Mount your local models directory into the container
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #   # ports:
+  #     # - "5678:5678"  
 
   tail-server:
     build: .
-    command: python server/server.py
-    # command: sleep infinity
+    # command: python server/server.py
+    command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
-      - NUM_LAYERS=4
+      # - NUM_LAYERS=4
       - GRPC_ADDR=tail-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
+      - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
       - ./models:/models:ro
     deploy:
       resources:
         limits:
-          memory: 4G
-    # ports:
-    #   - "5678:5678"
+          memory: 2G
     depends_on:
       - head-server
+    ports:
+      - "5678:5678"
 
   client:
     build: .

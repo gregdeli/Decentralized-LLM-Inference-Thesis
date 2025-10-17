@@ -1,0 +1,3 @@
+https://github.com/exo-explore/exo
+
+exo: Run your own AI cluster at home with everyday devices.

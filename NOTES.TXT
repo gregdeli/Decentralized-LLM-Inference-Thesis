@@ -9,5 +9,30 @@ TODO:
   
   Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose
 
+** Server, chain_manager._join_existing_chain() -> 
+            an kapoios kanei join alla einai hdh loaded ola ta layers den kanei load tipota kai
+            tha prepei o node na einai backup server_info_this_node: {"is_backup": True}
+
+
 * Tail server na stelnei to response kateuthian ston client
 
+
+
+
+
+
+
+
+
+
+- Greedy alloc
+- Random Allocation !!!! 
+
+- Na dw pioi komvoi exoun gpu
+
+
+Idea Mitsou:
+- Na kanw apo thn arxi optimal layer allocation mazeuontas plhrofories (ram, vram) apo kathe node pou uparxei hdh sto dht.
+px opws to allocation sto exo
+
+- Opportunistic takeover: Ama erthei enas polu powerfull antikathista ton pio adynamo kriko.
