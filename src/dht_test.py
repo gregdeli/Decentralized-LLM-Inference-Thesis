@@ -32,9 +32,9 @@ def main():
         initial_peers=initial_peers,
     )
 
-    # prompt = "The capital of France is"
+    prompt = "The capital of France is"
 
-    prompt = "Paris is the capital of"
+    # prompt = "Paris is the capital of"
 
     # prompt = "The capital of Greece is"
 

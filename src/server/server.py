@@ -1,23 +1,25 @@
 """Main server application logic"""
 
-import grpc
-import os
-from concurrent import futures
-import torch
-from pathlib import Path
-from typing import Dict, Any, Union, List, Optional, Tuple
-import time
-import signal
-import psutil
-import logging
 import json
+import logging
+import os
+import signal
+import threading
+import time
+from concurrent import futures
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import grpc
+import psutil
+import torch
 
 from core.llm_loader import LLM
 from core.utils import get_bootstrap_peer_address
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager
+from core.p2p.chain_manager import ChainManager, HEARTBEAT_INTERVAL_S
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +113,11 @@ class Server:
         # Join the inference chain
         server_info = {"address": grpc_addr}
         
-        self.chain.join_chain(server_info, num_layers=num_layers, num_total_layers=config["num_hidden_layers"])
+        self.cached_self_info = self.chain.join_chain(
+            server_info, 
+            num_layers=num_layers, 
+            num_total_layers=config["num_hidden_layers"],
+        )
 
         # If all layers are loaded then this node acts as a backup and doesn't load any layers
         if self.chain.is_backup():
@@ -287,6 +293,16 @@ def serve():
         grpc_addr=grpc_addr,
     )
 
+    def _heartbeat_task(server_node: Server):
+        """Background task to keep DHT keys alive."""
+        while True:
+            time.sleep(HEARTBEAT_INTERVAL_S)
+            server_node.chain.republish_keys(server_node.cached_self_info)
+        
+    heartbeat_thread = threading.Thread(target=_heartbeat_task, args=(server_node,), daemon=True)
+    heartbeat_thread.start()
+
+    # Start GRPC server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
     server.add_insecure_port(grpc_addr)
