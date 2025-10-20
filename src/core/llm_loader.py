@@ -21,7 +21,6 @@ class LLM:
         checkpoint_dir: Path = None,
         kv_cache_initialized: bool = False,
         is_client: bool = True,
-        num_layers: int = None,
         layers_loaded: Tuple[int, int] = None,
     ) -> None:
         self.model = model
@@ -32,7 +31,6 @@ class LLM:
         self.prev_generated_seq_length = 0
 
         self.is_client = is_client
-        self.num_layers = num_layers
         self.layers_loaded = layers_loaded
 
     """
@@ -48,8 +46,7 @@ class LLM:
         cls,
         checkpoint_dir: Path,
         is_client: bool = True,
-        num_layers: int = None,
-        layers_start_idx: int = 0,
+        layers_to_load: Tuple[int, int] = None,
         time_it: bool = False,
     ) -> "LLM":
         if time_it:
@@ -59,15 +56,12 @@ class LLM:
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        if num_layers is None:
-            num_layers = config["num_hidden_layers"]
-
-        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.matmul.fp32_precision = 'ieee'
 
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
-        model = Llama3(config, num_layers, is_client, layers_start_idx)
+        model = Llama3(config, is_client, layers_to_load)
         model.eval()
 
         # Setup preprocessor
@@ -78,10 +72,6 @@ class LLM:
         state_dict = load_file(weights_path, device="cpu")
         state_dict = remove_model_prefix(state_dict)
         model.load_state_dict(state_dict, strict=False)
-
-        # Save the transformer layers loaded in this node
-        layers_end_idx = layers_start_idx + (num_layers - 1)
-        layers_loaded = (layers_start_idx, layers_end_idx)
 
         if time_it:
             end_time = time.perf_counter()
@@ -95,8 +85,7 @@ class LLM:
             checkpoint_dir=checkpoint_dir,
             kv_cache_initialized=False,
             is_client=is_client,
-            num_layers=num_layers,
-            layers_loaded=layers_loaded,
+            layers_loaded=layers_to_load,
         )
 
     # @torch.inference_mode()

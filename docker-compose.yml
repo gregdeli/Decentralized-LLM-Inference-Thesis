@@ -1,11 +1,11 @@
 services:
   head-server:
-    build: .
+    image: decentralized-llm-thesis:latest
     command: python server/server.py
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
-      # - NUM_LAYERS=8
+      - NUM_LAYERS=5
       - GRPC_ADDR=head-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/4001
     volumes:
@@ -13,63 +13,65 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6G
+          memory: 2G
     # ports:
     #   - "5678:5678"
 
-  # intermidiate-server:
-  #   build: .
-  #   command: python server/server.py
-  #   # command: sleep infinity
-  #   environment:
-  #     - MODEL_PATH=/models/Llama-3.2-1B
-  #     # - NUM_LAYERS=4
-  #     - GRPC_ADDR=intermidiate-server:5001
-  #     - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=head-server:5001
-  #   volumes:
-  #     - ./models:/models:ro # Mount your local models directory into the container
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 2G
-  #   # ports:
-  #     # - "5678:5678"  
-
-  tail-server:
-    build: .
-    # command: python server/server.py
-    command: sleep infinity
+  intermidiate-server:
+    image: decentralized-llm-thesis:latest
+    command: python server/server.py
+    # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
-      # - NUM_LAYERS=4
-      - GRPC_ADDR=tail-server:5001
+      - NUM_LAYERS=5
+      - GRPC_ADDR=intermidiate-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
+    volumes:
+      - ./models:/models:ro # Mount your local models directory into the container
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # ports:
+      # - "5678:5678"  
+
+  tail-server:
+    image: decentralized-llm-thesis:latest
+    command: python server/server.py
+    # command: sleep infinity
+    environment:
+      - MODEL_PATH=/models/Llama-3.2-1B
+      - NUM_LAYERS=6
+      - GRPC_ADDR=tail-server:5001
+      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
     volumes:
       - ./models:/models:ro
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G
     depends_on:
       - head-server
-    ports:
-      - "5678:5678"
+      - intermidiate-server
+    # ports:
+    #   - "5678:5678"
 
   client:
-    build: .
+    image: decentralized-llm-thesis:latest
     command: python dht_test.py 
+    # command: python distributed_chatbot.py 
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=tail-server:5001
+      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
     volumes:
       - ./models:/models:ro
+    # depends_on: 
+      # - head-server
+      # - intermidiate-server
+      # - tail-server
     # ports:
     #   - "5678:5678"
-    depends_on: 
-      - head-server
-      # - intermidiate-server
-      - tail-server

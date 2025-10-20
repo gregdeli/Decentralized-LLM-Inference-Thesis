@@ -1,5 +1,5 @@
 1. Sto docker-compose.yml sto container pou thelw na kanw debug
-    command: sleep infinit
+    command: sleep infinity
     ...
     ports:
         -5678:5678

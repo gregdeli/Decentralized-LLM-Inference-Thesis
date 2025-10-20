@@ -3,7 +3,7 @@ FROM python:3.11.5-slim
 WORKDIR /app
 
 # Set the python path to include the app root
-ENV PYTHONPATH "${PYTHONPATH}:/app"
+ENV PYTHONPATH="/app${PYTHONPATH:+:${PYTHONPATH}}"
 
 # Install hivemind from source
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*

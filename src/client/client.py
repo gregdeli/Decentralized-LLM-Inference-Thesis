@@ -29,10 +29,9 @@ class Client:
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
-        self.llm = LLM.load(model_path, is_client=True, num_layers=0, time_it=time_it)
+        self.llm = LLM.load(model_path, is_client=True, time_it=time_it)
         self.model = self.llm.model
 
-        # head_info = self.chain.get_head_server_info(num_total_layers=self.llm.config["num_hidden_layers"])
         head_info = self.chain.get_head_server_info()
         if not head_info:
             raise RuntimeError("Client could not find the head server.")
@@ -53,6 +52,13 @@ class Client:
         stream: bool = False,
         time_it: bool = False,
     ) -> Union[str, List[str], iter]:
+        
+        # Determine if all the layers have been loaded on the server chain
+        all_layers_loaded = self.chain.get_all_layers_loaded()
+        if not all_layers_loaded:
+            logger.warning("Not all model layers have been loaded on the server chain.")
+            logger.warning("Cannot initiate the generation task.")
+            return None
         
         input_ids = self.llm.preprocessor.encode(prompt)
         prompt_length = input_ids.size(1)

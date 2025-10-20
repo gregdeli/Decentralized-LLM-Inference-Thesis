@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 import time
 
 from core.p2p.dht_manager import DHTManager
@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 HEAD_KEY = "chain_head"
 TAIL_KEY = "chain_tail"
 TOTAL_LAYERS_KEY = "num_total_layers"
+ALL_LAYERS_KEY = "all_layers_loaded"
 SERVER_INFO_PREFIX = "server_info_"
+
 HEARTBEAT_INTERVAL_S = 30.0
 
 DIGITS_SHOW = 12
@@ -23,7 +25,7 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any], num_total_layers: int):
+    def join_chain(self, self_info: Dict[str, Any], num_layers: int, num_total_layers: int):
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
@@ -38,14 +40,14 @@ class ChainManager:
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one...")
-            self._form_initial_chain(self_info, num_total_layers)
+            self._form_initial_chain(self_info, num_layers, num_total_layers)
         else:
             logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
-            self._join_existing_chain(self_info)
+            self._join_existing_chain(self_info, num_layers, num_total_layers)
         
         logger.info(f"Self Info: {self._get_self_info()}")
 
-    def _form_initial_chain(self, self_info: Dict[str, Any], num_total_layers: int):
+    def _form_initial_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, HEARTBEAT_INTERVAL_S)
@@ -57,18 +59,22 @@ class ChainManager:
 
         self_info["successor"] = None
 
-        end_idx = self_info["num_layers"] - 1
+        # Don't exceed the the maximum layer index
+        end_idx = num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
-            self_info["num_layers"] = end_idx + 1 
+        
+        # Update the ALL_LAYERS_KEY if all layers have been loaded
+        if end_idx == num_total_layers - 1:
+            self.dht.store(ALL_LAYERS_KEY, True, HEARTBEAT_INTERVAL_S)
 
-        self_info["layers_loaded"] = (0, end_idx)
+        self_info["layers_loaded"] = (0, end_idx)            
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, HEARTBEAT_INTERVAL_S)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
-    def _join_existing_chain(self, self_info: Dict[str, Any]):
+    def _join_existing_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
         tail_id = self.dht.get(TAIL_KEY)
@@ -80,8 +86,6 @@ class ChainManager:
         tail_info = self.dht.get(tail_server_key)
         if not tail_info:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
-        
-        num_total_layers = self._get_num_total_layers()
 
         # Get the previous tails layers_loaded to determine this nodes layer range
         start_idx = tail_info["layers_loaded"][1] + 1
@@ -90,9 +94,9 @@ class ChainManager:
         # and set it as a backup node 
         if start_idx >= num_total_layers - 1:
             logger.warning("All the layers have already been loaded on the the previous tail")
-            self_info["num_layers"] = 0
-            # self_info["layers_loaded"] = (0, 0)
-            # "is_backup: True"
+            logger.warning("Setting this node as a backup node...")
+            
+            self_info["is_backup"] = True
             self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
             self.dht.store(self_server_key, self_info, HEARTBEAT_INTERVAL_S)
             return
@@ -104,11 +108,14 @@ class ChainManager:
 
         # Store our own info and update the tail pointer to us
         self_info["successor"] = None
-        
-        end_idx = start_idx + self_info["num_layers"] - 1
+
+        end_idx = start_idx + num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
-            self_info["num_layers"] = (end_idx - start_idx) + 1 
+
+        # Update the ALL_LAYERS_KEY if all layers have been loaded
+        if end_idx == num_total_layers - 1:
+            self.dht.store(ALL_LAYERS_KEY, True, HEARTBEAT_INTERVAL_S)
 
         self_info["layers_loaded"] = (start_idx, end_idx)
 
@@ -120,7 +127,7 @@ class ChainManager:
 
         logger.info(f"Previous Tail Info: {tail_info}")
 
-    def get_head_server_info(self) -> Optional[Dict[str, Any]]:
+    def get_head_server_info(self, attempts:int = 5) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
@@ -138,7 +145,7 @@ class ChainManager:
 
         # If the head server doesn't hold all the layers, 
         # retry until its successor is not None
-        for attempt in range(5):
+        for attempt in range(attempts):
             logger.info(f"Attempting to get head server info... (Attempt {attempt + 1})")
             head_info = self.dht.get(head_server_key)
             if not head_info:
@@ -172,9 +179,13 @@ class ChainManager:
         self_info = self._get_self_info()
         return self_info.get("layers_loaded")
     
-    def get_num_layers(self) -> int:
-        self_info = self._get_self_info()
-        return self_info.get("num_layers")
+    def get_all_layers_loaded(self) -> Union[bool, None]:
+            return self.dht.get(ALL_LAYERS_KEY)
+
+    
+    # def get_num_layers(self) -> int:
+    #     self_info = self._get_self_info()
+    #     return self_info.get("num_layers")
 
     def get_successor_address(self) -> Optional[str]:
         self_info = self._get_self_info()
@@ -197,6 +208,10 @@ class ChainManager:
             raise RuntimeError("Tail server not found")
 
         return tail_id == self.node_id
+
+    def is_backup(self) -> bool: 
+        self_info = self._get_self_info()
+        return bool(self_info.get("is_backup", False))
 
 
 # Example usage to demonstrate the flow

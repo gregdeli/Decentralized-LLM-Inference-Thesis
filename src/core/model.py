@@ -9,9 +9,8 @@ class Llama3(nn.Module):
     def __init__(
         self,
         config: Dict[str, Any],
-        num_layers: int,
         is_client: bool,
-        layers_start_idx: int = 0,
+        layers_to_load: Tuple[int, int]
     ) -> None:
         """
         Args:
@@ -24,13 +23,17 @@ class Llama3(nn.Module):
         super().__init__()
         self.config = config
         self.is_client = is_client
-        self.num_layers = num_layers
+
+        if layers_to_load is None:
+            self.num_layers = 0
+        else:
+            self.num_layers = layers_to_load[1] - layers_to_load[0] + 1
 
         if is_client:
             self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
-        if num_layers > 0:
+        if self.num_layers > 0:
             self.layers = nn.ModuleDict(
-                {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_start_idx, layers_start_idx + num_layers)}
+                {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_to_load[0], layers_to_load[1])}
             )
         if is_client:
             self.norm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])

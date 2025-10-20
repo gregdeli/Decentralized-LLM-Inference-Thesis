@@ -80,7 +80,7 @@ class Server:
     def __init__(
         self,
         model_path: Path,
-        # num_layers: int = None,
+        num_layers: int = None,
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
@@ -104,26 +104,29 @@ class Server:
             config = json.load(f)
 
         # Calculate number of Transformer Layers to load
-        num_layers = self._layers_to_load(config, bytes_per_param=4)
+        if not num_layers:
+            num_layers = self._layers_to_load(config, bytes_per_param=4)
+            logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
         
         # Join the inference chain
-        server_info = {"num_layers": num_layers, "address": grpc_addr}
+        server_info = {"address": grpc_addr}
         
-        self.chain.join_chain(server_info, num_total_layers=config["num_hidden_layers"])
-        # Edw an kapoios kanei join alla einai hdh loaded ola ta layers den kanei load tipota 
-        # tha prepei o node na einai backup -> server_info_this_node: {"is_backup": True}
-        # return
+        self.chain.join_chain(server_info, num_layers=num_layers, num_total_layers=config["num_hidden_layers"])
 
-        layers_loaded = self.chain.get_layers_loaded()
+        # If all layers are loaded then this node acts as a backup and doesn't load any layers
+        if self.chain.is_backup():
+            return
 
-        num_layers = self.chain.get_num_layers()
-        
+        layers_to_loaded = self.chain.get_layers_loaded()
+
+        # num_layers = self.chain.get_num_layers()
 
         self.llm = LLM.load(
             model_path,
             is_client=False,
-            num_layers=num_layers,
-            layers_start_idx=layers_loaded[0],
+            # num_layers=num_layers,
+            # layers_start_idx=layers_loaded[0],
+            layers_to_load=layers_to_loaded,
             time_it=time_it,
         )
         self.model = self.llm.model
@@ -132,7 +135,7 @@ class Server:
         self.successor_stub = None
 
         # Processing Rate
-        self.num_local_layers = self.llm.num_layers
+        self.num_local_layers = self.llm.model.num_layers
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
 
@@ -143,9 +146,6 @@ class Server:
         
         Greedy Layer Allocation: Load as many layers as memory allows
         """
-        # config_path = model_path / "config.json"
-        # with open(config_path, "r") as f:
-        #     config = json.load(f)
         
         total_layer_params = config["total_transformer_layer_params"]
         
@@ -255,7 +255,10 @@ def serve():
     # Read configuration from environment variables
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
-    # num_layers = int(os.getenv("NUM_LAYERS"))
+
+    num_layers_str = os.getenv("NUM_LAYERS")
+    num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
+
     grpc_addr = os.getenv("GRPC_ADDR")
 
     host_maddrs_str = os.getenv("HOST_MADDRS")
@@ -278,7 +281,7 @@ def serve():
 
     server_node = Server(
         model_path=model_path,
-        # num_layers=num_layers,
+        num_layers=num_layers,
         host_maddrs=host_maddrs,
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,

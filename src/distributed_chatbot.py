@@ -32,23 +32,20 @@ def main():
         initial_peers=initial_peers,
     )
 
-    # prompt = "The capital of France is"
-
-    prompt = "Paris is the capital of"
-
-    # prompt = "The capital of Greece is"
-
-    # prompt = "A professional email from an employee to their boss about being sick:\n\nSubject: Out of Office Today - Unwell\n\nHi [Boss's Name],\n\nI am writing to inform you that"
+    # prompt = "The name of the capital of France is"
     
-    logger.info(f"Initiating text generation...")
-    logger.info(f"\n--------Prompt--------\n{prompt}")
+    while True:
+        prompt = input("\nEnter prompt: ")
 
-    for _ in range(1):
-        text = client.generate(prompt, max_new_tokens=2)
+        logger.info(f"Initiating text generation...")
+        # logger.info(f"\n--------Prompt--------\n{prompt}")
+        text = client.generate(prompt, max_new_tokens=10)
 
-        if text is not None:
-            print(f"--------Response--------\n{prompt + text}") 
-
+        if not text:
+            input()
+            continue
+        
+        print(f"--------Response--------\n{prompt + text}") 
     
 
 if __name__ == "__main__":
