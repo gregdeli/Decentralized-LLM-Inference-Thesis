@@ -60,9 +60,9 @@ services:
 
   client:
     image: decentralized-llm-thesis:latest
-    command: python dht_test.py 
+    # command: python dht_test.py 
     # command: python distributed_chatbot.py 
-    # command: sleep infinity
+    command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0

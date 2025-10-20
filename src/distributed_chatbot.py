@@ -34,18 +34,22 @@ def main():
 
     # prompt = "The name of the capital of France is"
     
-    while True:
-        prompt = input("\nEnter prompt: ")
+    try:
+        while True:
+            prompt = input("\nEnter prompt: ")
 
-        logger.info(f"Initiating text generation...")
-        # logger.info(f"\n--------Prompt--------\n{prompt}")
-        text = client.generate(prompt, max_new_tokens=10)
+            logger.info(f"Initiating text generation...")
+            # logger.info(f"\n--------Prompt--------\n{prompt}")
+            text = client.generate(prompt, max_new_tokens=10)
 
-        if not text:
-            input()
-            continue
-        
-        print(f"--------Response--------\n{prompt + text}") 
+            if not text:
+                input()
+                continue
+            
+            print(f"--------Response--------\n{prompt + text}") 
+            
+    except KeyboardInterrupt:
+        print("\nExiting...") # Ctrl+C
     
 
 if __name__ == "__main__":

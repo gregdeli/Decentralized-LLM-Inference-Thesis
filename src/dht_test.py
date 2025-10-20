@@ -24,7 +24,7 @@ def main():
         return
         
     initial_peers = [bootstrap_peer_addr]
-    print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
+    logger.info(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
 
     client = Client(
         model_path=model_path,
