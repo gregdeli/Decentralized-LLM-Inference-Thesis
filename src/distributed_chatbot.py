@@ -6,14 +6,15 @@ import logging
 
 from client.client import Client
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address
 
 logger = logging.getLogger(__name__)
+
 
 def main():
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
-    
+
     host_maddrs = os.getenv("HOST_MADDRS")
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
 
@@ -22,7 +23,7 @@ def main():
 
     if not bootstrap_peer_addr:
         return
-        
+
     initial_peers = [bootstrap_peer_addr]
     print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
 
@@ -33,7 +34,7 @@ def main():
     )
 
     # prompt = "The name of the capital of France is"
-    
+
     try:
         while True:
             prompt = input("\nEnter prompt: ")
@@ -45,12 +46,12 @@ def main():
             if not text:
                 input()
                 continue
-            
-            print(f"--------Response--------\n{prompt + text}") 
-            
+
+            print(f"--------Response--------\n{prompt + text}")
+
     except KeyboardInterrupt:
-        print("\nExiting...") # Ctrl+C
-    
+        print("\nExiting...")  # Ctrl+C
+
 
 if __name__ == "__main__":
-    main()    
+    main()

@@ -6,14 +6,15 @@ import logging
 
 from client.client import Client
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address
 
 logger = logging.getLogger(__name__)
+
 
 def main():
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
-    
+
     host_maddrs = os.getenv("HOST_MADDRS")
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
 
@@ -22,7 +23,7 @@ def main():
 
     if not bootstrap_peer_addr:
         return
-        
+
     initial_peers = [bootstrap_peer_addr]
     logger.info(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
 
@@ -39,7 +40,7 @@ def main():
     # prompt = "The capital of Greece is"
 
     # prompt = "A professional email from an employee to their boss about being sick:\n\nSubject: Out of Office Today - Unwell\n\nHi [Boss's Name],\n\nI am writing to inform you that"
-    
+
     logger.info(f"Initiating text generation...")
     logger.info(f"\n--------Prompt--------\n{prompt}")
 
@@ -47,9 +48,8 @@ def main():
         text = client.generate(prompt, max_new_tokens=2)
 
         if text is not None:
-            print(f"--------Response--------\n{prompt + text}") 
+            print(f"--------Response--------\n{prompt + text}")
 
-    
 
 if __name__ == "__main__":
-    main()    
+    main()

@@ -15,7 +15,7 @@ import psutil
 import torch
 
 from core.llm_loader import LLM
-from core.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
@@ -45,18 +45,17 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
                 if not successor_addr:
                     context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
                     return nodeservice_pb2.InferenceResponse()
-                
+
                 try:
                     channel = grpc.insecure_channel(successor_addr)
                     grpc.channel_ready_future(channel).result(timeout=10)
 
                     self.server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                    logger.info(f"Connection to successor: {successor_addr} established.") # Debugging
+                    logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
                 except grpc.FutureTimeoutError:
                     logger.warning(f"Connection to {successor_addr} timed out.")
                 except grpc.RpcError as e:
                     logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
-
 
         # Deserialize the incoming request to a tensor
         input_tensor = response_to_tensor(request)
@@ -99,7 +98,7 @@ class Server:
         self.memory_limit_mb = self._get_container_memory_limit_mb()
         self.available_memory_mb = 0.0
         self._update_memory_usage()
-        
+
         # Get the conig file
         config_path = model_path / "config.json"
         with open(config_path, "r") as f:
@@ -109,13 +108,13 @@ class Server:
         if not num_layers:
             num_layers = self._layers_to_load(config, bytes_per_param=4)
             logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
-        
+
         # Join the inference chain
         server_info = {"address": grpc_addr}
-        
+
         self.cached_self_info = self.chain.join_chain(
-            server_info, 
-            num_layers=num_layers, 
+            server_info,
+            num_layers=num_layers,
             num_total_layers=config["num_hidden_layers"],
         )
 
@@ -145,17 +144,16 @@ class Server:
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
 
-    
     def _layers_to_load(self, config: Dict[str, Any], bytes_per_param: int) -> int:
         """
         Determine the number of layers to load based the in memory size of a Transformer layer and the available memory of the server.
-        
+
         Greedy Layer Allocation: Load as many layers as memory allows
         """
-        
+
         total_layer_params = config["total_transformer_layer_params"]
-        
-        single_layer_memory_size = total_layer_params * bytes_per_param # Bytes
+
+        single_layer_memory_size = total_layer_params * bytes_per_param  # Bytes
 
         available_memory_bytes = self.available_memory_mb * 1024 * 1024
 
@@ -163,9 +161,8 @@ class Server:
 
         if layers_to_load > config["num_hidden_layers"]:
             layers_to_load = config["num_hidden_layers"]
-        
-        return layers_to_load 
 
+        return layers_to_load
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -231,7 +228,7 @@ class Server:
 
         start_time = time.perf_counter()
 
-        logger.info(f"Processing layers {self.llm.layers_loaded}...") # Debugging
+        logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         end_time = time.perf_counter()
@@ -242,7 +239,7 @@ class Server:
             self.layers_per_second = self.num_local_layers / self.computational_delay
             # print(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
-        if self.chain.is_tail(): 
+        if self.chain.is_tail():
             return tensor_to_response(h)
 
         # Call the successor via gRPC
@@ -278,12 +275,12 @@ def serve():
 
         if not peer_addr:
             return
-            
+
         initial_peers = [peer_addr]
         print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
 
     else:
-        initial_peers = None # Head server
+        initial_peers = None  # Head server
 
     server_node = Server(
         model_path=model_path,
@@ -298,7 +295,7 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node.chain.republish_keys(server_node.cached_self_info)
-        
+
     heartbeat_thread = threading.Thread(target=_heartbeat_task, args=(server_node,), daemon=True)
     heartbeat_thread.start()
 
