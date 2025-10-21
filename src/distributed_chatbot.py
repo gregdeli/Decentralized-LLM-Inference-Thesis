@@ -41,13 +41,13 @@ def main():
 
             logger.info(f"Initiating text generation...")
             # logger.info(f"\n--------Prompt--------\n{prompt}")
-            text = client.generate(prompt, max_new_tokens=10)
+            text = client.generate(prompt, max_new_tokens=20)
 
             if not text:
                 input()
                 continue
 
-            print(f"--------Response--------\n{prompt + text}")
+            print(f"--------Response--------\n{text}")
 
     except KeyboardInterrupt:
         print("\nExiting...")  # Ctrl+C

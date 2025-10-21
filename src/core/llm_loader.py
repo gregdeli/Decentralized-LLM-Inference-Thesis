@@ -6,9 +6,8 @@ import torch
 from safetensors.torch import load_file
 
 from core.model import Llama3
-from core.utils import remove_model_prefix
+from core.utils import remove_model_prefix, is_instruct_model
 
-# from litgpt.tokenizer import Tokenizer
 from transformers import AutoTokenizer
 
 
@@ -18,6 +17,7 @@ class LLM:
         model: Llama3,
         preprocessor=None,
         config: Dict[str, Any] = None,
+        is_instruct_model: bool = False,
         checkpoint_dir: Path = None,
         kv_cache_initialized: bool = False,
         is_client: bool = True,
@@ -26,6 +26,7 @@ class LLM:
         self.model = model
         self.preprocessor = preprocessor
         self.config = config
+        self.is_instruct_model = is_instruct_model
         self.checkpoint_dir = checkpoint_dir
         self.kv_cache_initialized = kv_cache_initialized
         self.prev_generated_seq_length = 0
@@ -37,8 +38,8 @@ class LLM:
     High-level API for loading a Llama 3.2 model and generating text.
     
     It support dynamic transformer layer loading and split inference, by setting the is_client and num_layers attributs.
-    The LLM object saves and publishes the transforemer layers that are loading in the current node's model 
-    so that other nodes from which layer index to start loading.
+    The LLM object saves and publishes the transformer layers that are loaded in the current node's model 
+    so that other nodes know from which layer index to start loading.
     """
 
     @classmethod
@@ -56,7 +57,10 @@ class LLM:
         with open(config_path, "r") as f:
             config = json.load(f)
 
-        torch.backends.cuda.matmul.fp32_precision = 'ieee'
+        # Check is the model is instruction tuned
+        is_instruct = is_instruct_model(model_path=checkpoint_dir)
+
+        # torch.backends.cuda.matmul.fp32_precision = "ieee"
 
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
@@ -82,26 +86,26 @@ class LLM:
             model=model,
             preprocessor=preprocessor,
             config=config,
+            is_instruct_model=is_instruct,
             checkpoint_dir=checkpoint_dir,
             kv_cache_initialized=False,
             is_client=is_client,
             layers_loaded=layers_to_load,
         )
 
-    # @torch.inference_mode()
     @torch.no_grad()
     def generate(
         self,
         prompt: Union[str, List[str]],
         # sys_prompt: Optional[str] = None,
         max_new_tokens: int = 50,
-        temperature: float = 0.0,
-        top_k: Optional[int] = None,
-        # top_p: float = 1.0,
-        # return_as_token_ids: bool = False,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
         stream: bool = False,
         time_it: bool = False,
     ) -> Union[str, List[str], iter]:
+
+        prompt = self.apply_chat_template(prompt)
 
         input_ids = self.preprocessor.encode(prompt)
         prompt_length = input_ids.size(1)
@@ -133,10 +137,10 @@ class LLM:
         self.prev_generated_seq_length = max_returned_tokens
 
         if stream:
-            return self._generate_stream(input_ids, max_new_tokens, temperature, top_k)
+            return self._generate_stream(input_ids, max_new_tokens, temperature, top_p)
 
         # If not streaming the output
-        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_k, time_it)
+        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_p, time_it)
 
         return decoded_text
 
@@ -146,8 +150,8 @@ class LLM:
         prompt_length: int,
         input_ids: torch.Tensor,
         max_new_tokens: int,
-        temperature: float = 1.0,
-        top_k: Optional[int] = None,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
         time_it: bool = False,
     ):
         if time_it:
@@ -161,9 +165,20 @@ class LLM:
             logits = self.model(input, input_pos=input_pos)
             logits = logits[:, -1, :]
 
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float("Inf")
+            if top_p > 0.0:
+                # Sort logits and compute probabilities
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+
+                # Find the indices to remove (those outside the nucleus)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                # Shift the indices to the right to keep the first one that exceeds top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+
+                # Create a mask to set the logits of tokens to remove to -inf
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = -float("Inf")
 
             if temperature > 0.0:
                 probs = torch.softmax(logits / temperature, dim=-1)
@@ -191,8 +206,8 @@ class LLM:
         self,
         input_ids: torch.Tensor,
         max_new_tokens: int,
-        temperature: float = 1.0,
-        top_k: Optional[int] = None,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
     ):
         """A generator function that yields decoded string chunks."""
         prompt_length = input_ids.size(1)
@@ -203,9 +218,20 @@ class LLM:
             logits = self.model(input, input_pos=input_pos)
             logits = logits[:, -1, :]
 
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float("Inf")
+            if top_p > 0.0:
+                # Sort logits and compute probabilities
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+
+                # Find the indices to remove (those outside the nucleus)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                # Shift the indices to the right to keep the first one that exceeds top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+
+                # Create a mask to set the logits of tokens to remove to -inf
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = -float("Inf")
 
             if temperature > 0.0:
                 probs = torch.softmax(logits / temperature, dim=-1)
@@ -225,6 +251,23 @@ class LLM:
             # The position is `prompt_length` + tokens generated so far (which is i)
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
+
+    def apply_chat_template(self, prompt: str) -> str:
+        """
+        Applies the Llama 3.2 Instruct chat template to the prompt if the model used is instruction tuned.
+        """
+        default_system_prompt = "You are a helpful assistant"
+
+        if self.is_instruct_model:
+            return (
+                "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+                f"{default_system_prompt}<|eot_id|>"
+                "<|start_header_id|>user<|end_header_id|>\n\n"
+                f"{prompt}<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+        else:
+            return prompt
 
 
 class Preprocessor:
@@ -262,9 +305,9 @@ if __name__ == "__main__":
     # text = llm.generate(prompt, max_new_tokens=6)
     # print(prompt + text)
 
-    prompt = "The tallest mountain in the world is"
-    text = llm.generate(prompt, max_new_tokens=2)
-    print(prompt + text)
+    # prompt = "The tallest mountain in the world is"
+    # text = llm.generate(prompt, max_new_tokens=2)
+    # print(prompt + text)
 
     # Streaming
     # prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"

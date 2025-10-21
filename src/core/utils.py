@@ -18,6 +18,24 @@ def remove_model_prefix(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     return new_state_dict
 
 
+def is_instruct_model(model_path: Path) -> bool:
+    """
+    Checks if a model is instruction-tuned by looking for a
+    chat template in its tokenizer_config.json.
+    """
+    tokenizer_config_path = model_path / "tokenizer_config.json"
+    if not tokenizer_config_path.exists():
+        False
+
+    with open(tokenizer_config_path, "r") as f:
+        config = json.load(f)
+
+    if config.get("chat_template"):
+        return True
+    else:
+        return False
+
+
 # Llama 3.2 -> total_transformer_layer_params = 60821504
 def calculate_transformer_params(model_path_str: str) -> int:
     """Calculates the total number of parameters for a single Transformer Layer for Llama 3.2"""

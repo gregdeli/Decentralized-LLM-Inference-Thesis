@@ -36,7 +36,7 @@ class Client:
         head_info = self.chain.get_head_server_info()
         if not head_info:
             raise RuntimeError("Client could not find the head server.")
-            
+
         # logger.info(f"Client successfully found head server. Address: {head_info['address']}")
 
         head_server_addr = head_info["address"]
@@ -48,20 +48,22 @@ class Client:
         self,
         prompt: Union[str, List[str]],
         max_new_tokens: int = 50,
-        temperature: float = 0.5,
+        temperature: float = 0.6,
         top_p: float = 0.9,
         stream: bool = False,
         time_it: bool = False,
     ) -> Union[str, List[str], iter]:
-        
+
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         if not all_layers_loaded:
             logger.warning("Not all model layers have been loaded on the server chain.")
             logger.warning("Cannot initiate the generation task.")
             return None
-        
+
+        prompt = self.llm.apply_chat_template(prompt)
         input_ids = self.llm.preprocessor.encode(prompt)
+
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
@@ -76,7 +78,7 @@ class Client:
         input_pos = None
         seq_length = prompt_length
         for i in range(max_new_tokens):
-            logger.info(f"Generating token {i + 1}/{max_new_tokens}") # Debugging
+            logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
 
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
