@@ -41,10 +41,10 @@ def main():
 
             logger.info(f"Initiating text generation...")
             # logger.info(f"\n--------Prompt--------\n{prompt}")
-            text = client.generate(prompt, max_new_tokens=20)
+            text = client.generate(prompt, max_new_tokens=100)
 
             if not text:
-                input()
+                input("Press Enter to continue...")
                 continue
 
             print(f"--------Response--------\n{text}")

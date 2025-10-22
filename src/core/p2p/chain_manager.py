@@ -26,14 +26,15 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any], num_layers: int, num_total_layers: int) -> Dict[str, Any]:
+    def join_chain(self, self_info: Dict[str, Any], num_layers: int, num_total_layers: int):
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
 
         :param:
-          self_info: A dictionary with the server's data (e.g., {'num_layers': 4, 'address': 'head-server:5001'}).
-          num_total_layers: The number of total Transformer Layers of the LLM
+          self_info: A dictionary with the server's data (e.g., {'address': 'head-server:5001'}).
+          num_layers: The number of Transformers Layers the node can load. 
+          num_total_layers: The number of total Transformer Layers of the LLM.
         :return: The updated info dictionary for this server.
         """
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} attempting to join the chain...")
@@ -41,13 +42,12 @@ class ChainManager:
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one...")
-            final_self_info = self._form_initial_chain(self_info, num_layers, num_total_layers)
+            self._form_initial_chain(self_info, num_layers, num_total_layers)
         else:
             logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
-            final_self_info = self._join_existing_chain(self_info, num_layers, num_total_layers)
+            self._join_existing_chain(self_info, num_layers, num_total_layers)
         
         logger.info(f"Self Info: {self._get_self_info()}")
-        return final_self_info
 
     def _form_initial_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
         """Logic for the first server to establish the chain."""
@@ -75,7 +75,6 @@ class ChainManager:
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, EXPIRATION_S)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
-        return self_info
 
     def _join_existing_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
         """Logic for a new server to join an existing chain."""
@@ -95,7 +94,7 @@ class ChainManager:
 
         # If all the layers have already been loaded then dont add this node to the chain
         # and set it as a backup node 
-        if start_idx >= num_total_layers - 1:
+        if start_idx >= num_total_layers:
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
             
@@ -129,7 +128,6 @@ class ChainManager:
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} has joined as the new tail.")
 
         logger.info(f"Previous Tail Info: {tail_info}")
-        return self_info
 
     def get_head_server_info(self, attempts:int = 5) -> Optional[Dict[str, Any]]:
         """
@@ -219,11 +217,12 @@ class ChainManager:
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
     
-    def republish_keys(self, cached_self_info: Dict[str, Any]):
+    def republish_keys(self):
         """Periodically republishes this node's keys to prevent expiration."""
         # Republish server info
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-        self.dht.store(server_key, cached_self_info, EXPIRATION_S)
+        self_info = self._get_self_info()
+        self.dht.store(server_key, self_info, EXPIRATION_S)
 
         # 2. If this node is the head, republish the head key
         if self._is_head():

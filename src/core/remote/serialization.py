@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from . import nodeservice_pb2
-from typing import Optional
+from typing import Optional, Union
 
 # A mapping from PyTorch dtypes to string representations
 DTYPE_MAP = {
@@ -54,11 +54,10 @@ def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRequest
     return nodeservice_pb2.InferenceRequest(**response)
 
 
-def response_to_tensor(response: nodeservice_pb2.InferenceResponse) -> torch.Tensor:
-    """Deserializes an InferenceResponse into a tensor."""
+def message_to_tensor(response: Union[nodeservice_pb2.InferenceResponse, nodeservice_pb2.InferenceResponse]) -> torch.Tensor:
+    """Deserializes an InferenceRequest or an InferenceResponse into a tensor."""
     shape = tuple(response.tensor_shape)
     dtype_str = response.dtype
-    # dtype = INV_DTYPE_MAP[dtype_str]
 
     np_array = np.frombuffer(response.tensor_data, dtype=getattr(np, dtype_str)).copy()
     tensor = torch.from_numpy(np_array).reshape(shape)

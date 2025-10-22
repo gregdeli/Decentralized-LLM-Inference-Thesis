@@ -11,7 +11,7 @@ import torch
 
 from core.llm_loader import LLM
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.remote.serialization import tensor_to_request, response_to_tensor
+from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
 
@@ -78,7 +78,7 @@ class Client:
         input_pos = None
         seq_length = prompt_length
         for i in range(max_new_tokens):
-            logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
+            # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
 
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
@@ -88,7 +88,7 @@ class Client:
             )
 
             response = self.head_server_stub.RunLayers(request)
-            x = response_to_tensor(response)
+            x = message_to_tensor(response)
 
             # Run clients final layers
             logits = self.model.forward_client_final(x)
@@ -119,6 +119,8 @@ class Client:
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 break
+            
+            logger.info(f"{self.llm.preprocessor.decode(next_token)}") # Debugging
 
             generated_ids.append(next_token)
             input_tensor = next_token

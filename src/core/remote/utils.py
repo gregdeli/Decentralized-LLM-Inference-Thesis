@@ -31,5 +31,5 @@ def get_bootstrap_peer_address(address: str, attempts: int = 5) -> str | None:
                 print(f"An unexpected gRPC error occurred while contacting bootstrap node: {e}")
                 return None
 
-    print(f"FATAL: Could not connect to bootstrap node at {address} after {attempts} attempts.")
+    logger.error(f"FATAL: Could not connect to bootstrap node at {address} after {attempts} attempts.")
     return None

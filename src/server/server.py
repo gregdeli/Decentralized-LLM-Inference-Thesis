@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import threading
+import socket
 import time
 from concurrent import futures
 from pathlib import Path
@@ -58,7 +59,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
                     logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
 
         # Deserialize the incoming request to a tensor
-        input_tensor = response_to_tensor(request)
+        input_tensor = message_to_tensor(request)
 
         # Extract metadata
         max_returned_tokens = request.max_returned_tokens
@@ -112,7 +113,7 @@ class Server:
         # Join the inference chain
         server_info = {"address": grpc_addr}
 
-        self.cached_self_info = self.chain.join_chain(
+        self.chain.join_chain(
             server_info,
             num_layers=num_layers,
             num_total_layers=config["num_hidden_layers"],
@@ -228,7 +229,7 @@ class Server:
 
         start_time = time.perf_counter()
 
-        logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
+        # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         end_time = time.perf_counter()
@@ -252,6 +253,7 @@ class Server:
         final_layer_response = self.successor_stub.RunLayers(request)
         return final_layer_response
 
+GRPC_PORT = 5001
 
 def serve():
     """The main function to start the server."""
@@ -262,7 +264,8 @@ def serve():
     num_layers_str = os.getenv("NUM_LAYERS")
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
-    grpc_addr = os.getenv("GRPC_ADDR")
+    hostname = socket.gethostname()
+    grpc_addr = f"{hostname}:{GRPC_PORT}"
 
     host_maddrs_str = os.getenv("HOST_MADDRS")
     host_maddrs = [host_maddrs_str]
@@ -277,7 +280,7 @@ def serve():
             return
 
         initial_peers = [peer_addr]
-        print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
+        logger.info(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
 
     else:
         initial_peers = None  # Head server
@@ -294,7 +297,7 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            server_node.chain.republish_keys(server_node.cached_self_info)
+            server_node.chain.republish_keys()
 
     heartbeat_thread = threading.Thread(target=_heartbeat_task, args=(server_node,), daemon=True)
     heartbeat_thread.start()

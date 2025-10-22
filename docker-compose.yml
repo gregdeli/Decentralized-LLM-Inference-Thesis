@@ -7,16 +7,16 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - NUM_LAYERS=5
-      - GRPC_ADDR=head-server:5001
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/4001
+      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro # Mount the models directory into the container
     deploy:
       resources:
         limits:
-          memory: 2G
-    # ports:
-    #   - "5678:5678"
+          memory: 4G
+          
+    ports:
+      - "5678:5678"
 
   intermidiate-server:
     image: decentralized-llm-thesis:latest
@@ -26,7 +26,6 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - NUM_LAYERS=5
-      - GRPC_ADDR=intermidiate-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
@@ -46,7 +45,6 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - NUM_LAYERS=6
-      - GRPC_ADDR=tail-server:5001
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
     volumes:
@@ -55,6 +53,29 @@ services:
       resources:
         limits:
           memory: 4G
+    depends_on:
+      - head-server
+      - intermidiate-server
+    # ports:
+    #   - "5678:5678"
+
+  server-A:
+    image: decentralized-llm-thesis:latest
+    # command: python server/server.py
+    command: sleep infinity
+    environment:
+      # - MODEL_PATH=/models/Llama-3.2-1B
+      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      # - NUM_LAYERS=6
+      - GRPC_ADDR=server-A:5001
+      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      - BOOTSTRAP_NODE_ADDR=tail-server:5001
+    volumes:
+      - ./models:/models:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     depends_on:
       - head-server
       - intermidiate-server
@@ -70,7 +91,7 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
+      - BOOTSTRAP_NODE_ADDR=tail-server:5001
     volumes:
       - ./models:/models:ro
     # depends_on: 
