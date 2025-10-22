@@ -217,30 +217,60 @@ class ChainManager:
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
     
-    def republish_keys(self):
-        """Periodically republishes this node's keys to prevent expiration."""
-        # Republish server info
+    def is_successor_alive(self) -> bool:
+        """Check on this nodes successor"""
+        self_info = self._get_self_info()
+        if not self.is_tail():
+            successor_id = self_info["successor"]
+            successor_key = f"{SERVER_INFO_PREFIX}{successor_id}"
+            successor_info = self.dht.get(successor_key)
+            if not successor_info:
+                logger.warning(f"This node's successor is DEAD.")
+                return False
+            return True # If successor info is retrieved successfully it is alive
+        else:
+            return True # This is the tail server
+
+
+    def republish_keys(self) -> bool:
+        """
+        Periodically called to maintain the node's presence on the DHT and check chain integrity.
+
+        :return: True if the successor was detected as dead during this check, False otherwise.
+        """
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
+
+        # Check if this node's successor is alive
+        successor_dead = False
+        if self.is_successor_alive():
+            # If successor is alive or this node is the tail republish the "all_layers_loaded" key
+            all_layers_loaded = self.get_all_layers_loaded() 
+            if all_layers_loaded is not None:
+                self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
+        else:
+            # If the successor is dead store "all_layers_loaded": False
+            successor_dead = True
+            self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self_info["successor"] = None
+            
+        # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
-        # 2. If this node is the head, republish the head key
+        # If this node is the head, republish the head key
         if self._is_head():
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
             # Also republish the num_total_layers key
             num_total_layers = self._get_num_total_layers() 
             if num_total_layers:
                     self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
-            
-            all_layers_loaded = self.get_all_layers_loaded() 
-            if all_layers_loaded is not None:
-                self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
         
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
+        return successor_dead
 
 
 # Example usage to demonstrate the flow

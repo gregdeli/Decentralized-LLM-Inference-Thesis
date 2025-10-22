@@ -107,7 +107,7 @@ class Server:
 
         # Calculate number of Transformer Layers to load
         if not num_layers:
-            num_layers = self._layers_to_load(config, bytes_per_param=4)
+            num_layers = self._mem_to_num_layers(config, bytes_per_param=4)
             logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
 
         # Join the inference chain
@@ -145,7 +145,7 @@ class Server:
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
 
-    def _layers_to_load(self, config: Dict[str, Any], bytes_per_param: int) -> int:
+    def _mem_to_num_layers(self, config: Dict[str, Any], bytes_per_param: int) -> int:
         """
         Determine the number of layers to load based the in memory size of a Transformer layer and the available memory of the server.
 
@@ -229,7 +229,7 @@ class Server:
 
         start_time = time.perf_counter()
 
-        # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
+        logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         end_time = time.perf_counter()
@@ -297,7 +297,10 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            server_node.chain.republish_keys()
+            successor_dead = server_node.chain.republish_keys()
+            if successor_dead:
+                logger.warning("Successor DEAD!") # Debugging
+                # repair_chain
 
     heartbeat_thread = threading.Thread(target=_heartbeat_task, args=(server_node,), daemon=True)
     heartbeat_thread.start()
