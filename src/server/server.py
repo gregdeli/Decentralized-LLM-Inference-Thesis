@@ -312,11 +312,7 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            # dead_successor_data = server_node.chain.republish_keys()
             server_node.chain.republish_keys()
-            # if dead_successor_data:
-            #     logger.warning(f"Successor DEAD! {dead_successor_data}") # Debugging
-            #     server_node.repair_chain(dead_successor_data)
 
     def _grpc_heartbeat_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
@@ -324,24 +320,6 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup() or server_node.chain.is_tail():
                 continue
-
-            # Initialize the successor stub if it's missing
-            # if server_node.successor_stub is None:
-            #     successor_addr = server_node.chain.get_successor_address()
-            #     if not successor_addr:
-            #         logger.warning("Successor address not found. Skipping health check.")
-            #         continue
-            #     try:
-            #         channel = grpc.insecure_channel(successor_addr)
-            #         grpc.channel_ready_future(channel).result(timeout=10)
-            #         server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-            #         logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
-            #     except grpc.FutureTimeoutError:
-            #         logger.error(f"Connection to {successor_addr} timed out.")
-            #         continue
-            #     except grpc.RpcError as e:
-            #         logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
-            #         continue
             
             # Perform the health check on the successor
             try:
@@ -374,8 +352,6 @@ def serve():
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
-    # server.start()
-    # logger.info("Server is ready to accept grpc connections.")
 
     server.wait_for_termination()
 

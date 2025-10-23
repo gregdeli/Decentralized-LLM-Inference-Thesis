@@ -259,28 +259,7 @@ class ChainManager:
     
     def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
         pass
-
     
-    # def is_successor_alive(self) -> bool:
-    #     """Check on this nodes successor"""
-    #     if self.is_tail():
-    #         return True # If this node is the tail it has no successor
-        
-    #     self_info = self._get_self_info()
-    #     successor_data = self_info.get("successor") 
-
-    #     if not successor_data:
-    #         return False # This node is not the tail but has no successor data
-        
-    #     successor_key = f"{SERVER_INFO_PREFIX}{successor_data['id']}"
-    #     successor_info = self.dht.get(successor_key)
-        
-    #     if not successor_info:
-    #         logger.warning(f"This node's successor {successor_data['id'][:DIGITS_SHOW]} is DEAD.")
-    #         return False
-        
-    #     return True
-
 
     def republish_keys(self): #-> Optional[Dict[str, Any]]:
         """

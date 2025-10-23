@@ -25,27 +25,6 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[1]))
 
     def RunLayers(self, request, context):
-        # Create the successor stub if it doesn't exist
-        # if self.server_node.successor_stub is None:
-        #     if self.server_node.chain.is_tail():
-        #         self.server_node.successor_stub = None
-        #     else:
-        #         successor_addr = self.server_node.chain.get_successor_address()
-        #         if not successor_addr:
-        #             context.abort(grpc.StatusCode.INTERNAL, "Successor not found for a non-tail node.")
-        #             return nodeservice_pb2.InferenceResponse()
-
-        #         try:
-        #             channel = grpc.insecure_channel(successor_addr)
-        #             grpc.channel_ready_future(channel).result(timeout=10)
-
-        #             self.server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-        #             logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
-        #         except grpc.FutureTimeoutError:
-        #             logger.error(f"Connection to {successor_addr} timed out.")
-        #         except grpc.RpcError as e:
-        #             logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
-
         # Deserialize the incoming request to a tensor
         input_tensor = message_to_tensor(request)
 
