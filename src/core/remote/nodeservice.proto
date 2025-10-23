@@ -9,6 +9,9 @@ service NodeService {
 
   // Returns the full P2P multiaddress of the server node.
   rpc GetPeerMultiaddr(Empty) returns (MultiaddrResponse) {}
+
+  // Used to check if a node's successor is alive
+  rpc Check(Empty) returns (Empty) {}
 }
 
 message Empty {}

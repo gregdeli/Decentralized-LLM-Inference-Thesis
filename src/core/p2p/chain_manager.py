@@ -13,7 +13,7 @@ TOTAL_LAYERS_KEY = "num_total_layers"
 ALL_LAYERS_KEY = "all_layers_loaded"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 60.0
+EXPIRATION_S = 30.0
 HEARTBEAT_INTERVAL_S = EXPIRATION_S / 2.0
 
 DIGITS_SHOW = 12
@@ -26,7 +26,7 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any], num_layers: int, num_total_layers: int):
+    def join_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
@@ -42,14 +42,14 @@ class ChainManager:
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one...")
-            self._form_initial_chain(self_info, num_layers, num_total_layers)
+            self._form_initial_chain(self_info, max_num_layers, num_total_layers)
         else:
             logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
-            self._join_existing_chain(self_info, num_layers, num_total_layers)
+            self._join_existing_chain(self_info, max_num_layers, num_total_layers)
         
         logger.info(f"Self Info: {self._get_self_info()}")
 
-    def _form_initial_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
+    def _form_initial_chain(self, self_info: Dict[str, Any], max_num_layers:int, num_total_layers: int):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
@@ -62,7 +62,7 @@ class ChainManager:
         self_info["successor"] = None
 
         # Don't exceed the the maximum layer index
-        end_idx = num_layers - 1
+        end_idx = max_num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
         
@@ -76,7 +76,7 @@ class ChainManager:
         self.dht.store(server_key, self_info, EXPIRATION_S)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
-    def _join_existing_chain(self, self_info: Dict[str, Any], num_layers:int, num_total_layers: int):
+    def _join_existing_chain(self, self_info: Dict[str, Any], max_num_layers:int, num_total_layers: int):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
         tail_id = self.dht.get(TAIL_KEY)
@@ -101,17 +101,9 @@ class ChainManager:
             self_info["is_backup"] = True
             self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
             self.dht.store(self_server_key, self_info, EXPIRATION_S)
-            return
+            return        
 
-        # Update the old tail to point to the new server node
-        tail_info["successor"] = self.node_id
-        self.dht.store(tail_server_key, tail_info, EXPIRATION_S)
-        logger.info(f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}.")
-
-        # Store our own info and update the tail pointer to us
-        self_info["successor"] = None
-
-        end_idx = start_idx + num_layers - 1
+        end_idx = start_idx + max_num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
 
@@ -119,9 +111,21 @@ class ChainManager:
         if end_idx == num_total_layers - 1:
             self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
-        self_info["layers_loaded"] = (start_idx, end_idx)
+        # self_info["layers_loaded"] = (start_idx, end_idx)
+        self_layers_loaded = (start_idx, end_idx)
+
+        # Update the old tail to point to the new server node
+        tail_info["successor"] = {
+            "id": self.node_id,
+            "address": self_info["address"],
+            "layers_loaded": self_layers_loaded
+        }
+        self.dht.store(tail_server_key, tail_info, EXPIRATION_S)
+        logger.info(f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}.")
 
         # Store self info and update the chain_tail value
+        self_info["successor"] = None
+        self_info["layers_loaded"] = self_layers_loaded
         self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_server_key, self_info, EXPIRATION_S)
         self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
@@ -184,20 +188,21 @@ class ChainManager:
     def get_all_layers_loaded(self) -> Union[bool, None]:
             return self.dht.get(ALL_LAYERS_KEY)
 
-    def get_successor_address(self) -> Optional[str]:
-        self_info = self._get_self_info()
-        successor_id = self_info.get("successor")
-
-        if not successor_id:
-            # If this node is the chain tail
+    def get_successor_address(self, attempts:int = 5) -> Optional[str]:
+        if self.is_tail() or self.is_backup():
             return None
+        
+        for attempt in range(attempts):
+            logger.info(f"Attempting to get successor address info... (Attempt {attempt + 1})")
+            self_info = self._get_self_info()
+            successor_data = self_info.get("successor")
+            if successor_data:
+                return successor_data.get("address")
+            else:
+                logger.info(f"Retrying in 2 seconds...")
+                time.sleep(2)
 
-        successor_info = self.dht.get(f"{SERVER_INFO_PREFIX}{successor_id}")
-        if not successor_info:
-            logger.error(f"Found successor ID {successor_id} but could not retrieve its info.")
-            return None
-
-        return successor_info.get("address")
+        return None
     
     def _is_head(self) -> bool:
         """Check if this node is the head of the server chain"""
@@ -210,67 +215,120 @@ class ChainManager:
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
             raise RuntimeError("Tail server not found")
+        
+        self_info = self._get_self_info()
+        num_total_layers = self._get_num_total_layers()
+        layers_loaded = self.get_layers_loaded()
 
-        return tail_id == self.node_id
+        if tail_id == self.node_id and layers_loaded[1] == num_total_layers - 1:
+            return True
+
+        return False
 
     def is_backup(self) -> bool: 
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
     
-    def is_successor_alive(self) -> bool:
-        """Check on this nodes successor"""
+    def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
+        """
+        Gets the data *of this node's successor* from the DHT.
+        This is called by the node when it actively detects its successor is dead.
+        """
         self_info = self._get_self_info()
-        if not self.is_tail():
-            successor_id = self_info["successor"]
-            successor_key = f"{SERVER_INFO_PREFIX}{successor_id}"
-            successor_info = self.dht.get(successor_key)
-            if not successor_info:
-                logger.warning(f"This node's successor is DEAD.")
-                return False
-            return True # If successor info is retrieved successfully it is alive
-        else:
-            return True # This is the tail server
+        successor_data = self_info.get("successor")
+        if not successor_data:
+            logger.warning(f"Node {self.node_id[:DIGITS_SHOW]} has no successor data.")
+            return None
+
+        # Get the successor's successor id
+        successor_key = f"{SERVER_INFO_PREFIX}{successor_data.get('id')}"
+        successor_info = self.dht.get(successor_key)
+        if not successor_info:
+            logger.warning(f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired.")
+            return None
+        
+        successor_2_data = successor_info.get("successor")
+        if not successor_2_data:
+            logger.warning(f"Node {successor_data.get('id')[:DIGITS_SHOW]} has no successor data.")
+            return None
+        
+        # successor_2_id = successor_2_data.get("id")
+        successor_data["successor"] = successor_2_data
+
+        return successor_data
+    
+    def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
+        pass
+
+    
+    # def is_successor_alive(self) -> bool:
+    #     """Check on this nodes successor"""
+    #     if self.is_tail():
+    #         return True # If this node is the tail it has no successor
+        
+    #     self_info = self._get_self_info()
+    #     successor_data = self_info.get("successor") 
+
+    #     if not successor_data:
+    #         return False # This node is not the tail but has no successor data
+        
+    #     successor_key = f"{SERVER_INFO_PREFIX}{successor_data['id']}"
+    #     successor_info = self.dht.get(successor_key)
+        
+    #     if not successor_info:
+    #         logger.warning(f"This node's successor {successor_data['id'][:DIGITS_SHOW]} is DEAD.")
+    #         return False
+        
+    #     return True
 
 
-    def republish_keys(self) -> bool:
+    def republish_keys(self): #-> Optional[Dict[str, Any]]:
         """
         Periodically called to maintain the node's presence on the DHT and check chain integrity.
 
-        :return: True if the successor was detected as dead during this check, False otherwise.
+        :return: The dead successor's data dictionary if detected, else None.
         """
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
 
         # Check if this node's successor is alive
-        successor_dead = False
-        if self.is_successor_alive():
-            # If successor is alive or this node is the tail republish the "all_layers_loaded" key
-            all_layers_loaded = self.get_all_layers_loaded() 
-            if all_layers_loaded is not None:
-                self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
-        else:
-            # If the successor is dead store "all_layers_loaded": False
-            successor_dead = True
-            self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-            self_info["successor"] = None
+        # dead_successor_data = None
+
+        # if self.is_successor_alive():
+        #     # If successor is alive or this node is the tail republish the "all_layers_loaded" key
+        #     all_layers_loaded = self.get_all_layers_loaded() 
+        #     if all_layers_loaded is not None:
+        #         self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
+        # else:
+        #     # If the successor is dead store "all_layers_loaded": False
+        #     dead_successor_data = self_info.get("successor")
+        #     self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+        #     self_info["successor"] = None
             
         # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
-        # If this node is the head, republish the head key
+        # If this node is the head
         if self._is_head():
+            # Republish the head key
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
-            # Also republish the num_total_layers key
+            
+            # Republish the num_total_layers key
             num_total_layers = self._get_num_total_layers() 
             if num_total_layers:
                     self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
+            
+            all_layers_loaded = self.get_all_layers_loaded() 
+            if all_layers_loaded is not None:
+                self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
         
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
-        return successor_dead
+        # return successor_dead
+        # return dead_successor_data
 
 
 # Example usage to demonstrate the flow

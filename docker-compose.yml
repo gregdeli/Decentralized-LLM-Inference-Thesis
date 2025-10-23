@@ -14,9 +14,8 @@ services:
       resources:
         limits:
           memory: 4G
-          
-    ports:
-      - "5678:5678"
+    # ports:
+    #   - "5678:5678"
 
   intermidiate-server:
     image: decentralized-llm-thesis:latest

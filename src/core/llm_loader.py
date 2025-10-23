@@ -18,7 +18,7 @@ class LLM:
         preprocessor=None,
         config: Dict[str, Any] = None,
         is_instruct_model: bool = False,
-        checkpoint_dir: Path = None,
+        model_path: Path = None,
         kv_cache_initialized: bool = False,
         is_client: bool = True,
         layers_loaded: Tuple[int, int] = None,
@@ -27,7 +27,7 @@ class LLM:
         self.preprocessor = preprocessor
         self.config = config
         self.is_instruct_model = is_instruct_model
-        self.checkpoint_dir = checkpoint_dir
+        self.model_path = model_path
         self.kv_cache_initialized = kv_cache_initialized
         self.prev_generated_seq_length = 0
 
@@ -45,7 +45,7 @@ class LLM:
     @classmethod
     def load(
         cls,
-        checkpoint_dir: Path,
+        model_path: Path,
         is_client: bool = True,
         layers_to_load: Tuple[int, int] = None,
         time_it: bool = False,
@@ -53,17 +53,17 @@ class LLM:
         if time_it:
             start_time = time.perf_counter()
 
-        config_path = checkpoint_dir / "config.json"
+        config_path = model_path / "config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
 
         # Check is the model is instruction tuned
-        is_instruct = is_instruct_model(model_path=checkpoint_dir)
+        is_instruct = is_instruct_model(model_path=model_path)
 
         # torch.backends.cuda.matmul.fp32_precision = "ieee"
 
         # tokenizer = Tokenizer(checkpoint_dir)
-        tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         model = Llama3(config, is_client, layers_to_load)
         model.eval()
@@ -72,7 +72,7 @@ class LLM:
         preprocessor = Preprocessor(tokenizer, device="cpu")
 
         # Load weigths form the safetensors file
-        weights_path = checkpoint_dir / "model.safetensors"
+        weights_path = model_path / "model.safetensors"
         state_dict = load_file(weights_path, device="cpu")
         state_dict = remove_model_prefix(state_dict)
         model.load_state_dict(state_dict, strict=False)
@@ -87,7 +87,7 @@ class LLM:
             preprocessor=preprocessor,
             config=config,
             is_instruct_model=is_instruct,
-            checkpoint_dir=checkpoint_dir,
+            model_path=model_path,
             kv_cache_initialized=False,
             is_client=is_client,
             layers_loaded=layers_to_load,

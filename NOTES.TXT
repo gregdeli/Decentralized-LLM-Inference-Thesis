@@ -36,3 +36,7 @@ Idea Mitsou:
 px opws to allocation sto exo
 
 - Opportunistic takeover: Ama erthei enas polu powerfull antikathista ton pio adynamo kriko.
+
+
+Sofos:
+rich python library gia wraio terminal output (Tables, Boxes, Text) 
