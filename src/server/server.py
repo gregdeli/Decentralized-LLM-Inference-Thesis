@@ -209,9 +209,12 @@ class Server:
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     self.repair_chain(dead_successor_data)
-                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired.")
+                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired...")
                 else:
                     logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
+                    return nodeservice_pb2.InferenceResponse(
+                        error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
+                    )
 
         return final_layer_response
 
@@ -264,9 +267,18 @@ class Server:
             # Recreate successor stub to the new successor
             self._connect_to_successor()
 
-        # Else if there is a backup use it for the repair
+        # Else, try to find a backup node to take over
+        logger.info("Node cannot load layers. Searching for a backup node...")
+        # TODO: Implement backup node discovery
+        # backup_node = self.chain.find_backup_node()
+        # if backup_node:
+        #    logger.info(f"Found backup node {backup_node.id}. Triggering takeover...")
+        #    # TODO: Implement gRPC call to backup node to tell it to
+        #    # take over the 'dead_successor_data'
+        #    # This node would then set its successor to the backup node.
+        #    return
 
-        # Else, nothing can be done
+        # Otherwise, the chain can't be repaired
 
     def _can_load(self, orphaned_layers: Tuple[int, int]) -> bool:
         """Checks if this node can load the orphaned layers of a failed successor"""
@@ -296,8 +308,7 @@ def serve():
     hostname = socket.gethostname()
     grpc_addr = f"{hostname}:{GRPC_PORT}"
 
-    host_maddrs_str = os.getenv("HOST_MADDRS")
-    host_maddrs = [host_maddrs_str]
+    host_maddrs = os.getenv("HOST_MADDRS")
 
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
 
@@ -317,7 +328,7 @@ def serve():
     server_node = Server(
         model_path=model_path,
         num_layers=num_layers,
-        host_maddrs=host_maddrs,
+        host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
     )

@@ -282,20 +282,6 @@ class ChainManager:
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
 
-        # Check if this node's successor is alive
-        # dead_successor_data = None
-
-        # if self.is_successor_alive():
-        #     # If successor is alive or this node is the tail republish the "all_layers_loaded" key
-        #     all_layers_loaded = self.get_all_layers_loaded()
-        #     if all_layers_loaded is not None:
-        #         self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
-        # else:
-        #     # If the successor is dead store "all_layers_loaded": False
-        #     dead_successor_data = self_info.get("successor")
-        #     self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-        #     self_info["successor"] = None
-
         # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 

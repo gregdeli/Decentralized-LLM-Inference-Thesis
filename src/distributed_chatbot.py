@@ -29,7 +29,7 @@ def main():
 
     client = Client(
         model_path=model_path,
-        host_maddrs=host_maddrs,
+        host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
     )
 
