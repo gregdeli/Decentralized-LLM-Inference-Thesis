@@ -88,6 +88,12 @@ class Client:
             )
 
             response = self.head_server_stub.RunLayers(request)
+
+            if response.HasField("error_message"):
+                logger.error(f"Server-side failure: {response.error_message}")
+                logger.error("Aborting generation task. Please try again.")
+                return
+
             x = message_to_tensor(response)
 
             # Run clients final layers
@@ -119,8 +125,8 @@ class Client:
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 break
-            
-            logger.info(f"{self.llm.preprocessor.decode(next_token)}") # Debugging
+
+            logger.info(f"{self.llm.preprocessor.decode(next_token)}")  # Debugging
 
             generated_ids.append(next_token)
             input_tensor = next_token

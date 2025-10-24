@@ -37,13 +37,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # Run the actual inference logic
         final_layer_response = self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos)
 
-        # Serialize the output tensor into a response
-        return nodeservice_pb2.InferenceResponse(
-            tensor_data=final_layer_response.tensor_data,
-            tensor_shape=final_layer_response.tensor_shape,
-            dtype=final_layer_response.dtype,
-        )
-    
+        return final_layer_response
+
     def Check(self, request, context):
-        """ If the server is running it will return an Empty response"""
+        """If the server is running it will return an Empty response"""
         return nodeservice_pb2.Empty()

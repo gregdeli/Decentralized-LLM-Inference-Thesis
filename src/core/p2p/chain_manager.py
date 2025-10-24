@@ -13,7 +13,7 @@ TOTAL_LAYERS_KEY = "num_total_layers"
 ALL_LAYERS_KEY = "all_layers_loaded"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0
+EXPIRATION_S = 60.0
 HEARTBEAT_INTERVAL_S = EXPIRATION_S / 2.0
 
 DIGITS_SHOW = 12
@@ -33,7 +33,7 @@ class ChainManager:
 
         :param:
           self_info: A dictionary with the server's data (e.g., {'address': 'head-server:5001'}).
-          num_layers: The number of Transformers Layers the node can load. 
+          num_layers: The number of Transformers Layers the node can load.
           num_total_layers: The number of total Transformer Layers of the LLM.
         :return: The updated info dictionary for this server.
         """
@@ -46,10 +46,10 @@ class ChainManager:
         else:
             logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
             self._join_existing_chain(self_info, max_num_layers, num_total_layers)
-        
+
         logger.info(f"Self Info: {self._get_self_info()}")
 
-    def _form_initial_chain(self, self_info: Dict[str, Any], max_num_layers:int, num_total_layers: int):
+    def _form_initial_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
@@ -65,18 +65,18 @@ class ChainManager:
         end_idx = max_num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
-        
+
         # Update the ALL_LAYERS_KEY if all layers have been loaded
         if end_idx == num_total_layers - 1:
             self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
-        self_info["layers_loaded"] = (0, end_idx)            
+        self_info["layers_loaded"] = (0, end_idx)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, EXPIRATION_S)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
-    def _join_existing_chain(self, self_info: Dict[str, Any], max_num_layers:int, num_total_layers: int):
+    def _join_existing_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
         tail_id = self.dht.get(TAIL_KEY)
@@ -93,15 +93,15 @@ class ChainManager:
         start_idx = tail_info["layers_loaded"][1] + 1
 
         # If all the layers have already been loaded then dont add this node to the chain
-        # and set it as a backup node 
+        # and set it as a backup node
         if start_idx >= num_total_layers:
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
-            
+
             self_info["is_backup"] = True
             self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
             self.dht.store(self_server_key, self_info, EXPIRATION_S)
-            return        
+            return
 
         end_idx = start_idx + max_num_layers - 1
         if end_idx >= num_total_layers:
@@ -115,11 +115,7 @@ class ChainManager:
         self_layers_loaded = (start_idx, end_idx)
 
         # Update the old tail to point to the new server node
-        tail_info["successor"] = {
-            "id": self.node_id,
-            "address": self_info["address"],
-            "layers_loaded": self_layers_loaded
-        }
+        tail_info["successor"] = {"id": self.node_id, "address": self_info["address"], "layers_loaded": self_layers_loaded}
         self.dht.store(tail_server_key, tail_info, EXPIRATION_S)
         logger.info(f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}.")
 
@@ -133,7 +129,7 @@ class ChainManager:
 
         logger.info(f"Previous Tail Info: {tail_info}")
 
-    def get_head_server_info(self, attempts:int = 5) -> Optional[Dict[str, Any]]:
+    def get_head_server_info(self, attempts: int = 5) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
@@ -149,7 +145,7 @@ class ChainManager:
 
         head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
 
-        # If the head server doesn't hold all the layers, 
+        # If the head server doesn't hold all the layers,
         # retry until its successor is not None
         for attempt in range(attempts):
             logger.info(f"Attempting to get head server info... (Attempt {attempt + 1})")
@@ -173,7 +169,7 @@ class ChainManager:
         if not self_info:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
-    
+
     def _get_num_total_layers(self) -> int:
         num_total_layers = self.dht.get(TOTAL_LAYERS_KEY)
         if not num_total_layers:
@@ -184,14 +180,14 @@ class ChainManager:
         """Get the layers_loaded tuple for this node from the DHT"""
         self_info = self._get_self_info()
         return self_info.get("layers_loaded")
-    
-    def get_all_layers_loaded(self) -> Union[bool, None]:
-            return self.dht.get(ALL_LAYERS_KEY)
 
-    def get_successor_address(self, attempts:int = 5) -> Optional[str]:
+    def get_all_layers_loaded(self) -> Union[bool, None]:
+        return self.dht.get(ALL_LAYERS_KEY)
+
+    def get_successor_address(self, attempts: int = 5) -> Optional[str]:
         if self.is_tail() or self.is_backup():
             return None
-        
+
         for attempt in range(attempts):
             logger.info(f"Attempting to get successor address info... (Attempt {attempt + 1})")
             self_info = self._get_self_info()
@@ -203,20 +199,19 @@ class ChainManager:
                 time.sleep(2)
 
         return None
-    
+
     def _is_head(self) -> bool:
         """Check if this node is the head of the server chain"""
         head_id = self.dht.get(HEAD_KEY)
         if not head_id:
-            return False 
+            return False
         return head_id == self.node_id
 
     def is_tail(self) -> bool:
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
             raise RuntimeError("Tail server not found")
-        
-        self_info = self._get_self_info()
+
         num_total_layers = self._get_num_total_layers()
         layers_loaded = self.get_layers_loaded()
 
@@ -225,10 +220,10 @@ class ChainManager:
 
         return False
 
-    def is_backup(self) -> bool: 
+    def is_backup(self) -> bool:
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
-    
+
     def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
         """
         Gets the data *of this node's successor* from the DHT.
@@ -246,22 +241,39 @@ class ChainManager:
         if not successor_info:
             logger.warning(f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired.")
             return None
-        
+
         successor_2_data = successor_info.get("successor")
         if not successor_2_data:
             logger.warning(f"Node {successor_data.get('id')[:DIGITS_SHOW]} has no successor data.")
             return None
-        
+
         # successor_2_id = successor_2_data.get("id")
         successor_data["successor"] = successor_2_data
 
         return successor_data
-    
-    def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
-        pass
-    
 
-    def republish_keys(self): #-> Optional[Dict[str, Any]]:
+    def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
+        """
+        Updates the DHT after a node has taken over the layers of a failed successor.
+
+        :param layers_loaded: The new, expanded tuple of layers this node now holds.
+        :param successor_2_data: The data dict of the new successor (the old successor's successor).
+                                 Can be None if the failed node was the tail.
+        """
+        logger.info(f"Repairing chain on DHT. New layers: {layers_loaded}, New successor: {successor_2_data}")
+
+        # Update this node's info
+        self_info = self._get_self_info()
+        self_info["layers_loaded"] = layers_loaded
+        self_info["successor"] = successor_2_data
+
+        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(server_key, self_info, EXPIRATION_S)
+
+        # Set the "all_layers_loaded" key to True
+        self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
+
+    def republish_keys(self):
         """
         Periodically called to maintain the node's presence on the DHT and check chain integrity.
 
@@ -275,7 +287,7 @@ class ChainManager:
 
         # if self.is_successor_alive():
         #     # If successor is alive or this node is the tail republish the "all_layers_loaded" key
-        #     all_layers_loaded = self.get_all_layers_loaded() 
+        #     all_layers_loaded = self.get_all_layers_loaded()
         #     if all_layers_loaded is not None:
         #         self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
         # else:
@@ -283,7 +295,7 @@ class ChainManager:
         #     dead_successor_data = self_info.get("successor")
         #     self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
         #     self_info["successor"] = None
-            
+
         # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
@@ -291,20 +303,20 @@ class ChainManager:
         if self._is_head():
             # Republish the head key
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
-            
+
             # Republish the num_total_layers key
-            num_total_layers = self._get_num_total_layers() 
+            num_total_layers = self._get_num_total_layers()
             if num_total_layers:
-                    self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
-            
-            all_layers_loaded = self.get_all_layers_loaded() 
+                self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
+
+            all_layers_loaded = self.get_all_layers_loaded()
             if all_layers_loaded is not None:
                 self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
-        
+
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
         # return successor_dead
         # return dead_successor_data
