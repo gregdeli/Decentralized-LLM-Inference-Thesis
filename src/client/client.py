@@ -1,8 +1,6 @@
 """Main client application logic"""
 
 import logging
-import os
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -22,11 +20,11 @@ class Client:
     def __init__(
         self,
         model_path: Path,
-        host_maddrs: List[str] = "/ip4/0.0.0.0/tcp/4001",
+        host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
         time_it: bool = False,
     ) -> None:
-        self.dht = DHTManager(host_maddrs=[host_maddrs], initial_peers=initial_peers)
+        self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
@@ -88,39 +86,25 @@ class Client:
             )
 
             response = self.head_server_stub.RunLayers(request)
+
+            if response.HasField("error_message"):
+                logger.error(f"Server-side failure: {response.error_message}")
+                logger.error("Aborting generation task. Please try again.")
+                return
+
             x = message_to_tensor(response)
 
             # Run clients final layers
             logits = self.model.forward_client_final(x)
 
-            logits = logits[:, -1, :]
-
-            if top_p > 0.0:
-                # Sort logits and compute probabilities
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-
-                # Find the indices to remove (those outside the nucleus)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                # Shift the indices to the right to keep the first one that exceeds top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-
-                # Create a mask to set the logits of tokens to remove to -inf
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = -float("Inf")
-
-            if temperature > 0.0:
-                probs = torch.softmax(logits / temperature, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
-            else:
-                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+            # Sample the next token
+            next_token = self._sample_logits(logits, temperature, top_p)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 break
-            
-            logger.info(f"{self.llm.preprocessor.decode(next_token)}") # Debugging
+
+            logger.info(f"{self.llm.preprocessor.decode(next_token)}")  # Debugging
 
             generated_ids.append(next_token)
             input_tensor = next_token
@@ -131,3 +115,31 @@ class Client:
         all_generated_ids = torch.cat(generated_ids, dim=1)
 
         return self.llm.preprocessor.decode(all_generated_ids)
+
+    def _sample_logits(self, logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
+        """Applies temperature and top-p (nucleus) sampling to logits."""
+        logits = logits[:, -1, :]
+
+        if top_p > 0.0:
+            # Sort logits and compute probabilities
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+
+            # Find the indices to remove (those outside the nucleus)
+            sorted_indices_to_remove = cumulative_probs > top_p
+            # Shift the indices to the right to keep the first one that exceeds top_p
+            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+            sorted_indices_to_remove[..., 0] = 0
+
+            # Create a mask to set the logits of tokens to remove to -inf
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            logits[indices_to_remove] = -float("Inf")
+
+        if temperature > 0.0:
+            probs = torch.softmax(logits / temperature, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+        else:
+            # Greedy decoding
+            next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+        return next_token

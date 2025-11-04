@@ -37,5 +37,6 @@ message InferenceResponse {
   bytes tensor_data = 1;
   repeated int64 tensor_shape = 2;
   string dtype = 3;  
+  optional string error_message = 4;
 }
 

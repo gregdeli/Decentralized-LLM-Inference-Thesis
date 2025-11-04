@@ -94,7 +94,7 @@ class Server:
 
     def _mem_to_num_layers(self, bytes_per_param: int) -> int:
         """
-        Determine the number of layers that can be loaded load based the in memory size 
+        Determine the number of layers that can be loaded load based the in memory size
         of a Transformer layer and the available memory of the server node.
 
         Greedy Layer Allocation: Load as many layers as memory allows
@@ -200,49 +200,56 @@ class Server:
             seq_length=seq_length,
             input_pos=input_pos.item() if input_pos is not None else None,
         )
-        final_layer_response = self.successor_stub.RunLayers(request)
-        return final_layer_response
-    
-    def _connect_to_successor(self):
-        """
-        Initializes the gRPC stub to connect to this node's successor
-        """
-        if self.successor_stub is not None:
-            logger.info("Successor stub is already initialized.")
-            return
 
-        if self.chain.is_tail():
-            logger.info("This node is the tail. No successor to connect to.")
+        try:
+            final_layer_response = self.successor_stub.RunLayers(request, timeout=2)
+        except grpc.RpcError as e:
+            if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                logger.warning(f"Successor failure detected during inference. Retrieving its data before it expires.")  # Debugging
+                dead_successor_data = self.chain.get_failed_successor_data()
+                if dead_successor_data:
+                    self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                    self.repair_chain(dead_successor_data)
+                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired...")
+                else:
+                    logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
+                    return nodeservice_pb2.InferenceResponse(
+                        error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
+                    )
+
+        return final_layer_response
+
+    def _connect_to_successor(self):
+        """Establishes a gRPC connection to the successor node."""
+        if self.chain.is_tail() or self.chain.is_backup():
+            self.successor_stub = None
             return
 
         successor_addr = self.chain.get_successor_address()
         if not successor_addr:
-            logger.warning("Could not find successor address in DHT. Cannot connect.")
+            logger.warning("Successor address not found.")
+            self.successor_stub = None
             return
 
         try:
-            # logger.info(f"Attempting to connect to successor at {successor_addr}...")
             channel = grpc.insecure_channel(successor_addr)
             grpc.channel_ready_future(channel).result(timeout=10)
-
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             logger.info(f"Connection to successor: {successor_addr} established.")
-
         except grpc.FutureTimeoutError:
-            logger.error(f"Connection to {successor_addr} timed out. Stub not created.")
-            self.successor_stub = None  
-
+            logger.error(f"Connection to {successor_addr} timed out.")
+            self.successor_stub = None
         except grpc.RpcError as e:
             logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
-            self.successor_stub = None  
-    
+            self.successor_stub = None
+
     def repair_chain(self, dead_successor_data: Dict[str, Any]):
         """
         Method that repairs the inference chain after detecting this node's successor is dead.
         To repair the chain:
         1. If this node can hold the orphaned layers of the failed node, it loads them.
         2. Else, if a backup node is available it prompts it to take the place of the failed node.
-        3. Otherwise, the chain can't be repaired. 
+        3. Otherwise, the chain can't be repaired.
         """
         orphaned_layers = dead_successor_data.get("layers_loaded")
         successor_2_data = dead_successor_data.get("successor")
@@ -252,18 +259,28 @@ class Server:
         if self._can_load(orphaned_layers):
             layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
 
-            logger.info(f"Loading orphaned layers {layers_to_load}...")
-            self.llm = LLM.load(
-                model_path=self.model_path,
-                is_client=False,
-                layers_to_load=layers_to_load  
-            )
+            self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
+            self.model = self.llm.model
 
-            logger.info(f"Repairing the chain...")
-            self.chain.repair(self.llm.layers_loaded, successor_2_data)
-            
-        
-    
+            # Update the DHT with this nodes new info
+            self.chain.repair(layers_to_load, successor_2_data)
+
+            # Recreate successor stub to the new successor
+            self._connect_to_successor()
+
+        # Else, try to find a backup node to take over
+        logger.info("Node cannot load layers. Searching for a backup node...")
+        # TODO: Implement backup node discovery
+        # backup_node = self.chain.find_backup_node()
+        # if backup_node:
+        #    logger.info(f"Found backup node {backup_node.id}. Triggering takeover...")
+        #    # TODO: Implement gRPC call to backup node to tell it to
+        #    # take over the 'dead_successor_data'
+        #    # This node would then set its successor to the backup node.
+        #    return
+
+        # Otherwise, the chain can't be repaired
+
     def _can_load(self, orphaned_layers: Tuple[int, int]) -> bool:
         """Checks if this node can load the orphaned layers of a failed successor"""
         max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
@@ -273,12 +290,12 @@ class Server:
         num_orphaned_layers = orphaned_layers[1] - orphaned_layers[0] + 1
         if max_num_layers < num_orphaned_layers:
             return False
-        
+
         return True
 
 
-
 GRPC_PORT = 5001
+
 
 def serve():
     """The main function to start the server."""
@@ -292,8 +309,7 @@ def serve():
     hostname = socket.gethostname()
     grpc_addr = f"{hostname}:{GRPC_PORT}"
 
-    host_maddrs_str = os.getenv("HOST_MADDRS")
-    host_maddrs = [host_maddrs_str]
+    host_maddrs = os.getenv("HOST_MADDRS")
 
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
 
@@ -313,7 +329,7 @@ def serve():
     server_node = Server(
         model_path=model_path,
         num_layers=num_layers,
-        host_maddrs=host_maddrs,
+        host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
     )
@@ -326,24 +342,9 @@ def serve():
     server.start()
     logger.info("Server is ready to accept grpc connections.")
 
-    # Na to valw se method
-    # Initialize the successor stub 
-    # if server_node.successor_stub is None and not server_node.chain.is_tail():
-    #     successor_addr = server_node.chain.get_successor_address()
-    #     if not successor_addr:
-    #         logger.warning("Successor address not found.")
-    #     try:
-    #         channel = grpc.insecure_channel(successor_addr)
-    #         grpc.channel_ready_future(channel).result(timeout=10)
-
-    #         server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-    #         logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
-    #     except grpc.FutureTimeoutError:
-    #         logger.error(f"Connection to {successor_addr} timed out.")
-    #     except grpc.RpcError as e:
-    #         logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
-    server_node._connect_to_successor()
-
+    # Initialize the successor stub
+    if server_node.successor_stub is None:
+        server_node._connect_to_successor()
 
     def _dht_heartbeat_task(server_node: Server):
         """Background task to keep DHT keys alive."""
@@ -357,14 +358,14 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup() or server_node.chain.is_tail():
                 continue
-            
+
             # Perform the health check on the successor
             try:
                 server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
-                logger.info(f"Successor is ALIVE.") # Debugging
+                logger.info(f"Successor is ALIVE.")  # Debugging
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                    logger.warning(f"Successor is UNAVAILABLE. Retrieving data before it expires.") # Debugging
+                    logger.warning(f"Successor is UNAVAILABLE. Retrieving its data before it expires.")  # Debugging
                     dead_successor_data = server_node.chain.get_failed_successor_data()
                     if dead_successor_data:
                         server_node.successor_stub = None
@@ -389,7 +390,6 @@ def serve():
 
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
-
 
     server.wait_for_termination()
 
