@@ -258,7 +258,23 @@ class ChainManager:
         return successor_data
     
     def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
-        pass
+        """
+        Repairs the server chain by updating this node's new layers loaded and successor data.
+        """
+        new_self_info = self._get_self_info()
+
+        new_self_info["layers_loaded"] = layers_loaded
+
+        new_self_info["successor"] = successor_2_data
+
+        logger.info(f"New self_info: {new_self_info}")
+
+        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(server_key, new_self_info, EXPIRATION_S)
+
+        # all_layer_loaded -> True
+        self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
+
     
 
     def republish_keys(self): #-> Optional[Dict[str, Any]]:
@@ -269,20 +285,6 @@ class ChainManager:
         """
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
-
-        # Check if this node's successor is alive
-        # dead_successor_data = None
-
-        # if self.is_successor_alive():
-        #     # If successor is alive or this node is the tail republish the "all_layers_loaded" key
-        #     all_layers_loaded = self.get_all_layers_loaded() 
-        #     if all_layers_loaded is not None:
-        #         self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
-        # else:
-        #     # If the successor is dead store "all_layers_loaded": False
-        #     dead_successor_data = self_info.get("successor")
-        #     self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-        #     self_info["successor"] = None
             
         # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
@@ -306,8 +308,6 @@ class ChainManager:
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
         
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
-        # return successor_dead
-        # return dead_successor_data
 
 
 # Example usage to demonstrate the flow

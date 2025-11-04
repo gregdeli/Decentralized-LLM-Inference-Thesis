@@ -179,6 +179,7 @@ class Server:
         start_time = time.perf_counter()
 
         logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
+
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
         end_time = time.perf_counter()
@@ -202,6 +203,39 @@ class Server:
         final_layer_response = self.successor_stub.RunLayers(request)
         return final_layer_response
     
+    def _connect_to_successor(self):
+        """
+        Initializes the gRPC stub to connect to this node's successor
+        """
+        if self.successor_stub is not None:
+            logger.info("Successor stub is already initialized.")
+            return
+
+        if self.chain.is_tail():
+            logger.info("This node is the tail. No successor to connect to.")
+            return
+
+        successor_addr = self.chain.get_successor_address()
+        if not successor_addr:
+            logger.warning("Could not find successor address in DHT. Cannot connect.")
+            return
+
+        try:
+            # logger.info(f"Attempting to connect to successor at {successor_addr}...")
+            channel = grpc.insecure_channel(successor_addr)
+            grpc.channel_ready_future(channel).result(timeout=10)
+
+            self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+            logger.info(f"Connection to successor: {successor_addr} established.")
+
+        except grpc.FutureTimeoutError:
+            logger.error(f"Connection to {successor_addr} timed out. Stub not created.")
+            self.successor_stub = None  
+
+        except grpc.RpcError as e:
+            logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
+            self.successor_stub = None  
+    
     def repair_chain(self, dead_successor_data: Dict[str, Any]):
         """
         Method that repairs the inference chain after detecting this node's successor is dead.
@@ -218,13 +252,15 @@ class Server:
         if self._can_load(orphaned_layers):
             layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
 
+            logger.info(f"Loading orphaned layers {layers_to_load}...")
             self.llm = LLM.load(
                 model_path=self.model_path,
                 is_client=False,
                 layers_to_load=layers_to_load  
             )
 
-            # self.chain.repair()
+            logger.info(f"Repairing the chain...")
+            self.chain.repair(self.llm.layers_loaded, successor_2_data)
             
         
     
@@ -292,20 +328,21 @@ def serve():
 
     # Na to valw se method
     # Initialize the successor stub 
-    if server_node.successor_stub is None and not server_node.chain.is_tail():
-        successor_addr = server_node.chain.get_successor_address()
-        if not successor_addr:
-            logger.warning("Successor address not found.")
-        try:
-            channel = grpc.insecure_channel(successor_addr)
-            grpc.channel_ready_future(channel).result(timeout=10)
+    # if server_node.successor_stub is None and not server_node.chain.is_tail():
+    #     successor_addr = server_node.chain.get_successor_address()
+    #     if not successor_addr:
+    #         logger.warning("Successor address not found.")
+    #     try:
+    #         channel = grpc.insecure_channel(successor_addr)
+    #         grpc.channel_ready_future(channel).result(timeout=10)
 
-            server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-            logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
-        except grpc.FutureTimeoutError:
-            logger.error(f"Connection to {successor_addr} timed out.")
-        except grpc.RpcError as e:
-            logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
+    #         server_node.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+    #         logger.info(f"Connection to successor: {successor_addr} established.")  # Debugging
+    #     except grpc.FutureTimeoutError:
+    #         logger.error(f"Connection to {successor_addr} timed out.")
+    #     except grpc.RpcError as e:
+    #         logger.error(f"A gRPC error occurred while connecting: {e.code().name}")
+    server_node._connect_to_successor()
 
 
     def _dht_heartbeat_task(server_node: Server):
@@ -330,7 +367,8 @@ def serve():
                     logger.warning(f"Successor is UNAVAILABLE. Retrieving data before it expires.") # Debugging
                     dead_successor_data = server_node.chain.get_failed_successor_data()
                     if dead_successor_data:
-                        server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                        server_node.successor_stub = None
+                        server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) # "all_layers_loaded" -> False
                         server_node.repair_chain(dead_successor_data)
                     else:
                         logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
