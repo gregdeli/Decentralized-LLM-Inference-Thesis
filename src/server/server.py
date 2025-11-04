@@ -40,6 +40,7 @@ class Server:
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
+        self._repair_lock = threading.Lock()
 
         # Memory
         self.process = psutil.Process(os.getpid())
@@ -205,11 +206,12 @@ class Server:
             final_layer_response = self.successor_stub.RunLayers(request, timeout=2)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                logger.warning(f"Successor failure detected during inference. Retrieving its data before it expires.")  # Debugging
+                logger.warning(f"Successor failure detected during INFERENCE.")  # Debugging
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    self.repair_chain(dead_successor_data)
+                    # self.repair_chain(dead_successor_data)
+                    self.repair_chain()
                     return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired...")
                 else:
                     logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
@@ -243,7 +245,7 @@ class Server:
             logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
             self.successor_stub = None
 
-    def repair_chain(self, dead_successor_data: Dict[str, Any]):
+    def repair_chain(self):#, dead_successor_data: Dict[str, Any]):
         """
         Method that repairs the inference chain after detecting this node's successor is dead.
         To repair the chain:
@@ -251,33 +253,55 @@ class Server:
         2. Else, if a backup node is available it prompts it to take the place of the failed node.
         3. Otherwise, the chain can't be repaired.
         """
-        orphaned_layers = dead_successor_data.get("layers_loaded")
-        successor_2_data = dead_successor_data.get("successor")
-        logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor Data: {successor_2_data}")
+        with self._repair_lock:
+            # Re-validate the failure. Another thread could have already repaired the chain
+            if self.successor_stub is not None:
+                try:
+                    self.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    logger.info("Successor is ALIVE. Aborting unnecessary repair...")
+                    return
+                except grpc.RpcError as e:
+                    logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
 
-        # Check if this node has enough memory to load the orphaned layers
-        if self._can_load(orphaned_layers):
-            layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
 
-            self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
-            self.model = self.llm.model
+            dead_successor_data = self.chain.get_failed_successor_data()
 
-            # Update the DHT with this nodes new info
-            self.chain.repair(layers_to_load, successor_2_data)
+            if not dead_successor_data:
+                logger.error("Could not retrieve successor data from DHT! Chain is broken.")
+                return
+            
+            self.successor_stub = None  
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) # 'all_layers_loaded' -> False
 
-            # Recreate successor stub to the new successor
-            self._connect_to_successor()
+            # Repair
+            orphaned_layers = dead_successor_data.get("layers_loaded")
+            successor_2_data = dead_successor_data.get("successor")
+            logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor Data: {successor_2_data}")
 
-        # Else, try to find a backup node to take over
-        logger.info("Node cannot load layers. Searching for a backup node...")
-        # TODO: Implement backup node discovery
-        # backup_node = self.chain.find_backup_node()
-        # if backup_node:
-        #    logger.info(f"Found backup node {backup_node.id}. Triggering takeover...")
-        #    # TODO: Implement gRPC call to backup node to tell it to
-        #    # take over the 'dead_successor_data'
-        #    # This node would then set its successor to the backup node.
-        #    return
+            # Check if this node has enough memory to load the orphaned layers
+            if self._can_load(orphaned_layers):
+                layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
+
+                self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
+                self.model = self.llm.model
+
+                # Update the DHT with this nodes new info
+                self.chain.repair(layers_to_load, successor_2_data)
+
+                # Recreate successor stub to the new successor
+                self._connect_to_successor()
+
+            # Else, try to find a backup node to take over
+            else:
+                logger.info("Cannot load layers. Searching for a backup node...")
+                # TODO: Implement backup node discovery
+                # backup_node = self.chain.find_backup_node()
+                # if backup_node:
+                #    logger.info(f"Found backup node {backup_node.id}. Triggering takeover...")
+                #    # TODO: Implement gRPC call to backup node to tell it to
+                #    # take over the 'dead_successor_data'
+                #    # This node would then set its successor to the backup node.
+                #    return
 
         # Otherwise, the chain can't be repaired
 
@@ -365,15 +389,8 @@ def serve():
                 logger.info(f"Successor is ALIVE.")  # Debugging
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                    logger.warning(f"Successor is UNAVAILABLE. Retrieving its data before it expires.")  # Debugging
-                    dead_successor_data = server_node.chain.get_failed_successor_data()
-                    if dead_successor_data:
-                        server_node.successor_stub = None
-                        server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) # "all_layers_loaded" -> False
-                        server_node.repair_chain(dead_successor_data)
-                    else:
-                        logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
-
+                    logger.warning(f"Successor failure detected during HEARTBEAT CHECK.")  # Debugging
+                    server_node.repair_chain()
                 else:
                     logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
                     server_node.successor_stub = None
