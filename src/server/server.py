@@ -203,7 +203,7 @@ class Server:
         )
 
         try:
-            final_layer_response = self.successor_stub.RunLayers(request, timeout=2)
+            final_layer_response = self.successor_stub.RunLayers(request, timeout=4)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")  # Debugging
@@ -245,7 +245,7 @@ class Server:
             logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
             self.successor_stub = None
 
-    def repair_chain(self):#, dead_successor_data: Dict[str, Any]):
+    def repair_chain(self):  # , dead_successor_data: Dict[str, Any]):
         """
         Method that repairs the inference chain after detecting this node's successor is dead.
         To repair the chain:
@@ -263,15 +263,14 @@ class Server:
                 except grpc.RpcError as e:
                     logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
 
-
             dead_successor_data = self.chain.get_failed_successor_data()
 
             if not dead_successor_data:
                 logger.error("Could not retrieve successor data from DHT! Chain is broken.")
                 return
-            
-            self.successor_stub = None  
-            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) # 'all_layers_loaded' -> False
+
+            self.successor_stub = None
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)  # 'all_layers_loaded' -> False
 
             # Repair
             orphaned_layers = dead_successor_data.get("layers_loaded")
@@ -367,8 +366,7 @@ def serve():
     logger.info("Server is ready to accept grpc connections.")
 
     # Initialize the successor stub
-    if server_node.successor_stub is None:
-        server_node._connect_to_successor()
+    server_node._connect_to_successor()
 
     def _dht_heartbeat_task(server_node: Server):
         """Background task to keep DHT keys alive."""
@@ -385,8 +383,9 @@ def serve():
 
             # Perform the health check on the successor
             try:
-                server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
-                logger.info(f"Successor is ALIVE.")  # Debugging
+                if server_node.successor_stub is not None:
+                    server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    logger.info(f"Successor is ALIVE.")  # Debugging
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                     logger.warning(f"Successor failure detected during HEARTBEAT CHECK.")  # Debugging

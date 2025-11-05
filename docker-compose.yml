@@ -39,7 +39,6 @@ services:
     command: python server/server.py
     # command: sleep infinity
     environment:
-      # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - NUM_LAYERS=6
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -49,7 +48,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 3G
     depends_on:
       - head-server
       - intermidiate-server
@@ -61,7 +60,6 @@ services:
     # command: python server/server.py
     command: sleep infinity
     environment:
-      # - MODEL_PATH=/models/Llama-3.2-1B
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - NUM_LAYERS=6
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
