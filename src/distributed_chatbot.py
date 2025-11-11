@@ -33,21 +33,22 @@ def main():
         initial_peers=initial_peers,
     )
 
-    # prompt = "The name of the capital of France is"
-
     try:
         while True:
             prompt = input("\nEnter prompt: ")
 
             logger.info(f"Initiating text generation...")
-            # logger.info(f"\n--------Prompt--------\n{prompt}")
-            text = client.generate(prompt, max_new_tokens=100)
+            token_generator = client.generate(prompt, max_new_tokens=100, stream=True)
 
-            if not text:
+            if not token_generator:
                 input("Press Enter to continue...")
                 continue
 
-            print(f"--------Response--------\n{text}")
+            print(f"\n---------Response---------")
+            for token in token_generator:
+                print(token, end="", flush=True)
+
+            print("\n")
 
     except KeyboardInterrupt:
         print("\nExiting...")  # Ctrl+C

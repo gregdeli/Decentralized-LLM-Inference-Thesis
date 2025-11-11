@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Dict, Any, Union, List, Optional, Tuple
+from typing import Dict, Any, Union, List, Optional, Tuple, Iterator
 from pathlib import Path
 import torch
 from safetensors.torch import load_file
@@ -103,7 +103,7 @@ class LLM:
         top_p: float = 0.9,
         stream: bool = False,
         time_it: bool = False,
-    ) -> Union[str, List[str], iter]:
+    ) -> Union[str, Iterator[str]]:
 
         prompt = self.apply_chat_template(prompt)
 
@@ -153,7 +153,7 @@ class LLM:
         temperature: float = 0.6,
         top_p: float = 0.9,
         time_it: bool = False,
-    ):
+    ) -> str:
         if time_it:
             gen_start = time.perf_counter()
 
@@ -163,28 +163,8 @@ class LLM:
 
         for _ in range(max_new_tokens):
             logits = self.model(input, input_pos=input_pos)
-            logits = logits[:, -1, :]
 
-            if top_p > 0.0:
-                # Sort logits and compute probabilities
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-
-                # Find the indices to remove (those outside the nucleus)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                # Shift the indices to the right to keep the first one that exceeds top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-
-                # Create a mask to set the logits of tokens to remove to -inf
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = -float("Inf")
-
-            if temperature > 0.0:
-                probs = torch.softmax(logits / temperature, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
-            else:
-                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+            next_token = self.sample_logits(logits, temperature, top_p)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
@@ -208,7 +188,7 @@ class LLM:
         max_new_tokens: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
-    ):
+    ) -> Iterator[str]:
         """A generator function that yields decoded string chunks."""
         prompt_length = input_ids.size(1)
         input = input_ids
@@ -216,28 +196,8 @@ class LLM:
 
         for i in range(max_new_tokens):
             logits = self.model(input, input_pos=input_pos)
-            logits = logits[:, -1, :]
-
-            if top_p > 0.0:
-                # Sort logits and compute probabilities
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-
-                # Find the indices to remove (those outside the nucleus)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                # Shift the indices to the right to keep the first one that exceeds top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-
-                # Create a mask to set the logits of tokens to remove to -inf
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = -float("Inf")
-
-            if temperature > 0.0:
-                probs = torch.softmax(logits / temperature, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1)
-            else:
-                next_token = torch.argmax(logits, dim=-1, keepdim=True)
+            
+            next_token = self.sample_logits(logits, temperature, top_p)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
@@ -248,7 +208,6 @@ class LLM:
             yield decoded_token
 
             input = next_token
-            # The position is `prompt_length` + tokens generated so far (which is i)
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
 
@@ -268,6 +227,34 @@ class LLM:
             )
         else:
             return prompt
+    
+    def sample_logits(self, logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
+        """Applies temperature and top-p (nucleus) sampling to logits."""
+        logits = logits[:, -1, :]
+
+        if top_p > 0.0:
+            # Sort logits and compute probabilities
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+
+            # Find the indices to remove (those outside the nucleus)
+            sorted_indices_to_remove = cumulative_probs > top_p
+            # Shift the indices to the right to keep the first one that exceeds top_p
+            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+            sorted_indices_to_remove[..., 0] = 0
+
+            # Create a mask to set the logits of tokens to remove to -inf
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            logits[indices_to_remove] = -float("Inf")
+
+        if temperature > 0.0:
+            probs = torch.softmax(logits / temperature, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+        else:
+            # Greedy decoding
+            next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+        return next_token
 
 
 class Preprocessor:

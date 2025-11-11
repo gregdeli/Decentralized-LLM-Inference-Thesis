@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 
 import grpc
 import torch
@@ -50,7 +50,7 @@ class Client:
         top_p: float = 0.9,
         stream: bool = False,
         time_it: bool = False,
-    ) -> Union[str, List[str], iter]:
+    ) -> Union[str, Iterator[str]]:
 
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
@@ -70,14 +70,31 @@ class Client:
                 f"The combined prompt and max_new_tokens length ({max_returned_tokens}) exceeds "
                 f"the model's maximum sequence length of {self.model.max_seq_length}."
             )
+        
+        if stream:
+            return self._generate_stream(prompt_length, input_ids, max_new_tokens, max_returned_tokens, temperature, top_p, time_it)
 
+        # If not streaming the output
+        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, max_returned_tokens, temperature, top_p, time_it)
+        return decoded_text
+
+    @torch.no_grad()
+    def _generate_fn(
+        self,
+        prompt_length: int,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        max_returned_tokens: int,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
+        time_it: bool = False,
+    ) -> str:
         generated_ids = []
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
-        for i in range(max_new_tokens):
+        for _ in range(max_new_tokens):
             # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
-
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
             # Call the remote server chain
@@ -98,13 +115,11 @@ class Client:
             logits = self.model.forward_client_final(x)
 
             # Sample the next token
-            next_token = self._sample_logits(logits, temperature, top_p)
+            next_token = self.llm.sample_logits(logits, temperature, top_p)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 break
-
-            logger.info(f"{self.llm.preprocessor.decode(next_token)}")  # Debugging
 
             generated_ids.append(next_token)
             input_tensor = next_token
@@ -115,31 +130,54 @@ class Client:
         all_generated_ids = torch.cat(generated_ids, dim=1)
 
         return self.llm.preprocessor.decode(all_generated_ids)
+    
+    @torch.no_grad()
+    def _generate_stream(
+        self,
+        prompt_length: int,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        max_returned_tokens: int,
+        temperature: float = 0.6,
+        top_p: float = 0.9,
+        time_it: bool = False,
+    ) -> Iterator[str]:
+        input_tensor = input_ids
+        input_pos = None
+        seq_length = prompt_length
+        for i in range(max_new_tokens):
+            # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
+            x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
-    def _sample_logits(self, logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
-        """Applies temperature and top-p (nucleus) sampling to logits."""
-        logits = logits[:, -1, :]
+            # Call the remote server chain
+            request = tensor_to_request(
+                x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
+            )
 
-        if top_p > 0.0:
-            # Sort logits and compute probabilities
-            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-            cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+            response = self.head_server_stub.RunLayers(request)
 
-            # Find the indices to remove (those outside the nucleus)
-            sorted_indices_to_remove = cumulative_probs > top_p
-            # Shift the indices to the right to keep the first one that exceeds top_p
-            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-            sorted_indices_to_remove[..., 0] = 0
+            if response.HasField("error_message"):
+                logger.error(f"Server-side failure: {response.error_message}")
+                logger.error("Aborting generation task. Please try again.")
+                return
 
-            # Create a mask to set the logits of tokens to remove to -inf
-            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-            logits[indices_to_remove] = -float("Inf")
+            x = message_to_tensor(response)
 
-        if temperature > 0.0:
-            probs = torch.softmax(logits / temperature, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)
-        else:
-            # Greedy decoding
-            next_token = torch.argmax(logits, dim=-1, keepdim=True)
+            # Run clients final layers
+            logits = self.model.forward_client_final(x)
 
-        return next_token
+            # Sample the next token
+            next_token = self.llm.sample_logits(logits, temperature, top_p)
+
+            # Stop if the end-of-sequence token is generated
+            if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
+                break
+
+            # Decode and yield the new token
+            decoded_token = self.llm.preprocessor.decode(next_token)
+            yield decoded_token
+
+            input_tensor = next_token
+            current_pos = prompt_length + (i + 1)
+            input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
+            seq_length = 1
