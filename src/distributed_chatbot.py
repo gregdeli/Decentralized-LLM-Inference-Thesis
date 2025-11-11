@@ -36,6 +36,8 @@ def main():
     try:
         conversation = "" # Chat history
         while True:
+            client.print_chain_status()
+            
             prompt = input("\nEnter prompt: ")
 
             logger.info(f"Initiating text generation...")

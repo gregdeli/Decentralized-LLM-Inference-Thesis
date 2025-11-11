@@ -275,7 +275,8 @@ class Server:
             # Repair
             orphaned_layers = dead_successor_data.get("layers_loaded")
             successor_2_data = dead_successor_data.get("successor")
-            logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor Data: {successor_2_data}")
+            succ_was_tail = dead_successor_data.get("was_tail")
+            logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor 2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}")
 
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(orphaned_layers):
@@ -285,7 +286,7 @@ class Server:
                 self.model = self.llm.model
 
                 # Update the DHT with this nodes new info
-                self.chain.repair(layers_to_load, successor_2_data)
+                self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
 
                 # Recreate successor stub to the new successor
                 self._connect_to_successor()

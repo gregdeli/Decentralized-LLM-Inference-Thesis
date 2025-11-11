@@ -40,6 +40,9 @@ class Client:
         head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+    
+    def print_chain_status(self):
+        self.chain.print_chain_status()
 
     @torch.no_grad()
     def generate(

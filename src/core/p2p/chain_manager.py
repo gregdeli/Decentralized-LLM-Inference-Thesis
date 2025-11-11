@@ -208,6 +208,7 @@ class ChainManager:
         return head_id == self.node_id
 
     def is_tail(self) -> bool:
+        """Checks if this node is the TAIL"""
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
             raise RuntimeError("Tail server not found")
@@ -219,14 +220,29 @@ class ChainManager:
             return True
 
         return False
+    
+    def node_is_tail(self, node_id) -> bool:
+        """Checks if a specific node is the tail"""
+        tail_id = self.dht.get(TAIL_KEY)
+        if not tail_id:
+            raise RuntimeError("Tail server not found")
+
+        # num_total_layers = self._get_num_total_layers()
+        # layers_loaded = self.get_layers_loaded()
+
+        if tail_id == node_id:# and layers_loaded[1] == num_total_layers - 1:
+            return True
+
+        return False
 
     def is_backup(self) -> bool:
+        """Checks if this node is a backup node"""
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
 
     def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
         """
-        Gets the data *of this node's successor* from the DHT.
+        Gets the data of this node's successor from the DHT.
         This is called by the node when it actively detects its successor is dead.
         """
         self_info = self._get_self_info()
@@ -234,6 +250,11 @@ class ChainManager:
         if not successor_data:
             logger.warning(f"Node {self.node_id[:DIGITS_SHOW]} has no successor data.")
             return None
+        
+        # Check if the successor is the TAIL
+        if self.node_is_tail(successor_data.get("id")):
+            successor_data["was_tail"] = True
+            return successor_data
 
         # Get the successor's successor id
         successor_key = f"{SERVER_INFO_PREFIX}{successor_data.get('id')}"
@@ -252,7 +273,7 @@ class ChainManager:
 
         return successor_data
 
-    def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Dict[str, Any]):
+    def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Optional[Dict[str, Any]], succ_was_tail: Optional[bool]):
         """
         Updates the DHT after a node has taken over the layers of a failed successor.
 
@@ -265,7 +286,13 @@ class ChainManager:
         # Update this node's info
         self_info = self._get_self_info()
         self_info["layers_loaded"] = layers_loaded
-        self_info["successor"] = successor_2_data
+        if successor_2_data:
+            self_info["successor"] = successor_2_data
+        
+        # If the dead successor was the tail, set this node as the tail
+        elif succ_was_tail:
+            self_info["successor"] = None
+            self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, EXPIRATION_S)
@@ -304,6 +331,64 @@ class ChainManager:
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
+    
+    def print_chain_status(self):
+        """
+        Prints the full status of the inference chain from the DHT.
+        """
+        print("--------- Chain Status ---------")
+        # Global keys
+        head_id = self.dht.get(HEAD_KEY)
+        tail_id = self.dht.get(TAIL_KEY)
+        total_layers = self.dht.get(TOTAL_LAYERS_KEY)
+        all_loaded = self.dht.get(ALL_LAYERS_KEY)
+
+        print("Global Info:")
+        print(f"  - Total Layers: {total_layers if total_layers is not None else 'Not Found'}")
+        print(f"  - All Layers Loaded: {all_loaded if all_loaded is not None else 'Not Found'}")
+        print(f"  - Head Node ID: {head_id[:DIGITS_SHOW] if head_id else 'Not Found'}")
+        print(f"  - Tail Node ID: {tail_id[:DIGITS_SHOW] if tail_id else 'Not Found'}")
+
+        if not head_id:
+            print("\nChain is empty.")
+            print("---------- End of Status ---------")
+            return
+        
+        # Traverse chain and print server info
+        print("\nServer Chain (from Head to Tail):")
+        current_node_id = head_id
+        counter = 1
+
+        while current_node_id:
+            server_key = f"{SERVER_INFO_PREFIX}{current_node_id}"
+            info = self.dht.get(server_key)
+            if not info:
+                print(f"  {counter}. Node ID: {current_node_id[:DIGITS_SHOW]}")
+                print("     [ERROR: Could not fetch info for this node. Chain traversal stopped.]")
+                break
+
+            # Extract info
+            address = info.get("address")
+            layers = info.get("layers_loaded")
+            successor_data = info.get("successor")
+            is_backup = info.get("is_backup", False)
+
+            print(f"  {counter}. Node ID: {current_node_id[:DIGITS_SHOW]}")
+            print(f"     - Address: {address}")
+            print(f"     - Layers: {layers}")
+            
+            if successor_data:
+                print(f"     - Successor: {successor_data.get('id')[:DIGITS_SHOW]}")
+                current_node_id = successor_data.get("id")
+            else:
+                print("     - Successor: None")
+                current_node_id = None # End of chain
+            
+            counter += 1
+        
+        print("--------- End of Status ---------")
+
+
 
 
 # Example usage to demonstrate the flow
