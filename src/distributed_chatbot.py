@@ -34,20 +34,25 @@ def main():
     )
 
     try:
+        conversation = "" # Chat history
         while True:
             prompt = input("\nEnter prompt: ")
 
             logger.info(f"Initiating text generation...")
-            token_generator = client.generate(prompt, max_new_tokens=100, stream=True)
+            full_prompt = conversation + "\n" + prompt
+            token_generator = client.generate(full_prompt, max_new_tokens=250, stream=True)
 
             if not token_generator:
                 input("Press Enter to continue...")
                 continue
 
             print(f"\n---------Response---------")
+            response_text = ""
             for token in token_generator:
+                response_text += token
                 print(token, end="", flush=True)
-
+            
+            conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
             print("\n")
 
     except KeyboardInterrupt:
