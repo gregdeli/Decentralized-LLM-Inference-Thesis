@@ -153,6 +153,7 @@ class Server:
         max_returned_tokens: int,
         seq_length: int = None,
         input_pos: torch.Tensor = None,
+        incoming_partial_rate: float = 0.0,
     ) -> Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse]:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
@@ -179,7 +180,7 @@ class Server:
 
         start_time = time.perf_counter()
 
-        logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
+        # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
 
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
 
@@ -188,11 +189,23 @@ class Server:
 
         # Get the server's layer processing rate for this inference run
         if self.computational_delay > 0 and self.num_local_layers > 0:
-            self.layers_per_second = self.num_local_layers / self.computational_delay
-            # print(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+            current_rate = self.num_local_layers / self.computational_delay
+
+            # Moving average to avoid jitter
+            if self.layers_per_second == 0:
+                self.layers_per_second = current_rate
+            else:
+                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
+
+        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+
+        # Calculate partial rate to send forward
+        my_partial_rate = incoming_partial_rate + self.layers_per_second
 
         if self.chain.is_tail():
-            return tensor_to_response(h)
+            response = tensor_to_response(h)
+            response.total_rate = my_partial_rate
+            return response
 
         # Call the successor via gRPC
         request = tensor_to_request(
@@ -201,6 +214,8 @@ class Server:
             seq_length=seq_length,
             input_pos=input_pos.item() if input_pos is not None else None,
         )
+
+        request.partial_rate = my_partial_rate
 
         try:
             final_layer_response = self.successor_stub.RunLayers(request, timeout=4)
@@ -220,6 +235,62 @@ class Server:
                     )
 
         return final_layer_response
+    
+    def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
+        """
+        Executes the AR-MDI logic
+        """
+        logger.info(f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}")
+
+        num_total_layers = self.config["num_hidden_layers"]
+
+        # Calculate share
+        # layers_to_load = num_total_layers * (my_rate / total_rate)
+        if total_system_rate > 0:
+            ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
+        else:
+            ideal_layer_count = 0
+
+        # Rounding logic 
+        if self.chain.is_tail():
+            # The tail takes whatever is left
+            my_layer_count = num_total_layers - start_layer_index
+        else:
+            my_layer_count = int(round(ideal_layer_count))
+            if my_layer_count < 1:
+                my_layer_count = 1
+            if (start_layer_index + my_layer_count) >= num_total_layers:
+                # Leave at least 1 layer for the rest of the chain if not tail
+                my_layer_count = num_total_layers - start_layer_index - 1
+
+        end_layer_index = start_layer_index + my_layer_count - 1
+        new_layers = (start_layer_index, end_layer_index)
+
+        # Load Layers
+        if new_layers != self.llm.layers_loaded:
+            self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
+            self.model = self.llm.model
+            self.num_local_layers = my_layer_count
+
+            # Update Chain info
+            self.chain.update_layers_loaded(new_layers)
+        else:
+            logger.info("Layer assignment unchanged.")
+        
+        # Propagate to successor
+        if not self.chain.is_tail() and self.successor_stub:
+            next_start_index = end_layer_index + 1
+            
+            request = nodeservice_pb2.ReallocateRequest(
+                total_rate = total_system_rate,
+                start_layer_index = next_start_index
+            )
+            try:
+                self.successor_stub.Reallocate(request)
+            except grpc.RpcError as e:
+                logger.error(f"Failed to propagate Reallocation to successor: {e}")
+
+
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""

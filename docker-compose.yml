@@ -5,7 +5,7 @@ services:
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - NUM_LAYERS=5
+      - NUM_LAYERS=3
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
@@ -13,6 +13,7 @@ services:
       resources:
         limits:
           memory: 4G
+          cpus: '16.0'
     # ports:
     #   - "5678:5678"
 
@@ -22,7 +23,7 @@ services:
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - NUM_LAYERS=5
+      - NUM_LAYERS=6
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
@@ -31,6 +32,7 @@ services:
       resources:
         limits:
           memory: 4G
+          cpus: '1.0'
     # ports:
     #   - "5678:5678"  
 
@@ -40,7 +42,7 @@ services:
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - NUM_LAYERS=6
+      - NUM_LAYERS=7
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
     volumes:
@@ -49,6 +51,7 @@ services:
       resources:
         limits:
           memory: 3G
+          cpus: '1.0'
     depends_on:
       - head-server
       - intermidiate-server

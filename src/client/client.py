@@ -40,9 +40,29 @@ class Client:
         head_server_addr = head_info["address"]
         channel = grpc.insecure_channel(head_server_addr)
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+
+        self.total_rate = 0.0
     
     def print_chain_status(self):
         self.chain.print_chain_status()
+    
+    def trigger_reallocation(self):
+        """
+        Triggers the layer reallocation process starting from the HEAD.
+        """
+        if self.total_rate > 0:
+            logger.info(f"Triggering reallocation with Total Rate: {self.total_rate:.2f}...")
+
+            request = nodeservice_pb2.ReallocateRequest(
+                total_rate = self.total_rate,
+                start_layer_index = 0
+            )
+
+            try:
+                self.head_server_stub.Reallocate(request)
+                logger.info("Reallocation triggered successfully...")
+            except grpc.RpcError as e:
+                logger.error(f"Failed to trigger reallocation: {e}")
 
     @torch.no_grad()
     def generate(
@@ -111,6 +131,10 @@ class Client:
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
                 return
+            
+            # Capture TOTAL RATE
+            if response.total_rate > 0:
+                self.total_rate = response.total_rate
 
             x = message_to_tensor(response)
 
@@ -163,6 +187,10 @@ class Client:
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
                 return
+            
+            # Capture TOTAL RATE
+            if response.total_rate > 0:
+                self.total_rate = response.total_rate
 
             x = message_to_tensor(response)
 

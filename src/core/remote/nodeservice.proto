@@ -12,6 +12,9 @@ service NodeService {
 
   // Used to check if a node's successor is alive
   rpc Check(Empty) returns (Empty) {}
+
+  // Triggers the layer re-allocation process
+  rpc Reallocate(ReallocateRequest) returns (Empty) {}
 }
 
 message Empty {}
@@ -30,6 +33,8 @@ message InferenceRequest {
   int32 max_returned_tokens = 4;
   optional int32 seq_length = 5;
   optional int64 input_pos = 6;
+
+  float partial_rate = 7;
 }
 
 // The response message containing the resulting tensor.
@@ -38,5 +43,12 @@ message InferenceResponse {
   repeated int64 tensor_shape = 2;
   string dtype = 3;  
   optional string error_message = 4;
+
+  float total_rate = 5;
+}
+
+message ReallocateRequest {
+  float total_rate = 1;
+  int32 start_layer_index = 2;
 }
 

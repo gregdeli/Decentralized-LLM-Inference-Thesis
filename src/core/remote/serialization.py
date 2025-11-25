@@ -40,7 +40,7 @@ def tensor_to_request(
     return nodeservice_pb2.InferenceRequest(**request_args)
 
 
-def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRequest:
+def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceResponse:
     tensor_data = tensor.numpy().tobytes()
     tensor_shape = list(tensor.shape)
     dtype = DTYPE_MAP[tensor.dtype]
@@ -51,7 +51,7 @@ def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRequest
         "dtype": dtype,
     }
 
-    return nodeservice_pb2.InferenceRequest(**response)
+    return nodeservice_pb2.InferenceResponse(**response)
 
 
 def message_to_tensor(response: Union[nodeservice_pb2.InferenceResponse, nodeservice_pb2.InferenceResponse]) -> torch.Tensor:

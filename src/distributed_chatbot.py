@@ -57,6 +57,9 @@ def main():
             conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
             print("\n")
 
+            # Layer Reallocation
+            client.trigger_reallocation()
+
     except KeyboardInterrupt:
         print("\nExiting...")  # Ctrl+C
 

@@ -2,16 +2,14 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
-*** Na thetw num_layers me vash thn mnhmh tou kathe container.
+* Simulate heterogeneity na dw tetradio
+
+* Repair chain if HEAD fails
 
 * An intermidiate kai tail server kanoun join to dht tautoxrono, vlepoun kai oi duo ton head ws tail server kai kanoun load ta idia layers 
   me ton teleutaio na ginetai o actual successor tou head. 
   
   Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose
-
-** Server, chain_manager._join_existing_chain() -> 
-            an kapoios kanei join alla einai hdh loaded ola ta layers den kanei load tipota kai
-            tha prepei o node na einai backup server_info_this_node: {"is_backup": True}
 
 
 * Tail server na stelnei to response kateuthian ston client

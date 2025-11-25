@@ -331,6 +331,12 @@ class ChainManager:
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
+
+    def update_layers_loaded(self, new_layers: Tuple[int, int]):
+        self_info = self._get_self_info()
+        self_info["layers_loaded"] = new_layers
+        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(server_key, self_info, EXPIRATION_S)
     
     def print_chain_status(self):
         """
