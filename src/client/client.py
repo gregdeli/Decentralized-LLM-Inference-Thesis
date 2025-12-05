@@ -42,21 +42,18 @@ class Client:
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
         self.total_rate = 0.0
-    
+
     def print_chain_status(self):
         self.chain.print_chain_status()
-    
+
     def trigger_reallocation(self):
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
         if self.total_rate > 0:
-            logger.info(f"Triggering reallocation with Total Rate: {self.total_rate:.2f}...")
+            logger.info(f"Triggering reallocation with Total Rate: {self.total_rate:.2f} layers/sec...")
 
-            request = nodeservice_pb2.ReallocateRequest(
-                total_rate = self.total_rate,
-                start_layer_index = 0
-            )
+            request = nodeservice_pb2.ReallocateRequest(total_rate=self.total_rate, start_layer_index=0)
 
             try:
                 self.head_server_stub.Reallocate(request)
@@ -93,7 +90,7 @@ class Client:
                 f"The combined prompt and max_new_tokens length ({max_returned_tokens}) exceeds "
                 f"the model's maximum sequence length of {self.model.max_seq_length}."
             )
-        
+
         if stream:
             return self._generate_stream(prompt_length, input_ids, max_new_tokens, max_returned_tokens, temperature, top_p, time_it)
 
@@ -131,7 +128,7 @@ class Client:
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
                 return
-            
+
             # Capture TOTAL RATE
             if response.total_rate > 0:
                 self.total_rate = response.total_rate
@@ -157,7 +154,7 @@ class Client:
         all_generated_ids = torch.cat(generated_ids, dim=1)
 
         return self.llm.preprocessor.decode(all_generated_ids)
-    
+
     @torch.no_grad()
     def _generate_stream(
         self,
@@ -187,7 +184,7 @@ class Client:
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
                 return
-            
+
             # Capture TOTAL RATE
             if response.total_rate > 0:
                 self.total_rate = response.total_rate

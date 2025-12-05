@@ -2,7 +2,8 @@ from pathlib import Path
 
 from core.llm_loader import LLM
 
-model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
+# model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
+model_path = Path(r"/home/greg/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
 llm = LLM.load(model_path, layers_to_load=(0, 15))
 
 # No Stream
@@ -16,15 +17,18 @@ llm = LLM.load(model_path, layers_to_load=(0, 15))
 try:
     while True:
         prompt = input("\nEnter prompt (or Ctrl+C to quit): ")
-        
+
         print(f"\n-----Response-----\n", end="", flush=True)
 
         token_generator = llm.generate(prompt, max_new_tokens=200, stream=True)
 
         # Iterate over the generator and print each token as it arrives
-        for token in token_generator:
-            print(token, end="", flush=True)
-        
+        try:
+            for token in token_generator:
+                print(token, end="", flush=True)
+        except KeyboardInterrupt:
+            print("\nStopping text generation...")
+
         print("\n")
 
 except KeyboardInterrupt:

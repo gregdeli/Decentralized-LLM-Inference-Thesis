@@ -53,14 +53,16 @@ class LLM:
         if time_it:
             start_time = time.perf_counter()
 
+        # Check for CUDA availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # device = "cpu"
+
         config_path = model_path / "config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
 
         # Check is the model is instruction tuned
         is_instruct = is_instruct_model(model_path=model_path)
-
-        # torch.backends.cuda.matmul.fp32_precision = "ieee"
 
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -69,13 +71,15 @@ class LLM:
         model.eval()
 
         # Setup preprocessor
-        preprocessor = Preprocessor(tokenizer, device="cpu")
+        preprocessor = Preprocessor(tokenizer, device=device)
 
         # Load weigths form the safetensors file
         weights_path = model_path / "model.safetensors"
         state_dict = load_file(weights_path, device="cpu")
         state_dict = remove_model_prefix(state_dict)
         model.load_state_dict(state_dict, strict=False)
+
+        model.to(device=device)  # Move parameters to VRAM if gpu available
 
         if time_it:
             end_time = time.perf_counter()
@@ -196,7 +200,7 @@ class LLM:
 
         for i in range(max_new_tokens):
             logits = self.model(input, input_pos=input_pos)
-            
+
             next_token = self.sample_logits(logits, temperature, top_p)
 
             # Stop if the end-of-sequence token is generated
@@ -227,7 +231,7 @@ class LLM:
             )
         else:
             return prompt
-    
+
     def sample_logits(self, logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
         """Applies temperature and top-p (nucleus) sampling to logits."""
         logits = logits[:, -1, :]
