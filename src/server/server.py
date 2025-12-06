@@ -40,6 +40,7 @@ class Server:
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
+
         self._repair_lock = threading.Lock()
 
         # Memory
@@ -105,6 +106,9 @@ class Server:
         total_layer_params = self.config["total_transformer_layer_params"]
 
         single_layer_memory_size = total_layer_params * bytes_per_param  # Bytes
+
+        # Thelei kai kapoio overhead logika
+        # reserved_overhead = 500 * 1024 * 1024
 
         available_memory_bytes = self.available_memory_mb * 1024 * 1024
 
@@ -283,6 +287,14 @@ class Server:
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
+            logger.info(f"Reloading model with new layers: {new_layers} (Previous: {self.llm.layers_loaded})")
+
+            # Clear GPU mem before reloading
+            if torch.cuda.is_available():
+                self.model = None
+                self.llm = None
+                torch.cuda.empty_cache()
+
             self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
             self.model = self.llm.model
             self.num_local_layers = my_layer_count
