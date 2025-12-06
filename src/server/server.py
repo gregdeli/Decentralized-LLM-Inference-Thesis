@@ -158,6 +158,16 @@ class Server:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
+        # Ensure inputs are on the same device as the model
+        device = self.llm.device
+
+        if input_tensor.device != device:
+            input_tensor = input_tensor.to(device)
+
+        if input_pos is not None and input_pos.device != device:
+            input_pos = input_pos.to(device)
+
+        # KV Cache
         if not self.llm.kv_cache_initialized:
             self._update_memory_usage()
             # self._print_mem_usage("After Loading Model")
@@ -202,6 +212,9 @@ class Server:
         # Calculate partial rate to send forward
         my_partial_rate = incoming_partial_rate + self.layers_per_second
 
+        # Move output tensor back to the cpu for serialization
+        h = h.cpu()  # is this neccessary?
+
         if self.chain.is_tail():
             response = tensor_to_response(h)
             response.total_rate = my_partial_rate
@@ -235,12 +248,14 @@ class Server:
                     )
 
         return final_layer_response
-    
+
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
         """
         Executes the AR-MDI logic
         """
-        logger.info(f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}")
+        logger.info(
+            f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
+        )
 
         num_total_layers = self.config["num_hidden_layers"]
 
@@ -251,7 +266,7 @@ class Server:
         else:
             ideal_layer_count = 0
 
-        # Rounding logic 
+        # Rounding logic
         if self.chain.is_tail():
             # The tail takes whatever is left
             my_layer_count = num_total_layers - start_layer_index
@@ -276,21 +291,16 @@ class Server:
             self.chain.update_layers_loaded(new_layers)
         else:
             logger.info("Layer assignment unchanged.")
-        
+
         # Propagate to successor
         if not self.chain.is_tail() and self.successor_stub:
             next_start_index = end_layer_index + 1
-            
-            request = nodeservice_pb2.ReallocateRequest(
-                total_rate = total_system_rate,
-                start_layer_index = next_start_index
-            )
+
+            request = nodeservice_pb2.ReallocateRequest(total_rate=total_system_rate, start_layer_index=next_start_index)
             try:
                 self.successor_stub.Reallocate(request)
             except grpc.RpcError as e:
                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
-
-
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
@@ -347,7 +357,9 @@ class Server:
             orphaned_layers = dead_successor_data.get("layers_loaded")
             successor_2_data = dead_successor_data.get("successor")
             succ_was_tail = dead_successor_data.get("was_tail")
-            logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor 2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}")
+            logger.info(
+                f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor 2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}"
+            )
 
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(orphaned_layers):

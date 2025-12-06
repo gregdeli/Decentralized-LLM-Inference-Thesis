@@ -34,14 +34,15 @@ def main():
     )
 
     try:
-        conversation = "" # Chat history
+        conversation = ""  # Chat history
         while True:
             client.print_chain_status()
-            
+
             prompt = input("\nEnter prompt: ")
 
             logger.info(f"Initiating text generation...")
-            full_prompt = conversation + "\n" + prompt
+            # full_prompt = conversation + "\n" + prompt
+            full_prompt = prompt
             token_generator = client.generate(full_prompt, max_new_tokens=250, stream=True)
 
             if not token_generator:
@@ -53,7 +54,7 @@ def main():
             for token in token_generator:
                 response_text += token
                 print(token, end="", flush=True)
-            
+
             conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
             print("\n")
 

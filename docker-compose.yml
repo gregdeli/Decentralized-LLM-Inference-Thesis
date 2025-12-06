@@ -9,11 +9,16 @@ services:
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
-    # deploy:
-    #   resources:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         # limits:
-          # memory: 4G
-          # cpus: '16.0'
+        #   memory: 4G
+        #   cpus: '16.0'
     # ports:
     #   - "5678:5678"
 

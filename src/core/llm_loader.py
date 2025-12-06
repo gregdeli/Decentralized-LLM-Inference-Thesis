@@ -22,6 +22,7 @@ class LLM:
         kv_cache_initialized: bool = False,
         is_client: bool = True,
         layers_loaded: Tuple[int, int] = None,
+        device: str = "cpu",
     ) -> None:
         self.model = model
         self.preprocessor = preprocessor
@@ -33,6 +34,7 @@ class LLM:
 
         self.is_client = is_client
         self.layers_loaded = layers_loaded
+        self.device = device
 
     """
     High-level API for loading a Llama 3.2 model and generating text.
@@ -95,6 +97,7 @@ class LLM:
             kv_cache_initialized=False,
             is_client=is_client,
             layers_loaded=layers_to_load,
+            device=device,
         )
 
     @torch.no_grad()
