@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import nodeservice_pb2 as nodeservice__pb2
+from core.remote import nodeservice_pb2 as core_dot_remote_dot_nodeservice__pb2
 
 GRPC_GENERATED_VERSION = '1.74.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in nodeservice_pb2_grpc.py depends on'
+        + f' but the generated code in core/remote/nodeservice_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,13 +37,23 @@ class NodeServiceStub(object):
         """
         self.RunLayers = channel.unary_unary(
                 '/nodeservice.NodeService/RunLayers',
-                request_serializer=nodeservice__pb2.InferenceRequest.SerializeToString,
-                response_deserializer=nodeservice__pb2.InferenceResponse.FromString,
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
                 _registered_method=True)
         self.GetPeerMultiaddr = channel.unary_unary(
                 '/nodeservice.NodeService/GetPeerMultiaddr',
-                request_serializer=nodeservice__pb2.Empty.SerializeToString,
-                response_deserializer=nodeservice__pb2.MultiaddrResponse.FromString,
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.MultiaddrResponse.FromString,
+                _registered_method=True)
+        self.Check = channel.unary_unary(
+                '/nodeservice.NodeService/Check',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
+        self.Reallocate = channel.unary_unary(
+                '/nodeservice.NodeService/Reallocate',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
 
 
@@ -65,18 +75,42 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Check(self, request, context):
+        """Used to check if a node's successor is alive
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Reallocate(self, request, context):
+        """Triggers the layer re-allocation process
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'RunLayers': grpc.unary_unary_rpc_method_handler(
                     servicer.RunLayers,
-                    request_deserializer=nodeservice__pb2.InferenceRequest.FromString,
-                    response_serializer=nodeservice__pb2.InferenceResponse.SerializeToString,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
             ),
             'GetPeerMultiaddr': grpc.unary_unary_rpc_method_handler(
                     servicer.GetPeerMultiaddr,
-                    request_deserializer=nodeservice__pb2.Empty.FromString,
-                    response_serializer=nodeservice__pb2.MultiaddrResponse.SerializeToString,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.MultiaddrResponse.SerializeToString,
+            ),
+            'Check': grpc.unary_unary_rpc_method_handler(
+                    servicer.Check,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'Reallocate': grpc.unary_unary_rpc_method_handler(
+                    servicer.Reallocate,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -105,8 +139,8 @@ class NodeService(object):
             request,
             target,
             '/nodeservice.NodeService/RunLayers',
-            nodeservice__pb2.InferenceRequest.SerializeToString,
-            nodeservice__pb2.InferenceResponse.FromString,
+            core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -132,8 +166,62 @@ class NodeService(object):
             request,
             target,
             '/nodeservice.NodeService/GetPeerMultiaddr',
-            nodeservice__pb2.Empty.SerializeToString,
-            nodeservice__pb2.MultiaddrResponse.FromString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.MultiaddrResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Check(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/Check',
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Reallocate(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/Reallocate',
+            core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

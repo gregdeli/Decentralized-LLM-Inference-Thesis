@@ -98,4 +98,4 @@ services:
       - ./models:/models:ro
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5678:5678"

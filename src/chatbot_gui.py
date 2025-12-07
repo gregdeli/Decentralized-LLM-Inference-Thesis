@@ -39,6 +39,7 @@ def root():
             ui.chat_message(text=prompt, name="You", sent=True)
             response_message = ui.chat_message(name="Distributed LLM", sent=False)
             spinner = ui.spinner(type="dots")
+        await asyncio.sleep(0.005)
 
         token_generator = client.generate(prompt, max_new_tokens=250, stream=True)
 
@@ -48,10 +49,10 @@ def root():
             response_text += token
             response_message.clear()
             with response_message:
-                # ui.html(response_text, sanitize=html.escape)
-                ui.html(response_text.replace("\n", "<br>"), sanitize=False)
-                # ui.markdown(response_text)
-            await asyncio.sleep(0.05)
+                # ui.html(response_text.replace("\n", "<br>"), sanitize=False)
+                ui.markdown(response_text)
+            await asyncio.sleep(0.005)
+            # await asyncio.sleep(0)
 
             # Scroll to bottom
             ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)")
@@ -65,8 +66,12 @@ def root():
                     ui.input(placeholder="Enter prompt")
                     .props("rounded outlined input-class=mx-3")
                     .classes("w-full self-center")
+                    .style("border-width: 3px;")
                     .on("keydown.enter", generate)
                 )
+
+                with text.add_slot("append"):
+                    ui.icon("send").classes("cursor-pointer").on("click", generate)
 
 
 ui.run(root, title="Distributed LLM Chat")

@@ -220,7 +220,7 @@ class ChainManager:
             return True
 
         return False
-    
+
     def node_is_tail(self, node_id) -> bool:
         """Checks if a specific node is the tail"""
         tail_id = self.dht.get(TAIL_KEY)
@@ -230,7 +230,7 @@ class ChainManager:
         # num_total_layers = self._get_num_total_layers()
         # layers_loaded = self.get_layers_loaded()
 
-        if tail_id == node_id:# and layers_loaded[1] == num_total_layers - 1:
+        if tail_id == node_id:  # and layers_loaded[1] == num_total_layers - 1:
             return True
 
         return False
@@ -250,7 +250,7 @@ class ChainManager:
         if not successor_data:
             logger.warning(f"Node {self.node_id[:DIGITS_SHOW]} has no successor data.")
             return None
-        
+
         # Check if the successor is the TAIL
         if self.node_is_tail(successor_data.get("id")):
             successor_data["was_tail"] = True
@@ -288,7 +288,7 @@ class ChainManager:
         self_info["layers_loaded"] = layers_loaded
         if successor_2_data:
             self_info["successor"] = successor_2_data
-        
+
         # If the dead successor was the tail, set this node as the tail
         elif succ_was_tail:
             self_info["successor"] = None
@@ -308,7 +308,7 @@ class ChainManager:
         """
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
-            
+
         # Republish server info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
@@ -337,7 +337,51 @@ class ChainManager:
         self_info["layers_loaded"] = new_layers
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(server_key, self_info, EXPIRATION_S)
-    
+
+    def get_chain_info(self) -> Optional[Dict[str, Any]]:
+        # Global keys
+        head_id = self.dht.get(HEAD_KEY)
+        tail_id = self.dht.get(TAIL_KEY)
+        total_layers = self.dht.get(TOTAL_LAYERS_KEY)
+        all_loaded = self.dht.get(ALL_LAYERS_KEY)
+
+        if not head_id:
+            return None
+
+        chain_info = {
+            HEAD_KEY: head_id,
+            TAIL_KEY: tail_id,
+            TOTAL_LAYERS_KEY: total_layers,
+            ALL_LAYERS_KEY: all_loaded,
+        }
+
+        # Traverse chain and print server info
+        server_list = []
+        current_node_id = head_id
+        counter = 1
+
+        while current_node_id:
+            server_key = f"{SERVER_INFO_PREFIX}{current_node_id}"
+            server_info = self.dht.get(server_key)
+            if not server_info:
+                break
+
+            server_info["id"] = current_node_id
+
+            server_list.append(server_info)
+
+            successor_data = server_info.get("successor")
+
+            if successor_data:
+                current_node_id = successor_data.get("id")
+            else:
+                current_node_id = None  # End of chain
+
+            counter += 1
+
+        chain_info["servers"] = server_list
+        return chain_info
+
     def print_chain_status(self):
         """
         Prints the full status of the inference chain from the DHT.
@@ -359,7 +403,7 @@ class ChainManager:
             print("\nChain is empty.")
             print("---------- End of Status ---------")
             return
-        
+
         # Traverse chain and print server info
         print("\nServer Chain (from Head to Tail):")
         current_node_id = head_id
@@ -382,19 +426,17 @@ class ChainManager:
             print(f"  {counter}. Node ID: {current_node_id[:DIGITS_SHOW]}")
             print(f"     - Address: {address}")
             print(f"     - Layers: {layers}")
-            
+
             if successor_data:
                 print(f"     - Successor: {successor_data.get('id')[:DIGITS_SHOW]}")
                 current_node_id = successor_data.get("id")
             else:
                 print("     - Successor: None")
-                current_node_id = None # End of chain
-            
+                current_node_id = None  # End of chain
+
             counter += 1
-        
+
         print("--------- End of Status ---------")
-
-
 
 
 # Example usage to demonstrate the flow

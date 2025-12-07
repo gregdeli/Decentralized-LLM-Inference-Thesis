@@ -17,27 +17,41 @@ class MultiaddrResponse(_message.Message):
     def __init__(self, multiaddr: _Optional[str] = ...) -> None: ...
 
 class InferenceRequest(_message.Message):
-    __slots__ = ("tensor_data", "tensor_shape", "dtype", "max_returned_tokens", "seq_length", "input_pos")
+    __slots__ = ("tensor_data", "tensor_shape", "dtype", "max_returned_tokens", "seq_length", "input_pos", "partial_rate")
     TENSOR_DATA_FIELD_NUMBER: _ClassVar[int]
     TENSOR_SHAPE_FIELD_NUMBER: _ClassVar[int]
     DTYPE_FIELD_NUMBER: _ClassVar[int]
     MAX_RETURNED_TOKENS_FIELD_NUMBER: _ClassVar[int]
     SEQ_LENGTH_FIELD_NUMBER: _ClassVar[int]
     INPUT_POS_FIELD_NUMBER: _ClassVar[int]
+    PARTIAL_RATE_FIELD_NUMBER: _ClassVar[int]
     tensor_data: bytes
     tensor_shape: _containers.RepeatedScalarFieldContainer[int]
     dtype: str
     max_returned_tokens: int
     seq_length: int
     input_pos: int
-    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., max_returned_tokens: _Optional[int] = ..., seq_length: _Optional[int] = ..., input_pos: _Optional[int] = ...) -> None: ...
+    partial_rate: float
+    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., max_returned_tokens: _Optional[int] = ..., seq_length: _Optional[int] = ..., input_pos: _Optional[int] = ..., partial_rate: _Optional[float] = ...) -> None: ...
 
 class InferenceResponse(_message.Message):
-    __slots__ = ("tensor_data", "tensor_shape", "dtype")
+    __slots__ = ("tensor_data", "tensor_shape", "dtype", "error_message", "total_rate")
     TENSOR_DATA_FIELD_NUMBER: _ClassVar[int]
     TENSOR_SHAPE_FIELD_NUMBER: _ClassVar[int]
     DTYPE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_RATE_FIELD_NUMBER: _ClassVar[int]
     tensor_data: bytes
     tensor_shape: _containers.RepeatedScalarFieldContainer[int]
     dtype: str
-    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ...) -> None: ...
+    error_message: str
+    total_rate: float
+    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., error_message: _Optional[str] = ..., total_rate: _Optional[float] = ...) -> None: ...
+
+class ReallocateRequest(_message.Message):
+    __slots__ = ("total_rate", "start_layer_index")
+    TOTAL_RATE_FIELD_NUMBER: _ClassVar[int]
+    START_LAYER_INDEX_FIELD_NUMBER: _ClassVar[int]
+    total_rate: float
+    start_layer_index: int
+    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ...) -> None: ...
