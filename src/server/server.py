@@ -414,6 +414,7 @@ class Server:
 
 
 GRPC_PORT = 5001
+UDP_PORT = 9999
 
 
 def serve():
@@ -490,11 +491,27 @@ def serve():
                     logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
                     server_node.successor_stub = None
 
+    def _udp_discovery_server():
+        """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("", UDP_PORT))
+
+        response_b = grpc_addr.encode()
+
+        while True:
+            data, addr = sock.recvfrom(1024)
+            if data == b"DISCOVER_BOOTSTRAP":
+
+                sock.sendto(response_b, addr)
+
     grpc_heartbeat_thread = threading.Thread(target=_grpc_heartbeat_task, args=(server_node,), daemon=True)
     grpc_heartbeat_thread.start()
 
     dht_heartbeat_thread = threading.Thread(target=_dht_heartbeat_task, args=(server_node,), daemon=True)
     dht_heartbeat_thread.start()
+
+    udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)
+    udp_discovery_thread.start()
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):

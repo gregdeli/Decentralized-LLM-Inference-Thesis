@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 
 from nicegui import ui, app
 from client.client import Client
-from core.remote.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, DIGITS_SHOW
 
 
@@ -22,9 +22,10 @@ state = AppState()
 async def initialize_client():
     model_path_str = os.getenv("MODEL_PATH", "/models/Llama-3.2-1B-Instruct")
     host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
-    bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR", "tail-server:5001")
+    # bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR", "tail-server:5001")
 
-    # Discovery logic from distributed_chatbot.py
+    bootstrap_addr = discover_bootstrap_node_address()
+
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
