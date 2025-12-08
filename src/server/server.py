@@ -234,8 +234,9 @@ class Server:
 
         request.partial_rate = my_partial_rate
 
+        final_layer_response = None
         try:
-            final_layer_response = self.successor_stub.RunLayers(request, timeout=4)
+            final_layer_response = self.successor_stub.RunLayers(request, timeout=15)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")  # Debugging
@@ -435,7 +436,7 @@ def serve():
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
-        peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=10)
+        peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=15)
 
         if not peer_addr:
             return
@@ -455,7 +456,14 @@ def serve():
     )
 
     # Start GRPC server
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+    max_msg_size = 100 * 1024 * 1024  # 100 MB
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=2),
+        options=[
+            ("grpc.max_send_message_length", max_msg_size),
+            ("grpc.max_receive_message_length", max_msg_size),
+        ],
+    )
     nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
     server.add_insecure_port(grpc_addr)
 

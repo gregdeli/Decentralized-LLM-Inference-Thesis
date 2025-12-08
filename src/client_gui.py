@@ -44,37 +44,44 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
     Renders a single server node card on the Left Sidebar.
     Roles: Head, Tail, Intermidiate,
     """
-    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "gray-100"
+    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100"
 
-    with ui.card().classes(f"w-full p-2 bg-{color}"):
+    with ui.card().classes(f"w-full p-2 bg-{color} gap-2"):
         with ui.row().classes("w-full items-center justify-between"):
             ui.label(role).classes("font-bold text-xs uppercase text-gray-600")
             ui.icon("dns", color="gray").classes("text-sm")
 
-        ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-xs")
+        ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
 
         if "layers_loaded" in info:
             layers = info["layers_loaded"]
-            ui.label(f"Layers: {layers[0]} - {layers[1]}").classes("text-xs text-blue-800")
+            ui.label(f"Layers: {layers[0]} - {layers[1]}").classes("font-mono text-sm")
 
         # Display Address
         if "address" in info:
-            ui.label(info["address"]).classes("text-[10px] text-gray-500 break-all")
+            ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
 
 
-def refresh_chain_view(container: ui.column):
+def refresh_chain_view(chain_container: ui.column):
     """
     Fetches DHT data and updates the Left Sidebar.
     """
     if not state.client:
         return
 
-    container.clear()
+    chain_container.clear()
     chain_info = state.client.chain.get_chain_info()
 
-    with container:
-        ui.label("Active Chain").classes("text-sm font-bold mt-2 text-gray-500")
+    with chain_container:
+        # Layer Status
+        ui.label("Layers Status").classes("font-bold text-lg")
+        total_layers = chain_info.get(TOTAL_LAYERS_KEY)
+        all_loaded = chain_info.get(ALL_LAYERS_KEY)
+        ui.label(f"Total Layers: {total_layers}")
+        ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
 
+        # Chain Info
+        ui.label("Active Chain").classes("font-bold text-lg")
         if not chain_info:
             ui.label("No Chain Found").classes("text-red-500 italic")
             return
@@ -89,15 +96,11 @@ def refresh_chain_view(container: ui.column):
 
             render_server_card(node_id, role, server_info)
 
-        # Backup Nodes and Layer Status
-        ui.label("Network Status").classes("text-sm font-bold mt-4 text-gray-500")
-        total_layers = chain_info.get(TOTAL_LAYERS_KEY)
-        all_loaded = chain_info.get(ALL_LAYERS_KEY)
-        ui.label(f"Total Layers: {total_layers}")
-        ui.label(f"All Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
+        # Backup Nodes
+        ui.label("Backup Nodes").classes("font-bold text-lg")
 
 
-async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column):
+async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column, chain_container: ui.column):
     if state.is_generating:
         ui.notify("Please wait for the text generation to end.")
         return
@@ -119,7 +122,7 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
     # start_time = time.perf_counter()
 
-    token_generator = state.client.generate(prompt, max_new_tokens=250, stream=True)
+    token_generator = state.client.generate(prompt, max_new_tokens=500, stream=True)
 
     chat_container.remove(spinner)
 
@@ -135,65 +138,85 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
             token_count += 1
             await asyncio.sleep(0.005)
 
+            # Scroll to bottom
+            ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
+
     state.is_generating = False
 
     # Update Stats
     # elapsed = time.perf_counter() - start_time
     # tps = token_count / elapsed if elapsed > 0 else 0 # Thoughput (tokens/sec)
 
-    try:
-        stats_container.clear()
-        with stats_container:
-            ui.label("Performance").classes("text-lg font-bold")
-            ui.separator()
-            # ui.label(f"Throughput: {tps:.2f} tok/s").classes('text-xl text-blue-600 font-mono')
-            # ui.label(f"Last Latency: {elapsed:.2f}s")
-            ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec").classes("text-gray-500")
+    # try:
+    stats_container.clear()
+    with stats_container:
+        ui.label("Performance").classes("text-lg font-bold")
+        ui.separator()
+        # ui.label(f"Throughput: {tps:.2f} tok/s").classes('text-xl text-blue-600 font-mono')
+        # ui.label(f"Last Latency: {elapsed:.2f}s")
+        ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
 
-            if state.client.total_rate > 0:
-                ui.button("Trigger Reallocation", on_click=lambda: state.client.trigger_reallocation()).classes("mt-4 bg-orange-500 text-white")
-    except RuntimeError:
-        return
+        if state.client.total_rate > 0:
+            ui.button("Trigger Reallocation", on_click=lambda: trigger_reallocation(stats_container, chain_container)).classes("w-full")
+
+
+async def trigger_reallocation(stats_container: ui.column, chain_container: ui.column):
+
+    with stats_container:
+        spinner = ui.spinner().props("size=lg")
+
+    ui.notify("Triggering layer reallocation.")
+    await asyncio.sleep(0.005)
+
+    state.client.trigger_reallocation()
+
+    ui.notify("Reallocation complete.")
+    stats_container.remove(spinner)
+
+    refresh_chain_view(chain_container)
 
 
 # ----- Main Layout -----
 @ui.page("/")
 async def main_page():
-    # if not state.client:
-    await initialize_client()
+    if not state.client:
+        await initialize_client()
 
     # Apply global styles
-    ui.query("body").classes("p-0 m-0 overflow-hidden")
+    # ui.query("body").classes("p-0 m-0 overflow-hidden")
+    ui.query("#c3").classes("p-0")
 
     with ui.row().classes("w-full h-screen gap-0"):
 
         # Left Sidebar: Server Chain (fixed width)
-        with ui.column().classes("w-1/4 h-full p-4 overflow-y-auto"):
-            ui.label("Server Chain").classes("text-xl font-bold mb-4 text-slate-800")
+        with ui.column().classes("w-1/4 h-full border-r border-gray-200 p-4 overflow-y-auto"):
+            ui.label("Server Chain Info").classes("text-2xl font-bold")
 
             chain_container = ui.column().classes("w-full gap-2")
 
             refresh_chain_view(chain_container)
 
-            ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container)).classes("w-full mt-4 bg-slate-700 text-white")
+            ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container)).classes("w-full")
 
         # Center: Chat Area (Flexible Width)
-        with ui.column().classes("flex-1 h-full relative p-6"):
-            chat_container = ui.column().classes("w-full mx-auto flex-grow items-stretch overflow-y-auto overflow-x-hidden")
+        with ui.column().classes("flex-1 h-full relative p-4"):
+            chat_container = (
+                ui.column().classes("w-full mx-auto flex-grow p-2 items-stretch overflow-y-auto overflow-x-hidden").props('id="chat-container"')
+            )
 
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
                 msg_input = ui.input(placeholder="Enter prompt...").classes("flex-1").props("outlined rounded")
-                send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container)).props(
+                send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container)).props(
                     "flat round color=primary"
                 )
 
                 # Bind Enter key
-                msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container))
+                msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container, chain_container))
 
         # Right Sidebar: Stats (Fixed Width)
-        with ui.column().classes("w-1/5 h-full p-4"):
-            ui.label("Stats").classes("text-xl font-bold mb-4 text-slate-800")
+        with ui.column().classes("w-1/4 h-full border-l border-gray-200 p-4"):
+            ui.label("Stats").classes("text-2xl font-bold")
             stats_container = ui.column().classes("w-full gap-2")
             with stats_container:
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")

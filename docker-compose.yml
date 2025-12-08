@@ -43,7 +43,7 @@ services:
           # memory: 4G
           # cpus: '1.0'
     # ports:
-      # - "5678:5678"  
+    #   - "5678:5678"  
       # - 9999:9999 
 
   tail-server:
@@ -73,11 +73,11 @@ services:
 
   # server-A:
   #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: sleep infinity
+  #   command: python server/server.py
+  #   # command: sleep infinity
   #   environment:
   #     - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-  #     # - NUM_LAYERS=6
+  #     - NUM_LAYERS=6
   #     - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
   #     - BOOTSTRAP_NODE_ADDR=tail-server:5001
   #   volumes:

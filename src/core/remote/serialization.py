@@ -54,11 +54,11 @@ def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRespons
     return nodeservice_pb2.InferenceResponse(**response)
 
 
-def message_to_tensor(response: Union[nodeservice_pb2.InferenceResponse, nodeservice_pb2.InferenceResponse]) -> torch.Tensor:
+def message_to_tensor(message: Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse]) -> torch.Tensor:
     """Deserializes an InferenceRequest or an InferenceResponse into a tensor."""
-    shape = tuple(response.tensor_shape)
-    dtype_str = response.dtype
+    shape = tuple(message.tensor_shape)
+    dtype_str = message.dtype
 
-    np_array = np.frombuffer(response.tensor_data, dtype=getattr(np, dtype_str)).copy()
+    np_array = np.frombuffer(message.tensor_data, dtype=getattr(np, dtype_str)).copy()
     tensor = torch.from_numpy(np_array).reshape(shape)
     return tensor

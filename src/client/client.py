@@ -38,7 +38,15 @@ class Client:
         # logger.info(f"Client successfully found head server. Address: {head_info['address']}")
 
         head_server_addr = head_info["address"]
-        channel = grpc.insecure_channel(head_server_addr)
+
+        max_msg_size = 100 * 1024 * 1024
+        channel = grpc.insecure_channel(
+            head_server_addr,
+            options=[
+                ("grpc.max_send_message_length", max_msg_size),
+                ("grpc.max_receive_message_length", max_msg_size),
+            ],
+        )
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
         self.total_rate = 0.0
