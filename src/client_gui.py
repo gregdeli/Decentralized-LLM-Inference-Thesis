@@ -98,6 +98,10 @@ def refresh_chain_view(container: ui.column):
 
 
 async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column):
+    if state.is_generating:
+        ui.notify("Please wait for the text generation to end.")
+        return
+
     prompt = input_element.value
     if not prompt or not state.client:
         return
@@ -113,13 +117,13 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
     await asyncio.sleep(0.005)
 
-    full_response = ""
     # start_time = time.perf_counter()
 
     token_generator = state.client.generate(prompt, max_new_tokens=250, stream=True)
 
     chat_container.remove(spinner)
 
+    full_response = ""
     token_count = 0
     if token_generator:
         for token in token_generator:
@@ -155,16 +159,16 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 # ----- Main Layout -----
 @ui.page("/")
 async def main_page():
-    if not state.client:
-        await initialize_client()
+    # if not state.client:
+    await initialize_client()
 
     # Apply global styles
-    ui.query("body").classes("bg-slate-50 p-0 m-0 overflow-hidden")
+    ui.query("body").classes("p-0 m-0 overflow-hidden")
 
     with ui.row().classes("w-full h-screen gap-0"):
 
         # Left Sidebar: Server Chain (fixed width)
-        with ui.column().classes("w-1/4 h-full bg-white border-r border-gray-200 p-4 overflow-y-auto"):
+        with ui.column().classes("w-1/4 h-full p-4 overflow-y-auto"):
             ui.label("Server Chain").classes("text-xl font-bold mb-4 text-slate-800")
 
             chain_container = ui.column().classes("w-full gap-2")
@@ -178,7 +182,7 @@ async def main_page():
             chat_container = ui.column().classes("w-full mx-auto flex-grow items-stretch overflow-y-auto overflow-x-hidden")
 
             # Input Area
-            with ui.row().classes("w-full bg-white p-4 border-t border-gray-200 items-center gap-2"):
+            with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
                 msg_input = ui.input(placeholder="Enter prompt...").classes("flex-1").props("outlined rounded")
                 send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container)).props(
                     "flat round color=primary"
@@ -188,7 +192,7 @@ async def main_page():
                 msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container))
 
         # Right Sidebar: Stats (Fixed Width)
-        with ui.column().classes("w-1/5 h-full bg-white border-l border-gray-200 p-4"):
+        with ui.column().classes("w-1/5 h-full p-4"):
             ui.label("Stats").classes("text-xl font-bold mb-4 text-slate-800")
             stats_container = ui.column().classes("w-full gap-2")
             with stats_container:
