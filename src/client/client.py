@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
+import time
 
 import grpc
 import torch
@@ -50,6 +51,7 @@ class Client:
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
         self.total_rate = 0.0
+        self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
 
     def print_chain_status(self):
         self.chain.print_chain_status()
@@ -177,6 +179,9 @@ class Client:
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
+
+        start_time = time.perf_counter()
+        tokens_generated = 0
         for i in range(max_new_tokens):
             # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
@@ -211,9 +216,16 @@ class Client:
 
             # Decode and yield the new token
             decoded_token = self.llm.preprocessor.decode(next_token)
+            tokens_generated += 1
+
             yield decoded_token
 
             input_tensor = next_token
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
+
+        elapsed_time = time.perf_counter() - start_time
+        throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
+
+        self.last_inference_stats = {"latency": elapsed_time, "throughput": throughput}

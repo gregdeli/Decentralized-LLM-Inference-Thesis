@@ -165,11 +165,14 @@ class Server:
         # Ensure inputs are on the same device as the model
         device = self.llm.device
 
+        # start = time.perf_counter()
         if input_tensor.device != device:
             input_tensor = input_tensor.to(device)
 
         if input_pos is not None and input_pos.device != device:
             input_pos = input_pos.to(device)
+        # el = time.perf_counter() - start
+        # logger.info(f"moving inputs to device {device}: {el:.2f}s")
 
         # KV Cache
         if not self.llm.kv_cache_initialized:
@@ -217,7 +220,7 @@ class Server:
         my_partial_rate = incoming_partial_rate + self.layers_per_second
 
         # Move output tensor back to the cpu for serialization
-        h = h.cpu()  # is this neccessary?
+        h = h.cpu()  # is this neccessary? YES!
 
         if self.chain.is_tail():
             response = tensor_to_response(h)
@@ -292,10 +295,10 @@ class Server:
             logger.info(f"Reloading model with New Layers: {new_layers} (Previous: {self.llm.layers_loaded})")
 
             # Clear GPU mem before reloading
-            if torch.cuda.is_available():
-                self.model = None
-                self.llm = None
-                torch.cuda.empty_cache()
+            # if torch.cuda.is_available():
+            #     self.model = None
+            #     self.llm = None
+            #     torch.cuda.empty_cache()
 
             self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
             self.model = self.llm.model

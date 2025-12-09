@@ -126,40 +126,41 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
     await asyncio.sleep(0.005)
 
-    # start_time = time.perf_counter()
-
     token_generator = state.client.generate(prompt, max_new_tokens=500, stream=True)
 
     chat_container.remove(spinner)
 
     full_response = ""
     token_count = 0
-    if token_generator:
-        for token in token_generator:
-            full_response += token
-            response_message.clear()
-            # response_markdown.set_content(full_response)
-            with response_message:
-                ui.markdown(full_response)
-            token_count += 1
-            await asyncio.sleep(0.005)
+    try:
+        if token_generator:
+            for token in token_generator:
+                full_response += token
+                response_message.clear()
+                with response_message:
+                    ui.markdown(full_response)
+                token_count += 1
+                await asyncio.sleep(0.005)
 
-            # Scroll to bottom
-            ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
+                # Scroll to bottom
+                ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
+    except RuntimeError:
+        state.is_generating = False
+        return
 
     state.is_generating = False
 
     # Update Stats
-    # elapsed = time.perf_counter() - start_time
-    # tps = token_count / elapsed if elapsed > 0 else 0 # Thoughput (tokens/sec)
+    stats = state.client.last_inference_stats
+    latency = stats["latency"]
+    throughput = stats["throughput"]
 
-    # try:
     stats_container.clear()
     with stats_container:
         ui.label("Performance").classes("text-lg font-bold")
         ui.separator()
-        # ui.label(f"Throughput: {tps:.2f} tok/s").classes('text-xl text-blue-600 font-mono')
-        # ui.label(f"Last Latency: {elapsed:.2f}s")
+        ui.label(f"Generation Time: {latency:.2f}s")
+        ui.label(f"Throughput: {throughput:.2f} tokens/sec")
         ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
 
         if state.client.total_rate > 0:
