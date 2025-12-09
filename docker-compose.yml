@@ -21,7 +21,7 @@ services:
         #   memory: 4G
         #   cpus: '16.0'
     # ports:
-      # - "5678:5678"
+    #   - "5678:5678"
       # - "9999:9999"
 
   intermidiate-server:
@@ -107,4 +107,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      - "5678:5678"
+      # - "5678:5678"

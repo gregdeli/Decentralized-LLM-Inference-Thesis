@@ -115,7 +115,7 @@ class ChainManager:
         self_layers_loaded = (start_idx, end_idx)
 
         # Update the old tail to point to the new server node
-        tail_info["successor"] = {"id": self.node_id, "address": self_info["address"], "layers_loaded": self_layers_loaded}
+        tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
         self.dht.store(tail_server_key, tail_info, EXPIRATION_S)
         logger.info(f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}.")
 
@@ -251,26 +251,27 @@ class ChainManager:
             logger.warning(f"Node {self.node_id[:DIGITS_SHOW]} has no successor data.")
             return None
 
-        # Check if the successor is the TAIL
-        if self.node_is_tail(successor_data.get("id")):
-            successor_data["was_tail"] = True
-            return successor_data
-
-        # Get the successor's successor id
+        # Get the failed successor's layers_loaded
         successor_key = f"{SERVER_INFO_PREFIX}{successor_data.get('id')}"
         successor_info = self.dht.get(successor_key)
         if not successor_info:
             logger.warning(f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired.")
             return None
 
+        successor_data["layers_loaded"] = successor_info.get("layers_loaded")
+
+        # Check if the successor is the TAIL
+        if self.node_is_tail(successor_data.get("id")):
+            successor_data["was_tail"] = True
+            return successor_data
+
+        # Get the successor's successor data
         successor_2_data = successor_info.get("successor")
         if not successor_2_data:
             logger.warning(f"Node {successor_data.get('id')[:DIGITS_SHOW]} has no successor data.")
             return None
 
-        # successor_2_id = successor_2_data.get("id")
         successor_data["successor"] = successor_2_data
-
         return successor_data
 
     def repair(self, layers_loaded: Tuple[int, int], successor_2_data: Optional[Dict[str, Any]], succ_was_tail: Optional[bool]):

@@ -267,6 +267,7 @@ class Server:
         # Calculate share
         # layers_to_load = num_total_layers * (my_rate / total_rate)
         if total_system_rate > 0:
+            # Epic equation
             ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
         else:
             ideal_layer_count = 0
@@ -288,7 +289,7 @@ class Server:
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
-            logger.info(f"Reloading model with new layers: {new_layers} (Previous: {self.llm.layers_loaded})")
+            logger.info(f"Reloading model with New Layers: {new_layers} (Previous: {self.llm.layers_loaded})")
 
             # Clear GPU mem before reloading
             if torch.cuda.is_available():
@@ -371,7 +372,7 @@ class Server:
             successor_2_data = dead_successor_data.get("successor")
             succ_was_tail = dead_successor_data.get("was_tail")
             logger.info(
-                f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor 2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}"
+                f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor^2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}"
             )
 
             # Check if this node has enough memory to load the orphaned layers
