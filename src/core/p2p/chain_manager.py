@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional, Tuple, Union, List
 import time
 
 from core.p2p.dht_manager import DHTManager
@@ -11,6 +11,7 @@ HEAD_KEY = "chain_head"
 TAIL_KEY = "chain_tail"
 TOTAL_LAYERS_KEY = "num_total_layers"
 ALL_LAYERS_KEY = "all_layers_loaded"
+BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
 EXPIRATION_S = 60.0
@@ -59,6 +60,8 @@ class ChainManager:
 
         self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
 
+        self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
+
         self_info["successor"] = None
 
         # Don't exceed the the maximum layer index
@@ -92,8 +95,7 @@ class ChainManager:
         # Get the previous tails layers_loaded to determine this nodes layer range
         start_idx = tail_info["layers_loaded"][1] + 1
 
-        # If all the layers have already been loaded then dont add this node to the chain
-        # and set it as a backup node
+        # Backup Node, if all layers loaded
         if start_idx >= num_total_layers:
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
@@ -101,6 +103,12 @@ class ChainManager:
             self_info["is_backup"] = True
             self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
             self.dht.store(self_server_key, self_info, EXPIRATION_S)
+
+            # Update the backup_nodes list
+            backup_nodes = self.get_backup_nodes()
+            backup_nodes.append(self.node_id)
+            logger.info(f"backup_nodes list updated: {backup_nodes}")
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
             return
 
         end_idx = start_idx + max_num_layers - 1
@@ -170,6 +178,9 @@ class ChainManager:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
 
+    def get_server_info(self, node_id: str) -> Optional[Dict[str, Any]]:
+        return self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
+
     def _get_num_total_layers(self) -> int:
         num_total_layers = self.dht.get(TOTAL_LAYERS_KEY)
         if not num_total_layers:
@@ -181,8 +192,11 @@ class ChainManager:
         self_info = self._get_self_info()
         return self_info.get("layers_loaded")
 
-    def get_all_layers_loaded(self) -> Union[bool, None]:
+    def get_all_layers_loaded(self) -> Optional[bool]:
         return self.dht.get(ALL_LAYERS_KEY)
+
+    def get_backup_nodes(self) -> Optional[List[str]]:
+        return self.dht.get(BACKUPS_KEY)
 
     def get_successor_address(self, attempts: int = 5) -> Optional[str]:
         if self.is_tail() or self.is_backup():
@@ -310,7 +324,7 @@ class ChainManager:
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self._get_self_info()
 
-        # Republish server info
+        # Republish this servers' info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
         # If this node is the head
@@ -326,6 +340,10 @@ class ChainManager:
             all_layers_loaded = self.get_all_layers_loaded()
             if all_layers_loaded is not None:
                 self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
+
+            backup_nodes = self.get_backup_nodes()
+            if backup_nodes is not None:
+                self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
@@ -345,6 +363,7 @@ class ChainManager:
         tail_id = self.dht.get(TAIL_KEY)
         total_layers = self.dht.get(TOTAL_LAYERS_KEY)
         all_loaded = self.dht.get(ALL_LAYERS_KEY)
+        backup_nodes = self.dht.get(BACKUPS_KEY)
 
         if not head_id:
             return None
@@ -381,6 +400,16 @@ class ChainManager:
             counter += 1
 
         chain_info["servers"] = server_list
+
+        # Iterate through the backup_nodes list
+        backup_nodes_info = []
+        for id in backup_nodes:
+            server_info = self.get_server_info(id)
+            if server_info:
+                server_info["id"] = id
+                backup_nodes_info.append(server_info)
+
+        chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
 
     def print_chain_status(self):

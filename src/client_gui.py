@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 from nicegui import ui, app
 from client.client import Client
 from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address
-from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, DIGITS_SHOW
+from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
 
 
 class AppState:
@@ -44,7 +44,7 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
     Renders a single server node card on the Left Sidebar.
     Roles: Head, Tail, Intermidiate,
     """
-    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100"
+    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100" if role == "Intermidiate" else "gray-100"
 
     with ui.card().classes(f"w-full p-2 bg-{color} gap-2"):
         with ui.row().classes("w-full items-center justify-between"):
@@ -98,6 +98,12 @@ def refresh_chain_view(chain_container: ui.column):
 
         # Backup Nodes
         ui.label("Backup Nodes").classes("font-bold text-lg")
+
+        for backup_info in chain_info[BACKUPS_KEY]:
+            node_id = backup_info["id"]
+            role = "Backup"
+
+            render_server_card(node_id, role, backup_info)
 
 
 async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column, chain_container: ui.column):

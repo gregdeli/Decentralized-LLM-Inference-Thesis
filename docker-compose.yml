@@ -37,11 +37,11 @@ services:
       # - BOOTSTRAP_NODE_ADDR=DESKTOP-D93JOU9:5001
     volumes:
       - ./models:/models:ro 
-    # deploy:
-    #   resources:
-        # limits:
+    deploy:
+      resources:
+        limits:
           # memory: 4G
-          # cpus: '1.0'
+          cpus: '1.0'
     # ports:
     #   - "5678:5678"  
       # - 9999:9999 
@@ -59,11 +59,11 @@ services:
       # - BOOTSTRAP_NODE_ADDR=DESKTOP-D93JOU9:5001
     volumes:
       - ./models:/models:ro
-    # deploy:
-    #   resources:
-        # limits:
+    deploy:
+      resources:
+        limits:
           # memory: 3G
-          # cpus: '1.0'
+          cpus: '2.0'
     depends_on:
       - head-server
       - intermidiate-server
@@ -71,26 +71,26 @@ services:
       # - "5678:5678"
       # - 9999:9999 
 
-  # server-A:
-  #   image: decentralized-llm-thesis:latest
-  #   command: python server/server.py
-  #   # command: sleep infinity
-  #   environment:
-  #     - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-  #     - NUM_LAYERS=6
-  #     - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=tail-server:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   # deploy:
-  #   #   resources:
-  #       # limits:
-  #         # memory: 2G
-  #   depends_on:
-  #     - head-server
-  #     - intermidiate-server
-  #   # ports:
-  #   #   - "5678:5678"
+  server-A:
+    image: decentralized-llm-thesis:latest
+    command: python server/server.py
+    # command: sleep infinity
+    environment:
+      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - NUM_LAYERS=6
+      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      - BOOTSTRAP_NODE_ADDR=tail-server:5001
+    volumes:
+      - ./models:/models:ro
+    # deploy:
+    #   resources:
+        # limits:
+          # memory: 2G
+    depends_on:
+      - head-server
+      - intermidiate-server
+    # ports:
+    #   - "5678:5678"
 
   client:
     image: decentralized-llm-thesis:latest
@@ -107,4 +107,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5678:5678"
