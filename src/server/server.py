@@ -45,10 +45,10 @@ class Server:
 
         # Memory
         self.process = psutil.Process(os.getpid())
-        self.memory_usage_mb = 0.0
         self.memory_limit_mb = self._get_container_memory_limit_mb()
+        self.memory_usage_mb = 0.0
         self.available_memory_mb = 0.0
-        self._update_memory_usage()
+        self._update_memory_usage(update_on_dht=False)
 
         self.model_path = model_path
 
@@ -62,6 +62,14 @@ class Server:
         if not num_layers:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
             logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
+        else:
+            can_load = self._can_load(num_layers=num_layers)
+            if can_load:
+                logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
+            else:
+                logger.info(f"Node with {self.available_memory_mb} MB available cannot load {num_layers} layers.")
+                num_layers = self._mem_to_num_layers(bytes_per_param=4)
+                logger.info(f"Loading {num_layers} instead...")
 
         # Join the inference chain
         server_info = {"address": grpc_addr}
@@ -85,6 +93,8 @@ class Server:
             time_it=time_it,
         )
         self.model = self.llm.model
+        self.chain.update_device(self.llm.device)
+        self._update_memory_usage()
 
         # Create successor stub
         self.successor_stub = None
@@ -93,6 +103,28 @@ class Server:
         self.num_local_layers = self.llm.model.num_layers
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
+    
+    def _can_load(
+            self, 
+            num_layers: Optional[int] = None, 
+            layers: Optional[Tuple[int, int]] = None,
+        ) -> bool:
+        """Checks if this node can load a certain number of layers or a range of layers"""
+        max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
+        if max_num_layers <= 0:
+            return False
+        
+        if num_layers is None and layers is None:
+            logger.info("Please provide either num_layers (int) or layers (tuple)")
+            return False
+        
+        if not num_layers and layers:
+            num_layers = layers[1] - layers[0] + 1
+        
+        if max_num_layers < num_layers:
+            return False
+        
+        return True
 
     def _mem_to_num_layers(self, bytes_per_param: int) -> int:
         """
@@ -101,7 +133,7 @@ class Server:
 
         Greedy Layer Allocation: Load as many layers as memory allows
         """
-        self._update_memory_usage()
+        self._update_memory_usage(update_on_dht=False)
 
         total_layer_params = self.config["total_transformer_layer_params"]
 
@@ -133,7 +165,7 @@ class Server:
             return limit_bytes / (1024 * 1024)
         return None
 
-    def _update_memory_usage(self):
+    def _update_memory_usage(self, update_on_dht: bool = True):
         # Get current memory usage in MB
         memory_bytes = self.process.memory_info().rss
         self.memory_usage_mb = memory_bytes / (1024 * 1024)
@@ -145,6 +177,9 @@ class Server:
             # Fallback to host's available memory if no limit is set
             available_bytes = psutil.virtual_memory().available
             self.available_memory_mb = available_bytes / (1024 * 1024)
+
+        if update_on_dht:
+            self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
 
     def _print_mem_usage(self, title: str):
         logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
@@ -306,6 +341,7 @@ class Server:
 
             # Update Chain info
             self.chain.update_layers_loaded(new_layers)
+            self._update_memory_usage()
         else:
             logger.info("Layer assignment unchanged.")
 
@@ -379,11 +415,12 @@ class Server:
             )
 
             # Check if this node has enough memory to load the orphaned layers
-            if self._can_load(orphaned_layers):
+            if self._can_load(layers=orphaned_layers):
                 layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
 
                 self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
                 self.model = self.llm.model
+                self._update_memory_usage()
 
                 # Update the DHT with this nodes new info
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
@@ -405,17 +442,6 @@ class Server:
 
         # Otherwise, the chain can't be repaired
 
-    def _can_load(self, orphaned_layers: Tuple[int, int]) -> bool:
-        """Checks if this node can load the orphaned layers of a failed successor"""
-        max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
-        if max_num_layers <= 0:
-            return False
-
-        num_orphaned_layers = orphaned_layers[1] - orphaned_layers[0] + 1
-        if max_num_layers < num_orphaned_layers:
-            return False
-
-        return True
 
 
 GRPC_PORT = 5001
@@ -481,6 +507,7 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
+            server_node._update_memory_usage()
             server_node.chain.republish_keys()
 
     def _grpc_heartbeat_task(server_node: Server):

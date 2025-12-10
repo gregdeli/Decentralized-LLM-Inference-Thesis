@@ -8,8 +8,8 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - NUM_LAYERS=6
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
+      # - OMP_NUM_THREADS=1
+      # - MKL_NUM_THREADS=1
     volumes:
       - ./models:/models:ro 
     deploy:
@@ -19,8 +19,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-        # limits:
-        #   memory: 4G
+        limits:
+          memory: 3G
         #   cpus: '16.0'
     # ports:
     #   - "5678:5678"
@@ -36,14 +36,14 @@ services:
       - NUM_LAYERS=5
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
+      # - OMP_NUM_THREADS=1
+      # - MKL_NUM_THREADS=1
     volumes:
       - ./models:/models:ro 
-    # deploy:
-    #   resources:
-        # limits:
-          # memory: 4G
+    deploy:
+      resources:
+        limits:
+          memory: 4G
           # cpus: '1.0'
     # ports:
     #   - "5678:5678"  
@@ -59,14 +59,14 @@ services:
       - NUM_LAYERS=5
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
+      # - OMP_NUM_THREADS=1
+      # - MKL_NUM_THREADS=1
     volumes:
       - ./models:/models:ro
-    # deploy:
-    #   resources:
-        # limits:
-          # memory: 3G
+    deploy:
+      resources:
+        limits:
+          memory: 2G
           # cpus: '2.0'
     depends_on:
       - head-server
@@ -81,17 +81,17 @@ services:
     # command: sleep infinity
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - NUM_LAYERS=6
+      - NUM_LAYERS=5
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=tail-server:5001
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
+      # - OMP_NUM_THREADS=1
+      # - MKL_NUM_THREADS=1
     volumes:
       - ./models:/models:ro
-    # deploy:
-    #   resources:
-        # limits:
-          # memory: 2G
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     depends_on:
       - head-server
       - intermidiate-server
@@ -108,8 +108,8 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       # - BOOTSTRAP_NODE_ADDR=tail-server:5001
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
+      # - OMP_NUM_THREADS=1
+      # - MKL_NUM_THREADS=1
     volumes:
       - ./models:/models:ro
       - ./src:/app # To make live changes to the client gui code

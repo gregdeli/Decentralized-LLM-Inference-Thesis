@@ -57,7 +57,14 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
             layers = info["layers_loaded"]
             ui.label(f"Layers: {layers[0]} - {layers[1]}").classes("font-mono text-sm")
 
-        # Display Address
+        if "device" in info:
+            ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
+
+        if "memory_usage" in info and "memory_limit" in info:
+            mem_usage = info["memory_usage"]
+            mem_limit = info["memory_limit"]
+            ui.label(f'Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB').classes("font-mono text-sm")
+
         if "address" in info:
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
 
@@ -74,7 +81,7 @@ def refresh_chain_view(chain_container: ui.column):
 
     with chain_container:
         # Layer Status
-        ui.label("Layers Status").classes("font-bold text-lg")
+        ui.label("Global Keys").classes("font-bold text-lg")
         total_layers = chain_info.get(TOTAL_LAYERS_KEY)
         all_loaded = chain_info.get(ALL_LAYERS_KEY)
         ui.label(f"Total Layers: {total_layers}")
@@ -106,7 +113,7 @@ def refresh_chain_view(chain_container: ui.column):
             render_server_card(node_id, role, backup_info)
 
 
-async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column, chain_container: ui.column):
+async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column, chain_container: ui.column, send_btn: ui.button, stop_btn: ui.button):
     if state.is_generating:
         ui.notify("Please wait for the text generation to end.")
         return
@@ -117,6 +124,9 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
     input_element.value = ""
     state.is_generating = True
+
+    send_btn.visible = False
+    stop_btn.visible = True
 
     # Chat container
     with chat_container:
@@ -135,6 +145,8 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
     try:
         if token_generator:
             for token in token_generator:
+                if not state.is_generating:
+                    break
                 full_response += token
                 response_message.clear()
                 with response_message:
@@ -149,6 +161,8 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
         return
 
     state.is_generating = False
+    send_btn.visible = True
+    stop_btn.visible = False
 
     # Update Stats
     stats = state.client.last_inference_stats
@@ -165,6 +179,12 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
         if state.client.total_rate > 0:
             ui.button("Trigger Reallocation", on_click=lambda: trigger_reallocation(stats_container, chain_container)).classes("w-full")
+
+def stop_generation():
+    """Signals the generation loop to stop."""
+    if state.is_generating:
+        state.is_generating = False
+        ui.notify("Stopping generation...")
 
 
 async def trigger_reallocation(stats_container: ui.column, chain_container: ui.column):
@@ -193,7 +213,7 @@ async def main_page():
     # ui.query("body").classes("p-0 m-0 overflow-hidden")
     ui.query("#c3").classes("p-0")
 
-    with ui.row().classes("w-full h-screen gap-0"):
+    with ui.row().classes("w-full h-screen gap-0 flex-nowrap"):
 
         # Left Sidebar: Server Chain (fixed width)
         with ui.column().classes("w-1/4 h-full border-r border-gray-200 p-4 overflow-y-auto"):
@@ -214,12 +234,15 @@ async def main_page():
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
                 msg_input = ui.input(placeholder="Enter prompt...").classes("flex-1").props("outlined rounded")
-                send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container)).props(
+                
+                send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn)).props(
                     "flat round color=primary"
                 )
+                stop_btn = ui.button(icon="stop", on_click=stop_generation).props("flat round color=primary").classes("hidden")
+                stop_btn.visible = False
 
                 # Bind Enter key
-                msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container, chain_container))
+                msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn))
 
         # Right Sidebar: Stats (Fixed Width)
         with ui.column().classes("w-1/4 h-full border-l border-gray-200 p-4"):

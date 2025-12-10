@@ -315,6 +315,9 @@ class ChainManager:
         # Set the "all_layers_loaded" key to True
         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
+        # Rebublish keys since the tail node could have did and heartbeat task would fail
+        self.republish_keys()
+
     def republish_keys(self):
         """
         Periodically called to maintain the node's presence on the DHT and check chain integrity.
@@ -411,6 +414,21 @@ class ChainManager:
 
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
+    
+    def update_device(self, device: str):
+        self_info = self._get_self_info()
+        self_info["device"] = device
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
+
+    def update_memory(self, mem_usage: float, mem_limit: float):
+        self_info = self._get_self_info()
+        self_info["memory_usage"] = mem_usage
+        self_info["memory_limit"] = mem_limit
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
 
     def print_chain_status(self):
         """
