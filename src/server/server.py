@@ -43,11 +43,20 @@ class Server:
 
         self._repair_lock = threading.Lock()
 
+        # Device
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
         # Memory
         self.process = psutil.Process(os.getpid())
         self.memory_limit_mb = self._get_container_memory_limit_mb()
         self.memory_usage_mb = 0.0
         self.available_memory_mb = 0.0
+
+        # VRAM
+        self.vram_usage_mb = 0.0
+        self.vram_limit_mb = 0.0
+        self.available_vram_mb = 0.0
+
         self._update_memory_usage(update_on_dht=False)
 
         self.model_path = model_path
@@ -82,6 +91,7 @@ class Server:
 
         # If all layers are loaded then this node acts as a backup and doesn't load any layers
         if self.chain.is_backup():
+            self._update_memory_usage()
             return
 
         layers_to_loaded = self.chain.get_layers_loaded()
@@ -103,27 +113,30 @@ class Server:
         self.num_local_layers = self.llm.model.num_layers
         self.layers_per_second = 0.0
         self.computational_delay = 0.0
-    
+
     def _can_load(
-            self, 
-            num_layers: Optional[int] = None, 
-            layers: Optional[Tuple[int, int]] = None,
-        ) -> bool:
+        self,
+        num_layers: Optional[int] = None,
+        layers: Optional[Tuple[int, int]] = None,
+    ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
         if max_num_layers <= 0:
             return False
-        
+
+        # If neither is given
         if num_layers is None and layers is None:
             logger.info("Please provide either num_layers (int) or layers (tuple)")
             return False
-        
+
+        # If layer range is given
         if not num_layers and layers:
             num_layers = layers[1] - layers[0] + 1
-        
+
+        # If num_layers is given
         if max_num_layers < num_layers:
             return False
-        
+
         return True
 
     def _mem_to_num_layers(self, bytes_per_param: int) -> int:
@@ -142,8 +155,17 @@ class Server:
         # Thelei kai kapoio overhead logika
         # reserved_overhead = 500 * 1024 * 1024
 
-        available_memory_bytes = self.available_memory_mb * 1024 * 1024
+        if torch.cuda.is_available():
+            available_vram_bytes = self.available_vram_mb * 1024 * 1024
+            max_num_layers = int(available_vram_bytes // single_layer_memory_size)
 
+            if max_num_layers > self.config["num_hidden_layers"]:
+                max_num_layers = self.config["num_hidden_layers"]
+
+            return max_num_layers
+
+        # If cpu
+        available_memory_bytes = self.available_memory_mb * 1024 * 1024
         max_num_layers = int(available_memory_bytes // single_layer_memory_size)
 
         if max_num_layers > self.config["num_hidden_layers"]:
@@ -166,6 +188,7 @@ class Server:
         return None
 
     def _update_memory_usage(self, update_on_dht: bool = True):
+        # ---- Memory ----
         # Get current memory usage in MB
         memory_bytes = self.process.memory_info().rss
         self.memory_usage_mb = memory_bytes / (1024 * 1024)
@@ -178,8 +201,16 @@ class Server:
             available_bytes = psutil.virtual_memory().available
             self.available_memory_mb = available_bytes / (1024 * 1024)
 
+        # ---- VRAM ----
+        if torch.cuda.is_available():
+            self.vram_limit_mb = torch.cuda.get_device_properties(self.device).total_memory / (1024 * 1024)
+            self.vram_usage_mb = torch.cuda.memory_reserved(self.device) / (1024 * 1024)
+            self.available_vram_mb = self.vram_limit_mb - self.vram_usage_mb
+
         if update_on_dht:
             self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
+            if torch.cuda.is_available():
+                self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb)
 
     def _print_mem_usage(self, title: str):
         logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
@@ -369,7 +400,7 @@ class Server:
 
         try:
             channel = grpc.insecure_channel(successor_addr)
-            grpc.channel_ready_future(channel).result(timeout=10)
+            grpc.channel_ready_future(channel).result(timeout=5)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             logger.info(f"Connection to successor: {successor_addr} established.")
         except grpc.FutureTimeoutError:
@@ -441,7 +472,6 @@ class Server:
                 #    return
 
         # Otherwise, the chain can't be repaired
-
 
 
 GRPC_PORT = 5001

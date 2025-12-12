@@ -414,7 +414,7 @@ class ChainManager:
 
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
-    
+
     def update_device(self, device: str):
         self_info = self._get_self_info()
         self_info["device"] = device
@@ -426,6 +426,14 @@ class ChainManager:
         self_info = self._get_self_info()
         self_info["memory_usage"] = mem_usage
         self_info["memory_limit"] = mem_limit
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
+
+    def update_vram(self, vram_usage: float, vram_limit: float):
+        self_info = self._get_self_info()
+        self_info["vram_usage"] = vram_usage
+        self_info["vram_limit"] = vram_limit
 
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)

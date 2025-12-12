@@ -55,7 +55,8 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
 
         if "layers_loaded" in info:
             layers = info["layers_loaded"]
-            ui.label(f"Layers: {layers[0]} - {layers[1]}").classes("font-mono text-sm")
+            num_layers = layers[1] - layers[0] + 1
+            ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
 
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
@@ -63,7 +64,12 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
         if "memory_usage" in info and "memory_limit" in info:
             mem_usage = info["memory_usage"]
             mem_limit = info["memory_limit"]
-            ui.label(f'Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB').classes("font-mono text-sm")
+            ui.label(f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB").classes("font-mono text-sm")
+
+        if "vram_usage" in info and "vram_limit" in info:
+            vram_usage = info["vram_usage"]
+            vram_limit = info["vram_limit"]
+            ui.label(f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB").classes("font-mono text-sm")
 
         if "address" in info:
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
@@ -113,7 +119,14 @@ def refresh_chain_view(chain_container: ui.column):
             render_server_card(node_id, role, backup_info)
 
 
-async def generate(input_element: ui.input, chat_container: ui.column, stats_container: ui.column, chain_container: ui.column, send_btn: ui.button, stop_btn: ui.button):
+async def generate(
+    input_element: ui.input,
+    chat_container: ui.column,
+    stats_container: ui.column,
+    chain_container: ui.column,
+    send_btn: ui.button,
+    stop_btn: ui.button,
+):
     if state.is_generating:
         ui.notify("Please wait for the text generation to end.")
         return
@@ -152,7 +165,7 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
                 with response_message:
                     ui.markdown(full_response)
                 token_count += 1
-                await asyncio.sleep(0.005)
+                await asyncio.sleep(0.01)
 
                 # Scroll to bottom
                 ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
@@ -179,6 +192,7 @@ async def generate(input_element: ui.input, chat_container: ui.column, stats_con
 
         if state.client.total_rate > 0:
             ui.button("Trigger Reallocation", on_click=lambda: trigger_reallocation(stats_container, chain_container)).classes("w-full")
+
 
 def stop_generation():
     """Signals the generation loop to stop."""
@@ -234,10 +248,10 @@ async def main_page():
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
                 msg_input = ui.input(placeholder="Enter prompt...").classes("flex-1").props("outlined rounded")
-                
-                send_btn = ui.button(icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn)).props(
-                    "flat round color=primary"
-                )
+
+                send_btn = ui.button(
+                    icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn)
+                ).props("flat round color=primary")
                 stop_btn = ui.button(icon="stop", on_click=stop_generation).props("flat round color=primary").classes("hidden")
                 stop_btn.visible = False
 

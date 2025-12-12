@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from typing import Dict, Any, Union, List, Optional, Tuple, Iterator
 from pathlib import Path
@@ -9,6 +10,8 @@ from core.model import Llama3
 from core.utils import remove_model_prefix, is_instruct_model
 
 from transformers import AutoTokenizer
+
+logger = logging.getLogger(__name__)
 
 
 class LLM:
