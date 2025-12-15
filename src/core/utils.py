@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 """-------------- LLM Loader Utils --------------"""
 
 
+def get_relevant_safetensor_files(weight_map: Dict[str, str]):
+    relevant_files = set()
+    for filename in weight_map.values():
+        relevant_files.add(filename)
+
+    return list(relevant_files)
+
+
 def remove_model_prefix(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Removes the "model." prefix from the keys of a Pytorch state dict"""
     new_state_dict = {}
@@ -36,7 +44,8 @@ def is_instruct_model(model_path: Path) -> bool:
         return False
 
 
-# Llama 3.2 -> total_transformer_layer_params = 60821504
+# Llama 3.2 1B -> total_transformer_layer_params = 60821504
+# Llama 3.2 3B -> total_transformer_layer_params = 100669440
 def calculate_transformer_params(model_path_str: str) -> int:
     """Calculates the total number of parameters for a single Transformer Layer for Llama 3.2"""
     model_path = Path(model_path_str)

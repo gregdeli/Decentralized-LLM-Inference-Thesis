@@ -4,10 +4,11 @@ import time
 from typing import Dict, Any, Union, List, Optional, Tuple, Iterator
 from pathlib import Path
 import torch
+import gc
 from safetensors.torch import load_file
 
 from core.model import Llama3
-from core.utils import remove_model_prefix, is_instruct_model
+from core.utils import remove_model_prefix, is_instruct_model, get_relevant_safetensor_files
 
 from transformers import AutoTokenizer
 
@@ -58,6 +59,11 @@ class LLM:
         if time_it:
             start_time = time.perf_counter()
 
+        # Pre-loading cleanup
+        # gc.collect()
+        # if torch.cuda.is_available():
+        #     torch.cuda.empty_cache()
+
         # Check for CUDA availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
         # device = "cpu"
@@ -78,13 +84,43 @@ class LLM:
         # Setup preprocessor
         preprocessor = Preprocessor(tokenizer, device=device)
 
-        # Load weigths form the safetensors file
-        weights_path = model_path / "model.safetensors"
-        state_dict = load_file(weights_path, device="cpu")
-        state_dict = remove_model_prefix(state_dict)
-        model.load_state_dict(state_dict, strict=False)
+        # Load weigths from the safetensors file or files
+        index_path = model_path / "model.safetensors.index.json"
+        single_file_path = model_path / "model.safetensors"
 
-        model.to(device=device)  # Move parameters to VRAM if gpu available
+        files_to_load = []
+
+        if index_path.exists():
+            # Sharded Checkpoint
+            with open(index_path, "r") as f:
+                index_data = json.load(f)
+
+            weight_map = index_data.get("weight_map")
+            files_to_load = get_relevant_safetensor_files(weight_map)
+            logger.info(f"Identified {len(files_to_load)} relevant checkpoint shards.")
+
+        elif single_file_path.exists():
+            # Single Checkpoint
+            files_to_load = ["model.safetensors"]
+
+        else:
+            raise FileNotFoundError(f"No safetensors model found at {model_path}")
+
+        for filename in files_to_load:
+            file_path = model_path / filename
+            state_dict = load_file(file_path)
+            state_dict = remove_model_prefix(state_dict)
+            model.load_state_dict(state_dict, strict=False)
+
+            # Explicitly free memory
+            del state_dict
+            gc.collect()
+
+        # state_dict = load_file(weights_path, device="cpu")
+        # state_dict = remove_model_prefix(state_dict)
+        # model.load_state_dict(state_dict, strict=False)
+
+        model.to(device)  # Move parameters to VRAM if gpu available
 
         if time_it:
             end_time = time.perf_counter()

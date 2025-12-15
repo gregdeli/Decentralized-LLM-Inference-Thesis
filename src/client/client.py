@@ -36,7 +36,7 @@ class Client:
         if not head_info:
             raise RuntimeError("Client could not find the head server.")
 
-        # logger.info(f"Client successfully found head server. Address: {head_info['address']}")
+        logger.info(f"Client successfully found head server. Address: {head_info['address']}")
 
         head_server_addr = head_info["address"]
 

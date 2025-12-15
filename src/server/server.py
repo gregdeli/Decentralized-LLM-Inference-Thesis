@@ -152,11 +152,12 @@ class Server:
 
         single_layer_memory_size = total_layer_params * bytes_per_param  # Bytes
 
-        # Thelei kai kapoio overhead logika
-        # reserved_overhead = 500 * 1024 * 1024
+        # Leave 500 MB for overhead
+        reserved_overhead_mb = 500 * 1024 * 1024
 
         if torch.cuda.is_available():
             available_vram_bytes = self.available_vram_mb * 1024 * 1024
+            available_vram_bytes -= reserved_overhead_mb
             max_num_layers = int(available_vram_bytes // single_layer_memory_size)
 
             if max_num_layers > self.config["num_hidden_layers"]:
@@ -166,6 +167,7 @@ class Server:
 
         # If cpu
         available_memory_bytes = self.available_memory_mb * 1024 * 1024
+        available_memory_bytes -= reserved_overhead_mb
         max_num_layers = int(available_memory_bytes // single_layer_memory_size)
 
         if max_num_layers > self.config["num_hidden_layers"]:
@@ -203,9 +205,14 @@ class Server:
 
         # ---- VRAM ----
         if torch.cuda.is_available():
-            self.vram_limit_mb = torch.cuda.get_device_properties(self.device).total_memory / (1024 * 1024)
-            self.vram_usage_mb = torch.cuda.memory_reserved(self.device) / (1024 * 1024)
-            self.available_vram_mb = self.vram_limit_mb - self.vram_usage_mb
+            free_bytes, total_bytes = torch.cuda.mem_get_info(self.device)
+            self.vram_limit_mb = total_bytes / (1024 * 1024)
+            self.available_vram_mb = free_bytes / (1024 * 1024)
+            self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
+
+            # self.vram_limit_mb = torch.cuda.get_device_properties(self.device).total_memory / (1024 * 1024)
+            # self.vram_usage_mb = torch.cuda.memory_reserved(self.device) / (1024 * 1024)
+            # self.available_vram_mb = self.vram_limit_mb - self.vram_usage_mb
 
         if update_on_dht:
             self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
@@ -215,6 +222,8 @@ class Server:
     def _print_mem_usage(self, title: str):
         logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
         logger.info(f"{title}: Available Memory: {self.available_memory_mb:.2f}MB")
+        logger.info(f"{title}: VRAM Usage: {self.vram_usage_mb:.2f}/{self.vram_limit_mb}MB")
+        logger.info(f"{title}: Available VRAM: {self.available_vram_mb:.2f}MB")
 
     @torch.no_grad()
     def run_local_layers(
@@ -341,6 +350,13 @@ class Server:
         else:
             ideal_layer_count = 0
 
+        current_num_layers = self.num_local_layers
+        max_extra_num_layers = self._mem_to_num_layers(bytes_per_param=4)
+        max_num_layers = current_num_layers + max_extra_num_layers
+
+        if ideal_layer_count > max_num_layers:
+            ideal_layer_count = max_num_layers
+
         # Rounding logic
         if self.chain.is_tail():
             # The tail takes whatever is left
@@ -368,7 +384,7 @@ class Server:
 
             self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
             self.model = self.llm.model
-            self.num_local_layers = my_layer_count
+            # self.num_local_layers = my_layer_count
 
             # Update Chain info
             self.chain.update_layers_loaded(new_layers)
@@ -400,7 +416,7 @@ class Server:
 
         try:
             channel = grpc.insecure_channel(successor_addr)
-            grpc.channel_ready_future(channel).result(timeout=5)
+            grpc.channel_ready_future(channel).result(timeout=10)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             logger.info(f"Connection to successor: {successor_addr} established.")
         except grpc.FutureTimeoutError:

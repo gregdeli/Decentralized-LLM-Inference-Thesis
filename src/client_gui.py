@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -8,6 +9,8 @@ from nicegui import ui, app
 from client.client import Client
 from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
+
+logger = logging.getLogger(__name__)
 
 
 class AppState:
@@ -22,9 +25,16 @@ state = AppState()
 async def initialize_client():
     model_path_str = os.getenv("MODEL_PATH", "/models/Llama-3.2-1B-Instruct")
     host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
-    # bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR", "tail-server:5001")
 
-    bootstrap_addr = discover_bootstrap_node_address()
+    bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR", "tail-server:5001")
+
+    if not bootstrap_addr:
+        bootstrap_addr = discover_bootstrap_node_address()
+
+    if not bootstrap_addr:
+        logger.error("Failed to find bootstrap node.")
+        # ui.notify("Failed to find bootstrap node!", type="negative")
+        return
 
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
@@ -35,7 +45,8 @@ async def initialize_client():
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
     )
-    # ui.notify(f"Client initialized. Peer ID: {state.client.chain.node_id}")
+
+    logger.info("Client initialized.")
 
 
 # ----- UI Components -----
@@ -217,11 +228,18 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
     refresh_chain_view(chain_container)
 
 
+def run_background_init():
+    asyncio.create_task(initialize_client())
+
+
+# app.on_startup(run_background_init)
+
+
 # ----- Main Layout -----
 @ui.page("/")
 async def main_page():
-    if not state.client:
-        await initialize_client()
+    # if not state.client:
+    # await initialize_client()
 
     # Apply global styles
     # ui.query("body").classes("p-0 m-0 overflow-hidden")
