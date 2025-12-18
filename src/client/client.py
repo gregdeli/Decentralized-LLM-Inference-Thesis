@@ -196,7 +196,7 @@ class Client:
             if response.HasField("error_message"):
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
-                return
+                return f"Server-side failure: {response.error_message}. Aborting generation task. Please try again."
 
             # Capture TOTAL RATE
             if response.total_rate > 0:

@@ -117,7 +117,7 @@ class Server:
             self._update_memory_usage()
             return
 
-        layers_to_loaded = self.chain.get_layers_loaded()
+        layers_to_loaded = self.chain.get_layers()
         logger.info(f"Loading layers: {layers_to_loaded}...")
 
         self.llm = LLM.load(
@@ -129,10 +129,14 @@ class Server:
         self.model = self.llm.model
 
         # Update DHT
-        if layers_to_loaded[1] == self.llm.config["num_hidden_layers"] - 1:
-            self.chain.update_all_layer_loaded(True)
-        else:
-            self.chain.update_all_layer_loaded(False)
+        self.chain.update_layers_loaded(True)
+
+        self.chain.update_all_layer_loaded()
+
+        # if layers_to_loaded[1] == self.llm.config["num_hidden_layers"] - 1:
+        #     self.chain.update_all_layer_loaded(True)
+        # else:
+        #     self.chain.update_all_layer_loaded(False)
 
         self.chain.update_device(self.llm.device)
 
@@ -347,7 +351,6 @@ class Server:
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    # self.repair_chain(dead_successor_data)
                     self.repair_chain()
                     return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired...")
                 else:
@@ -416,7 +419,7 @@ class Server:
             # self.num_local_layers = my_layer_count
 
             # Update Chain info
-            self.chain.update_layers_loaded(new_layers)
+            self.chain.update_layers(new_layers)
             self._update_memory_usage()
         else:
             logger.info("Layer assignment unchanged.")
@@ -483,7 +486,7 @@ class Server:
             self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)  # 'all_layers_loaded' -> False
 
             # Repair
-            orphaned_layers = dead_successor_data.get("layers_loaded")
+            orphaned_layers = dead_successor_data.get("layers")
             successor_2_data = dead_successor_data.get("successor")
             succ_was_tail = dead_successor_data.get("was_tail")
             logger.info(
@@ -609,6 +612,7 @@ def serve():
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                     logger.warning(f"Successor failure detected during HEARTBEAT CHECK.")  # Debugging
+                    server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     server_node.repair_chain()
                 else:
                     logger.warning(f"A gRPC error occurred during health check: {e.code().name}")

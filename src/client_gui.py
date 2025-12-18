@@ -64,10 +64,13 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
 
         ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
 
-        if "layers_loaded" in info:
-            layers = info["layers_loaded"]
+        if "layers" in info:
+            layers = info["layers"]
             num_layers = layers[1] - layers[0] + 1
             ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
+
+        layers_loaded = info.get("layers_loaded", False)
+        ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
 
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
@@ -100,7 +103,7 @@ def refresh_chain_view(chain_container: ui.column):
         # Layer Status
         ui.label("Global Keys").classes("font-bold text-lg")
         total_layers = chain_info.get(TOTAL_LAYERS_KEY)
-        all_loaded = chain_info.get(ALL_LAYERS_KEY)
+        all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
         ui.label(f"Total Layers: {total_layers}")
         ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
 
