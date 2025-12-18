@@ -180,7 +180,7 @@ async def generate(
 
                 # Scroll to bottom
                 ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
-    except RuntimeError:
+    except (RuntimeError, AttributeError):
         state.is_generating = False
         return
 
@@ -232,7 +232,7 @@ def run_background_init():
     asyncio.create_task(initialize_client())
 
 
-# app.on_startup(run_background_init)
+app.on_startup(run_background_init)
 
 
 # ----- Main Layout -----

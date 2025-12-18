@@ -6,6 +6,7 @@ import os
 import signal
 import threading
 import socket
+import gc
 import time
 from concurrent import futures
 from pathlib import Path
@@ -94,7 +95,30 @@ class Server:
             self._update_memory_usage()
             return
 
+        self.llm = None
+        self.model = None
+
+        self._update_memory_usage()
+
+        # Create successor stub
+        self.successor_stub = None
+
+        # Processing Rate
+        self.num_local_layers = 0
+        self.layers_per_second = 0.0
+        self.computational_delay = 0.0
+
+    def _load_llm(
+        self,
+        model_path: Path,
+        time_it: bool = False,
+    ):
+        if self.chain.is_backup():
+            self._update_memory_usage()
+            return
+
         layers_to_loaded = self.chain.get_layers_loaded()
+        logger.info(f"Loading layers: {layers_to_loaded}...")
 
         self.llm = LLM.load(
             model_path,
@@ -103,16 +127,18 @@ class Server:
             time_it=time_it,
         )
         self.model = self.llm.model
+
+        # Update DHT
+        if layers_to_loaded[1] == self.llm.config["num_hidden_layers"] - 1:
+            self.chain.update_all_layer_loaded(True)
+        else:
+            self.chain.update_all_layer_loaded(False)
+
         self.chain.update_device(self.llm.device)
+
         self._update_memory_usage()
 
-        # Create successor stub
-        self.successor_stub = None
-
-        # Processing Rate
         self.num_local_layers = self.llm.model.num_layers
-        self.layers_per_second = 0.0
-        self.computational_delay = 0.0
 
     def _can_load(
         self,
@@ -141,7 +167,7 @@ class Server:
 
     def _mem_to_num_layers(self, bytes_per_param: int) -> int:
         """
-        Determine the number of layers that can be loaded load based the in memory size
+        Determine the number of layers that can be loaded load based on the in memory size
         of a Transformer layer and the available memory of the server node.
 
         Greedy Layer Allocation: Load as many layers as memory allows
@@ -376,11 +402,14 @@ class Server:
         if new_layers != self.llm.layers_loaded:
             logger.info(f"Reloading model with New Layers: {new_layers} (Previous: {self.llm.layers_loaded})")
 
-            # Clear GPU mem before reloading
-            # if torch.cuda.is_available():
-            #     self.model = None
-            #     self.llm = None
-            #     torch.cuda.empty_cache()
+            # Clear memory before reloading
+            self.model = None
+            self.llm = None
+            gc.collect()
+
+            # Clear memory before reloading
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
             self.model = self.llm.model
@@ -464,6 +493,15 @@ class Server:
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(layers=orphaned_layers):
                 layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
+
+                # Clear memory before reloading
+                self.model = None
+                self.llm = None
+                gc.collect()
+
+                # Clear memory before reloading
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
                 self.model = self.llm.model
@@ -604,6 +642,8 @@ def serve():
 
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
+
+    server_node._load_llm(model_path)
 
     server.wait_for_termination()
 

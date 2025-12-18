@@ -85,9 +85,9 @@ class Client:
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         if not all_layers_loaded:
-            logger.warning("Not all model layers have been loaded on the server chain.")
-            logger.warning("Cannot initiate the generation task.")
-            return None
+            warning = "Not all model layers have been loaded on the server chain. Cannot initiate the generation task."
+            logger.warning(warning)
+            return warning
 
         prompt = self.llm.apply_chat_template(prompt)
         input_ids = self.llm.preprocessor.encode(prompt)

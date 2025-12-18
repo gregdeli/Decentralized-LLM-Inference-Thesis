@@ -59,11 +59,6 @@ class LLM:
         if time_it:
             start_time = time.perf_counter()
 
-        # Pre-loading cleanup
-        # gc.collect()
-        # if torch.cuda.is_available():
-        #     torch.cuda.empty_cache()
-
         # Check for CUDA availability
         device = "cuda" if torch.cuda.is_available() else "cpu"
         # device = "cpu"
@@ -106,6 +101,7 @@ class LLM:
         else:
             raise FileNotFoundError(f"No safetensors model found at {model_path}")
 
+        logger.info("Loading state dict...")
         for filename in files_to_load:
             file_path = model_path / filename
             state_dict = load_file(file_path)
@@ -116,11 +112,9 @@ class LLM:
             del state_dict
             gc.collect()
 
-        # state_dict = load_file(weights_path, device="cpu")
-        # state_dict = remove_model_prefix(state_dict)
-        # model.load_state_dict(state_dict, strict=False)
-
+        logger.info(f"Moving model to {device}...")
         model.to(device)  # Move parameters to VRAM if gpu available
+        logger.info(f"Model successfully moved to {device}...")
 
         if time_it:
             end_time = time.perf_counter()

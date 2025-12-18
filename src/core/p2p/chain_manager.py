@@ -69,10 +69,6 @@ class ChainManager:
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
 
-        # Update the ALL_LAYERS_KEY if all layers have been loaded
-        if end_idx == num_total_layers - 1:
-            self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
-
         self_info["layers_loaded"] = (0, end_idx)
 
         server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
@@ -115,11 +111,6 @@ class ChainManager:
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
 
-        # Update the ALL_LAYERS_KEY if all layers have been loaded
-        if end_idx == num_total_layers - 1:
-            self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
-
-        # self_info["layers_loaded"] = (start_idx, end_idx)
         self_layers_loaded = (start_idx, end_idx)
 
         # Update the old tail to point to the new server node
@@ -414,6 +405,10 @@ class ChainManager:
 
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
+
+    def update_all_layer_loaded(self, all_layers_loaded: bool):
+        "Checks the layers_loaded subkey in all the server nodes in the chain"
+        self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
 
     def update_device(self, device: str):
         self_info = self._get_self_info()
