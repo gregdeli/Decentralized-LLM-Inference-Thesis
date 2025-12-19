@@ -25,7 +25,7 @@ message MultiaddrResponse {
 
 // The request message containing the tensor and metadata.
 message InferenceRequest {
-  bytes tensor_data = 1;      // The raw bytes of the tensor.
+  bytes tensor_data = 1; // The raw bytes of the tensor.
   repeated int64 tensor_shape = 2; 
   string dtype = 3;           
 

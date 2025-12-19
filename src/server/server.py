@@ -344,15 +344,16 @@ class Server:
 
         final_layer_response = None
         try:
-            final_layer_response = self.successor_stub.RunLayers(request, timeout=15)
+            final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")  # Debugging
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    self.repair_chain()
-                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain failed. The chain is being repaired...")
+                    # self.repair_chain()
+                    threading.Thread(target=self.repair_chain, daemon=True).start()
+                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain has failed. The chain is being repaired...")
                 else:
                     logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
                     return nodeservice_pb2.InferenceResponse(

@@ -183,8 +183,11 @@ async def generate(
 
                 # Scroll to bottom
                 ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
-    except (RuntimeError, AttributeError):
+    except (RuntimeError, AttributeError) as e:
         state.is_generating = False
+        ui.notify(f"Generation Failed: {str(e)}", type="negative")
+        send_btn.visible = True
+        stop_btn.visible = False
         return
 
     state.is_generating = False
@@ -241,11 +244,7 @@ app.on_startup(run_background_init)
 # ----- Main Layout -----
 @ui.page("/")
 async def main_page():
-    # if not state.client:
-    # await initialize_client()
-
-    # Apply global styles
-    # ui.query("body").classes("p-0 m-0 overflow-hidden")
+    # Global style
     ui.query("#c3").classes("p-0")
 
     with ui.row().classes("w-full h-screen gap-0 flex-nowrap"):
