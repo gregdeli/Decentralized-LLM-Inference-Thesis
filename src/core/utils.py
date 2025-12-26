@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_relevant_safetensor_files(weight_map: Dict[str, str]):
-    relevant_files = set()
-    for filename in weight_map.values():
-        relevant_files.add(filename)
+    return list(set(weight_map.values()))
+    # relevant_files = set()
+    # for filename in weight_map.values():
+    #     relevant_files.add(filename)
 
-    return list(relevant_files)
+    # return list(relevant_files)
 
 
 def remove_model_prefix(state_dict: Dict[str, Any]) -> Dict[str, Any]:

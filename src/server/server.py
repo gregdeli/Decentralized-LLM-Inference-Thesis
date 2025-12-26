@@ -26,6 +26,8 @@ from core.p2p.chain_manager import ChainManager, HEARTBEAT_INTERVAL_S, ALL_LAYER
 
 logger = logging.getLogger(__name__)
 
+RESERVED_MEM_MB = 500  # Memory reserved for system overhead
+
 
 class Server:
     def __init__(
@@ -37,15 +39,15 @@ class Server:
         initial_peers: List[str] = None,
         grpc_addr: str = "head-server:5001",
     ) -> None:
-        # Create a DHT Node for the server
-        self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
-        self.dht.start()
-        self.chain = ChainManager(self.dht)
-
+        self.model_path = model_path
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self._repair_lock = threading.Lock()
 
-        # Device
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Load Config
+        config_path = model_path / "config.json"
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        self.config = config
 
         # Memory
         self.process = psutil.Process(os.getpid())
@@ -58,30 +60,21 @@ class Server:
         self.vram_limit_mb = 0.0
         self.available_vram_mb = 0.0
 
+        # Create a DHT Node and Chain object
+        self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
+        self.dht.start()
+        self.chain = ChainManager(self.dht)
+
+        # Determine Load Capacity
         self._update_memory_usage(update_on_dht=False)
-
-        self.model_path = model_path
-
-        # Get the config file
-        config_path = model_path / "config.json"
-        with open(config_path, "r") as f:
-            config = json.load(f)
-        self.config = config
-
-        # Calculate number of Transformer Layers to load
         if not num_layers:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
             logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
-        else:
-            can_load = self._can_load(num_layers=num_layers)
-            if can_load:
-                logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
-            else:
-                logger.info(f"Node with {self.available_memory_mb} MB available cannot load {num_layers} layers.")
-                num_layers = self._mem_to_num_layers(bytes_per_param=4)
-                logger.info(f"Loading {num_layers} instead...")
+        elif not self._can_load(num_layers=num_layers):
+            logger.warning(f"Requested {num_layers} layers but memory is insufficient. Adjusting...")
+            num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
-        # Join the inference chain
+        # Join the Inference Chain
         server_info = {"address": grpc_addr}
 
         self.chain.join_chain(
@@ -90,59 +83,63 @@ class Server:
             num_total_layers=config["num_hidden_layers"],
         )
 
+        # Initialize State
+        self.llm = None
+        self.model = None
+        self.successor_stub = None
+        self.num_local_layers = 0
+        self.layers_per_second = 0.0
+
         # If all layers are loaded then this node acts as a backup and doesn't load any layers
         if self.chain.is_backup():
             self._update_memory_usage()
             return
 
-        self.llm = None
-        self.model = None
-
-        self._update_memory_usage()
-
-        # Create successor stub
-        self.successor_stub = None
-
-        # Processing Rate
-        self.num_local_layers = 0
-        self.layers_per_second = 0.0
-        self.computational_delay = 0.0
-
     def _load_llm(
         self,
-        model_path: Path,
         time_it: bool = False,
     ):
+        """Loads the layers assigned by the ChainManager."""
         if self.chain.is_backup():
-            self._update_memory_usage()
             return
 
         layers_to_loaded = self.chain.get_layers()
         logger.info(f"Loading layers: {layers_to_loaded}...")
 
         self.llm = LLM.load(
-            model_path,
+            self.model_path,
             is_client=False,
             layers_to_load=layers_to_loaded,
             time_it=time_it,
         )
         self.model = self.llm.model
+        self.num_local_layers = self.llm.model.num_layers
 
-        # Update DHT
+        # Update DHT and Chain Status
         self.chain.update_layers_loaded(True)
-
         self.chain.update_all_layer_loaded()
-
-        # if layers_to_loaded[1] == self.llm.config["num_hidden_layers"] - 1:
-        #     self.chain.update_all_layer_loaded(True)
-        # else:
-        #     self.chain.update_all_layer_loaded(False)
-
         self.chain.update_device(self.llm.device)
-
         self._update_memory_usage()
 
-        self.num_local_layers = self.llm.model.num_layers
+    def _mem_to_num_layers(self, bytes_per_param: int) -> int:
+        """
+        Calculates how many layers fit in the available memory/VRAM
+        """
+        self._update_memory_usage(update_on_dht=False)
+
+        total_layer_params = self.config["total_transformer_layer_params"]
+        layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
+
+        if torch.cuda.is_available():
+            available = self.available_vram_mb - RESERVED_MEM_MB
+        else:
+            available = self.available_memory_mb - RESERVED_MEM_MB
+
+        if available <= 0:
+            return 0
+
+        max_num_layers = int(available // layer_memory_size_mb)
+        return min(max_num_layers, self.config["num_hidden_layers"])
 
     def _can_load(
         self,
@@ -150,60 +147,9 @@ class Server:
         layers: Optional[Tuple[int, int]] = None,
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
+        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
         max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
-        if max_num_layers <= 0:
-            return False
-
-        # If neither is given
-        if num_layers is None and layers is None:
-            logger.info("Please provide either num_layers (int) or layers (tuple)")
-            return False
-
-        # If layer range is given
-        if not num_layers and layers:
-            num_layers = layers[1] - layers[0] + 1
-
-        # If num_layers is given
-        if max_num_layers < num_layers:
-            return False
-
-        return True
-
-    def _mem_to_num_layers(self, bytes_per_param: int) -> int:
-        """
-        Determine the number of layers that can be loaded load based on the in memory size
-        of a Transformer layer and the available memory of the server node.
-
-        Greedy Layer Allocation: Load as many layers as memory allows
-        """
-        self._update_memory_usage(update_on_dht=False)
-
-        total_layer_params = self.config["total_transformer_layer_params"]
-
-        single_layer_memory_size = total_layer_params * bytes_per_param  # Bytes
-
-        # Leave 500 MB for overhead
-        reserved_overhead_mb = 500 * 1024 * 1024
-
-        if torch.cuda.is_available():
-            available_vram_bytes = self.available_vram_mb * 1024 * 1024
-            available_vram_bytes -= reserved_overhead_mb
-            max_num_layers = int(available_vram_bytes // single_layer_memory_size)
-
-            if max_num_layers > self.config["num_hidden_layers"]:
-                max_num_layers = self.config["num_hidden_layers"]
-
-            return max_num_layers
-
-        # If cpu
-        available_memory_bytes = self.available_memory_mb * 1024 * 1024
-        available_memory_bytes -= reserved_overhead_mb
-        max_num_layers = int(available_memory_bytes // single_layer_memory_size)
-
-        if max_num_layers > self.config["num_hidden_layers"]:
-            max_num_layers = self.config["num_hidden_layers"]
-
-        return max_num_layers
+        return num_layers <= max_num_layers
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -240,10 +186,6 @@ class Server:
             self.available_vram_mb = free_bytes / (1024 * 1024)
             self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
 
-            # self.vram_limit_mb = torch.cuda.get_device_properties(self.device).total_memory / (1024 * 1024)
-            # self.vram_usage_mb = torch.cuda.memory_reserved(self.device) / (1024 * 1024)
-            # self.available_vram_mb = self.vram_limit_mb - self.vram_usage_mb
-
         if update_on_dht:
             self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
             if torch.cuda.is_available():
@@ -270,48 +212,39 @@ class Server:
         # Ensure inputs are on the same device as the model
         device = self.llm.device
 
-        # start = time.perf_counter()
         if input_tensor.device != device:
             input_tensor = input_tensor.to(device)
 
         if input_pos is not None and input_pos.device != device:
             input_pos = input_pos.to(device)
-        # el = time.perf_counter() - start
-        # logger.info(f"moving inputs to device {device}: {el:.2f}s")
 
         # KV Cache
         if not self.llm.kv_cache_initialized:
-            self._update_memory_usage()
-            # self._print_mem_usage("After Loading Model")
-            device = self.llm.preprocessor.device
             # Na allaksw to batch_size otan kanw batched inference
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
             self.llm.kv_cache_initialized = True
-            self._update_memory_usage()
-            # self._print_mem_usage("After Setting KV Cache")
+            self._update_memory_usage(update_on_dht=True)
 
         # Dynamically grow the kv cache size if necessary
         elif self.llm.prev_generated_seq_length < max_returned_tokens:
             tmp_device = self.model.mask_cache.device
             self.model.clear_kv_cache()
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
-            self._update_memory_usage()
+            self._update_memory_usage(update_on_dht=True)
             # self._print_mem_usage("After Growing KV Cache")
 
         self.llm.prev_generated_seq_length = max_returned_tokens
 
-        start_time = time.perf_counter()
-
         # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
 
+        # Inference
+        start_time = time.perf_counter()
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
-
-        end_time = time.perf_counter()
-        self.computational_delay = end_time - start_time
+        computational_delay = time.perf_counter() - start_time
 
         # Get the server's layer processing rate for this inference run
-        if self.computational_delay > 0 and self.num_local_layers > 0:
-            current_rate = self.num_local_layers / self.computational_delay
+        if computational_delay > 0 and self.num_local_layers > 0:
+            current_rate = self.num_local_layers / computational_delay
 
             # Moving average to avoid jitter
             if self.layers_per_second == 0:
@@ -319,13 +252,13 @@ class Server:
             else:
                 self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
 
-        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
         # Calculate partial rate to send forward
         my_partial_rate = incoming_partial_rate + self.layers_per_second
 
         # Move output tensor back to the cpu for serialization
-        h = h.cpu()  # is this neccessary? YES!
+        h = h.cpu()
 
         if self.chain.is_tail():
             response = tensor_to_response(h)
@@ -347,7 +280,7 @@ class Server:
             final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                logger.warning(f"Successor failure detected during INFERENCE.")  # Debugging
+                logger.warning(f"Successor failure detected during INFERENCE.")
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
@@ -384,44 +317,25 @@ class Server:
         max_extra_num_layers = self._mem_to_num_layers(bytes_per_param=4)
         max_num_layers = current_num_layers + max_extra_num_layers
 
-        if ideal_layer_count > max_num_layers:
-            ideal_layer_count = max_num_layers
+        target_layer_count = min(int(round(ideal_layer_count)), max_num_layers)
 
         # Rounding logic
         if self.chain.is_tail():
             # The tail takes whatever is left
-            my_layer_count = num_total_layers - start_layer_index
-        else:
-            my_layer_count = int(round(ideal_layer_count))
-            if my_layer_count < 1:
-                my_layer_count = 1
-            if (start_layer_index + my_layer_count) >= num_total_layers:
-                # Leave at least 1 layer for the rest of the chain if not tail
-                my_layer_count = num_total_layers - start_layer_index - 1
+            target_layer_count = num_total_layers - start_layer_index
+        elif target_layer_count < 1:
+            target_layer_count = 1
+        elif (start_layer_index + target_layer_count) >= num_total_layers:
+            # Leave at least 1 layer for the rest of the chain if not tail
+            target_layer_count = num_total_layers - start_layer_index - 1
 
-        end_layer_index = start_layer_index + my_layer_count - 1
+        end_layer_index = start_layer_index + target_layer_count - 1
         new_layers = (start_layer_index, end_layer_index)
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
-            logger.info(f"Reloading model with New Layers: {new_layers} (Previous: {self.llm.layers_loaded})")
-
-            # Clear memory before reloading
-            self.model = None
-            self.llm = None
-            gc.collect()
-
-            # Clear memory before reloading
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=new_layers)
-            self.model = self.llm.model
-            # self.num_local_layers = my_layer_count
-
-            # Update Chain info
+            self._reload_llm(new_layers)
             self.chain.update_layers(new_layers)
-            self._update_memory_usage()
         else:
             logger.info("Layer assignment unchanged.")
 
@@ -435,31 +349,7 @@ class Server:
             except grpc.RpcError as e:
                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
 
-    def _connect_to_successor(self):
-        """Establishes a gRPC connection to the successor node."""
-        if self.chain.is_tail() or self.chain.is_backup():
-            self.successor_stub = None
-            return
-
-        successor_addr = self.chain.get_successor_address()
-        if not successor_addr:
-            logger.warning("Successor address not found.")
-            self.successor_stub = None
-            return
-
-        try:
-            channel = grpc.insecure_channel(successor_addr)
-            grpc.channel_ready_future(channel).result(timeout=10)
-            self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-            logger.info(f"Connection to successor: {successor_addr} established.")
-        except grpc.FutureTimeoutError:
-            logger.error(f"Connection to {successor_addr} timed out.")
-            self.successor_stub = None
-        except grpc.RpcError as e:
-            logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
-            self.successor_stub = None
-
-    def repair_chain(self):  # , dead_successor_data: Dict[str, Any]):
+    def repair_chain(self):
         """
         Method that repairs the inference chain after detecting this node's successor is dead.
         To repair the chain:
@@ -497,24 +387,10 @@ class Server:
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(layers=orphaned_layers):
                 layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
+                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}")
 
-                # Clear memory before reloading
-                self.model = None
-                self.llm = None
-                gc.collect()
-
-                # Clear memory before reloading
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-                self.llm = LLM.load(model_path=self.model_path, is_client=False, layers_to_load=layers_to_load)
-                self.model = self.llm.model
-                self._update_memory_usage()
-
-                # Update the DHT with this nodes new info
+                self._reload_llm(layers_to_load)
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
-
-                # Recreate successor stub to the new successor
                 self._connect_to_successor()
 
             # Else, try to find a backup node to take over
@@ -531,9 +407,48 @@ class Server:
 
         # Otherwise, the chain can't be repaired
 
+    def _reload_llm(self, layers: Tuple[int, int]):
+        """Helper to reload the model with explicit GC"""
+        logger.info(f"Reloading model with layers: {layers}")
+        self.model = None
+        self.llm = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        self.llm = LLM.load(self.model_path, is_client=False, layers_to_load=layers)
+        self.model = self.llm.model
+        self.num_local_layers = self.llm.model.num_layers
+        self._update_memory_usage()
+
+    def _connect_to_successor(self):
+        """Establishes a gRPC connection to the successor node."""
+        if self.chain.is_tail() or self.chain.is_backup():
+            self.successor_stub = None
+            return
+
+        successor_addr = self.chain.get_successor_address()
+        if not successor_addr:
+            logger.warning("Successor address not found.")
+            self.successor_stub = None
+            return
+
+        try:
+            channel = grpc.insecure_channel(successor_addr)
+            grpc.channel_ready_future(channel).result(timeout=10)
+            self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+            logger.info(f"Connection to successor: {successor_addr} established.")
+        except grpc.FutureTimeoutError:
+            logger.error(f"Connection to {successor_addr} timed out.")
+            self.successor_stub = None
+        except grpc.RpcError as e:
+            logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
+            self.successor_stub = None
+
 
 GRPC_PORT = 5001
 UDP_PORT = 9999
+MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 
 def serve():
@@ -574,12 +489,11 @@ def serve():
     )
 
     # Start GRPC server
-    max_msg_size = 100 * 1024 * 1024  # 100 MB
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=2),
         options=[
-            ("grpc.max_send_message_length", max_msg_size),
-            ("grpc.max_receive_message_length", max_msg_size),
+            ("grpc.max_send_message_length", MAX_MSG_SIZE),
+            ("grpc.max_receive_message_length", MAX_MSG_SIZE),
         ],
     )
     nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)

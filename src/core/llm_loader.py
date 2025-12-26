@@ -73,8 +73,10 @@ class LLM:
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
 
+        # Initialize model
         model = Llama3(config, is_client, layers_to_load)
         model.eval()
+        model.to(device)
 
         # Setup preprocessor
         preprocessor = Preprocessor(tokenizer, device=device)
@@ -112,14 +114,12 @@ class LLM:
             del state_dict
             gc.collect()
 
-        logger.info(f"Moving model to {device}...")
-        model.to(device)  # Move parameters to VRAM if gpu available
-        logger.info(f"Model successfully moved to {device}...")
+        logger.info(f"Model successfully loaded on {device}...")
 
         if time_it:
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time
-            print(f"Model loading time: {elapsed_time: .2f} seconds")
+            logger.info(f"Model loading time: {elapsed_time: .2f} seconds")
 
         return cls(
             model=model,
