@@ -5,7 +5,7 @@ from huggingface_hub import snapshot_download
 # ['lit_model.pth', 'model_config.yaml'].
 snapshot_download(
     repo_id="meta-llama/Llama-3.2-1B",
-    use_auth_token="",
+    token="",
     local_dir="E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B",
 )
 
