@@ -26,7 +26,7 @@ async def initialize_client():
     model_path_str = os.getenv("MODEL_PATH", "/models/Llama-3.2-1B-Instruct")
     host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
 
-    bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR", "tail-server:5001")
+    bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR")
 
     if not bootstrap_addr:
         bootstrap_addr = discover_bootstrap_node_address()
@@ -286,4 +286,4 @@ async def main_page():
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
 
 
-ui.run(title="Distributed LLM Client", port=8080)
+ui.run(title="Distributed LLM Client", port=8083)
