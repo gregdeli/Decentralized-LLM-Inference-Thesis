@@ -40,7 +40,8 @@ class Server:
         grpc_addr: str = "head-server:5001",
     ) -> None:
         self.model_path = model_path
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu"
         self._repair_lock = threading.Lock()
 
         # Load Config
@@ -130,7 +131,8 @@ class Server:
         total_layer_params = self.config["total_transformer_layer_params"]
         layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
 
-        if torch.cuda.is_available():
+        # if torch.cuda.is_available():
+        if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
             available = self.available_memory_mb - RESERVED_MEM_MB
@@ -155,15 +157,26 @@ class Server:
         """Reads the container's memory limit from cgroup files."""
         cgroup_v2_path = "/sys/fs/cgroup/memory.max"
 
-        limit_bytes = None
-        with open(cgroup_v2_path, "r") as f:
-            content = f.read().strip()
-            if content != "max":
-                limit_bytes = int(content)
+        try:
+            if os.path.exists(cgroup_v2_path):
+                with open(cgroup_v2_path, "r") as f:
+                    content = f.read().strip()
+                    if content and content != "max":
+                        return int(content) / (1024 * 1024)
+        except (FileNotFoundError, PermissionError, ValueError):
+            pass
 
-        if limit_bytes:
-            return limit_bytes / (1024 * 1024)
         return None
+
+        # limit_bytes = None
+        # with open(cgroup_v2_path, "r") as f:
+        #     content = f.read().strip()
+        #     if content != "max":
+        #         limit_bytes = int(content)
+
+        # if limit_bytes:
+        #     return limit_bytes / (1024 * 1024)
+        # return None
 
     def _update_memory_usage(self, update_on_dht: bool = True):
         # ---- Memory ----
@@ -180,7 +193,8 @@ class Server:
             self.available_memory_mb = available_bytes / (1024 * 1024)
 
         # ---- VRAM ----
-        if torch.cuda.is_available():
+        # if torch.cuda.is_available():
+        if self.device == "cuda":
             free_bytes, total_bytes = torch.cuda.mem_get_info(self.device)
             self.vram_limit_mb = total_bytes / (1024 * 1024)
             self.available_vram_mb = free_bytes / (1024 * 1024)
@@ -188,7 +202,8 @@ class Server:
 
         if update_on_dht:
             self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
-            if torch.cuda.is_available():
+            # if torch.cuda.is_available():
+            if self.device == "cuda":
                 self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb)
 
     def _print_mem_usage(self, title: str):
@@ -543,7 +558,6 @@ def serve():
         while True:
             data, addr = sock.recvfrom(1024)
             if data == b"DISCOVER_BOOTSTRAP":
-
                 sock.sendto(response_b, addr)
 
     grpc_heartbeat_thread = threading.Thread(target=_grpc_heartbeat_task, args=(server_node,), daemon=True)
@@ -562,7 +576,7 @@ def serve():
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
-    server_node._load_llm(model_path)
+    server_node._load_llm()
 
     server.wait_for_termination()
 

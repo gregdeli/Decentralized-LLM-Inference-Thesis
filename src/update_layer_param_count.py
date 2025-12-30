@@ -1,7 +1,8 @@
 import json
 from core.utils import calculate_transformer_params
 
-MODEL_PATH = "/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-3B-Instruct"
+# MODEL_PATH = "/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-3B-Instruct"
+MODEL_PATH = "/home/greg/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct"
 
 param_count = calculate_transformer_params(MODEL_PATH)
 
