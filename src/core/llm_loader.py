@@ -60,8 +60,8 @@ class LLM:
             start_time = time.perf_counter()
 
         # Check for CUDA availability
-        # device = "cuda" if torch.cuda.is_available() else "cpu"
-        device = "cpu"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # device = "cpu"
 
         config_path = model_path / "config.json"
         with open(config_path, "r") as f:
