@@ -2,6 +2,8 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
+* Na ftiaksw config file gia ta env variables 
+
 * Simulate heterogeneity na dw tetradio
 
 * Repair chain if HEAD fails
