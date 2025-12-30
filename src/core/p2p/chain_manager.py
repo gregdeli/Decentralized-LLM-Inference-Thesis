@@ -155,9 +155,9 @@ class ChainManager:
 
             head_layers = head_info["layers"]
             head_successor = head_info["successor"]
-            if head_layers[1] >= num_total_layers - 1 or head_successor is not None:
-                logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
-                return head_info
+            # if head_layers[1] >= num_total_layers - 1 or head_successor is not None:
+            logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
+            return head_info
             logger.info(f"Attempt {attempt + 1}: Found head server but with layers < total and no successor.")
             logger.info(f"Retrying in 2 seconds...")
             time.sleep(2)
