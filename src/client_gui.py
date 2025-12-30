@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 
 from nicegui import ui, app
 from client.client import Client
-from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address
+from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address, get_ip_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,8 @@ state = AppState()
 
 async def initialize_client():
     model_path_str = os.getenv("MODEL_PATH", "/models/Llama-3.2-1B-Instruct")
-    host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
+    # host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
+    host_maddrs = f"/ip4/{get_ip_address()}/tcp/0"
 
     bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR")
 
@@ -286,4 +287,4 @@ async def main_page():
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
 
 
-ui.run(title="Distributed LLM Client", port=8083)
+ui.run(title="Distributed LLM Client", port=8080)
