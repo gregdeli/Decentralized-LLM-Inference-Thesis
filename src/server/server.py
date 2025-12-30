@@ -280,6 +280,10 @@ class Server:
             response.total_rate = my_partial_rate
             return response
 
+        # Ensure the successor stub has been created
+        if not self.successor_stub and not self.chain.is_tail():
+            self._connect_to_successor()
+
         # Call the successor via gRPC
         request = tensor_to_request(
             h,
