@@ -218,10 +218,10 @@ class ChainManager:
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
-        num_total_layers = self._get_num_total_layers()
-        layers = self.get_layers()
+        # num_total_layers = self._get_num_total_layers()
+        # layers = self.get_layers()
 
-        if tail_id == self.node_id and layers[1] == num_total_layers - 1:
+        if tail_id == self.node_id: # and layers[1] == num_total_layers - 1:
             return True
 
         return False

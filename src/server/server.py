@@ -40,8 +40,8 @@ class Server:
         grpc_addr: str = "head-server:5001",
     ) -> None:
         self.model_path = model_path
-        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # self.device = "cpu"
         self._repair_lock = threading.Lock()
 
         # Load Config
@@ -476,7 +476,9 @@ def serve():
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
     # hostname = socket.gethostname()
-    ip = get_ip_address()
+    ip = os.getenv("IP")
+    if not ip:
+        ip = get_ip_address()
     grpc_addr = f"{ip}:{GRPC_PORT}"
 
     # host_maddrs = os.getenv("HOST_MADDRS")
