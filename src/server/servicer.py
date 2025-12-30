@@ -22,7 +22,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         if not visible_maddrs:
             context.abort(grpc.StatusCode.UNAVAILABLE, "P2P address not yet available.")
 
-        return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[1]))
+        return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[0]))
 
     def RunLayers(self, request, context):
         # Deserialize the incoming request to a tensor

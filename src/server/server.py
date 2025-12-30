@@ -18,7 +18,7 @@ import torch
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
-from core.remote.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address, get_ip_address
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
@@ -166,7 +166,7 @@ class Server:
         except (FileNotFoundError, PermissionError, ValueError):
             pass
 
-        return None
+        return 0.0
 
         # limit_bytes = None
         # with open(cgroup_v2_path, "r") as f:
@@ -475,10 +475,12 @@ def serve():
     num_layers_str = os.getenv("NUM_LAYERS")
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
-    hostname = socket.gethostname()
-    grpc_addr = f"{hostname}:{GRPC_PORT}"
+    # hostname = socket.gethostname()
+    ip = get_ip_address()
+    grpc_addr = f"{ip}:{GRPC_PORT}"
 
-    host_maddrs = os.getenv("HOST_MADDRS")
+    # host_maddrs = os.getenv("HOST_MADDRS")
+    host_maddrs = f"/ip4/{ip}/tcp/0"
 
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
 
