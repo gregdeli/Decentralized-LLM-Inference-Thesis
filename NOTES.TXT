@@ -2,7 +2,7 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
-* Na ftiaksw config file gia ta env variables 
+* track network latency metrics
 
 * Simulate heterogeneity na dw tetradio
 

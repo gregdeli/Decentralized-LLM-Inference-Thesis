@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from dotenv import load_dotenv
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
@@ -23,9 +24,15 @@ state = AppState()
 
 
 async def initialize_client():
-    model_path_str = os.getenv("MODEL_PATH", "/models/Llama-3.2-1B-Instruct")
+    load_dotenv()
+
+    model_path_str = os.getenv("MODEL_PATH")
     # host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
-    host_maddrs = f"/ip4/{get_ip_address()}/tcp/0"
+
+    my_ip = os.getenv("IP")
+    if not my_ip:
+        my_ip = get_ip_address()
+    host_maddrs = f"/ip4/{my_ip}/tcp/0"
 
     bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR")
 
