@@ -6,6 +6,7 @@ import os
 import signal
 import threading
 import socket
+from dotenv import load_dotenv
 import gc
 import time
 from concurrent import futures
@@ -472,6 +473,8 @@ MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 def serve():
     """The main function to start the server."""
+    load_dotenv()
+    
     # Read configuration from environment variables
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)

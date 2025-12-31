@@ -1,6 +1,9 @@
-# Env folder
-.env
+# Python env folder
+env/
 .python-version
+
+# Environment variables
+.env
 
 # LLM weights
 models

@@ -9,3 +9,4 @@ grpcio-tools
 debugpy
 psutil
 nicegui
+python-dotenv
