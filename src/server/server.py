@@ -443,6 +443,9 @@ class Server:
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
+        if self.successor_stub is not None:
+            return
+
         if self.chain.is_tail() or self.chain.is_backup():
             self.successor_stub = None
             return
@@ -498,7 +501,6 @@ def serve():
 
     if not bootstrap_node_addr_str:
         logger.error("Failed to find bootstrap node address.")
-        return
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
