@@ -547,6 +547,7 @@ def serve():
 
             # Perform the health check on the successor
             try:
+                server_node._connect_to_successor()
                 if server_node.successor_stub is not None:
                     server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
                     logger.info(f"Successor is ALIVE.")  # Debugging
