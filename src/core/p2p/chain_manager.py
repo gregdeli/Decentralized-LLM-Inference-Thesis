@@ -146,21 +146,22 @@ class ChainManager:
 
         # If the head server doesn't hold all the layers,
         # retry until its successor is not None
-        for attempt in range(attempts):
-            logger.info(f"Attempting to get head server info... (Attempt {attempt + 1})")
-            head_info = self.dht.get(head_server_key)
-            if not head_info:
-                logger.error(f"Found head ID {head_id} but could not retrieve its info.")
-                return None
+        # for attempt in range(attempts):
+        # logger.info(f"Attempting to get head server info... (Attempt {attempt + 1})")
+        logger.info(f"Attempting to get head server info...")
+        head_info = self.dht.get(head_server_key)
+        if not head_info:
+            logger.error(f"Found head ID {head_id} but could not retrieve its info.")
+            return None
 
-            head_layers = head_info["layers"]
-            head_successor = head_info["successor"]
-            # if head_layers[1] >= num_total_layers - 1 or head_successor is not None:
-            logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
-            return head_info
-            logger.info(f"Attempt {attempt + 1}: Found head server but with layers < total and no successor.")
-            logger.info(f"Retrying in 2 seconds...")
-            time.sleep(2)
+        head_layers = head_info["layers"]
+        head_successor = head_info["successor"]
+        # if head_layers[1] >= num_total_layers - 1 or head_successor is not None:
+        logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
+        return head_info
+            # logger.info(f"Attempt {attempt + 1}: Found head server but with layers < total and no successor.")
+            # logger.info(f"Retrying in 2 seconds...")
+            # time.sleep(2)
 
     def _get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""

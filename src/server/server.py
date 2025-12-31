@@ -19,7 +19,7 @@ import torch
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
-from core.remote.utils import get_bootstrap_peer_address, get_ip_address
+from core.remote.utils import get_bootstrap_peer_address, get_ip_address, discover_bootstrap_node_address
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
@@ -483,15 +483,22 @@ def serve():
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
     # hostname = socket.gethostname()
-    ip = os.getenv("IP")
-    if not ip:
-        ip = get_ip_address()
-    grpc_addr = f"{ip}:{GRPC_PORT}"
+    my_ip = os.getenv("IP")
+    if not my_ip:
+        my_ip = get_ip_address()
+    grpc_addr = f"{my_ip}:{GRPC_PORT}"
 
     # host_maddrs = os.getenv("HOST_MADDRS")
-    host_maddrs = f"/ip4/{ip}/tcp/0"
+    host_maddrs = f"/ip4/{my_ip}/tcp/0"
 
     bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
+
+    if not bootstrap_node_addr_str:
+        bootstrap_node_addr_str = discover_bootstrap_node_address()
+
+    if not bootstrap_node_addr_str:
+        logger.error("Failed to find bootstrap node address.")
+        return
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
