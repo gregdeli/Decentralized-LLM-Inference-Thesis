@@ -17,7 +17,7 @@ class MultiaddrResponse(_message.Message):
     def __init__(self, multiaddr: _Optional[str] = ...) -> None: ...
 
 class InferenceRequest(_message.Message):
-    __slots__ = ("tensor_data", "tensor_shape", "dtype", "max_returned_tokens", "seq_length", "input_pos", "partial_rate")
+    __slots__ = ("tensor_data", "tensor_shape", "dtype", "max_returned_tokens", "seq_length", "input_pos", "partial_rate", "response_address")
     TENSOR_DATA_FIELD_NUMBER: _ClassVar[int]
     TENSOR_SHAPE_FIELD_NUMBER: _ClassVar[int]
     DTYPE_FIELD_NUMBER: _ClassVar[int]
@@ -25,6 +25,7 @@ class InferenceRequest(_message.Message):
     SEQ_LENGTH_FIELD_NUMBER: _ClassVar[int]
     INPUT_POS_FIELD_NUMBER: _ClassVar[int]
     PARTIAL_RATE_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_ADDRESS_FIELD_NUMBER: _ClassVar[int]
     tensor_data: bytes
     tensor_shape: _containers.RepeatedScalarFieldContainer[int]
     dtype: str
@@ -32,7 +33,8 @@ class InferenceRequest(_message.Message):
     seq_length: int
     input_pos: int
     partial_rate: float
-    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., max_returned_tokens: _Optional[int] = ..., seq_length: _Optional[int] = ..., input_pos: _Optional[int] = ..., partial_rate: _Optional[float] = ...) -> None: ...
+    response_address: str
+    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., max_returned_tokens: _Optional[int] = ..., seq_length: _Optional[int] = ..., input_pos: _Optional[int] = ..., partial_rate: _Optional[float] = ..., response_address: _Optional[str] = ...) -> None: ...
 
 class InferenceResponse(_message.Message):
     __slots__ = ("tensor_data", "tensor_shape", "dtype", "error_message", "total_rate")

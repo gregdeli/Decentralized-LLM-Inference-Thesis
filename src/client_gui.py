@@ -2,12 +2,16 @@ import asyncio
 import os
 import time
 from dotenv import load_dotenv
+from concurrent import futures
+import grpc
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
 from nicegui import ui, app
 from client.client import Client
+from client.servicer import ClientServicer
+from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address, get_ip_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
 
@@ -22,6 +26,8 @@ class AppState:
 
 state = AppState()
 
+GPRC_PORT = 5001
+MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 async def initialize_client():
     load_dotenv()
@@ -48,13 +54,28 @@ async def initialize_client():
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
     # Initialize your actual Client
+    grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
     state.client = Client(
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
+        grpc_addr = grpc_addr
     )
-
     logger.info("Client initialized.")
+
+    # Start GRPC server
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=2),
+        options=[
+            ("grpc.max_send_message_length", MAX_MSG_SIZE),
+            ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+        ],
+    )
+    nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(state.client), server)
+    server.add_insecure_port(grpc_addr)
+
+    server.start()
+    logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
 
 
 # ----- UI Components -----

@@ -10,12 +10,12 @@ import torch
 
 from core.llm_loader import LLM
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
+from core.remote.utils import get_ip_address
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
 
 logger = logging.getLogger(__name__)
-
 
 class Client:
     def __init__(
@@ -23,8 +23,11 @@ class Client:
         model_path: Path,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
+        grpc_addr: str = f"{get_ip_address()}:5001",
         time_it: bool = False,
     ) -> None:
+        self.grpc_addr = grpc_addr
+
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
@@ -50,6 +53,7 @@ class Client:
         )
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
+        self.last_inference_response = None
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
 
@@ -190,6 +194,7 @@ class Client:
             request = tensor_to_request(
                 x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
             )
+            request.response_address = self.grpc_addr
 
             response = self.head_server_stub.RunLayers(request)
 

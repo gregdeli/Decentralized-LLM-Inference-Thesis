@@ -17,6 +17,10 @@ service NodeService {
   rpc Reallocate(ReallocateRequest) returns (Empty) {}
 }
 
+service ClientService {
+  rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
+}
+
 message Empty {}
 
 message MultiaddrResponse {
@@ -35,6 +39,8 @@ message InferenceRequest {
   optional int64 input_pos = 6;
 
   float partial_rate = 7;
+
+  string response_address = 8;
 }
 
 // The response message containing the resulting tensor.
