@@ -1,31 +1,31 @@
 services:
-  head-server:
-    image: decentralized-llm-thesis:latest
-    command: python server/server.py
-    # command: sleep infinity
-    # network_mode: "host"
-    environment:
-      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=8
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - OMP_NUM_THREADS=1
-      # - MKL_NUM_THREADS=1
-    volumes:
-      - ./models:/models:ro 
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-        limits:
-          memory: 6G
-        #   cpus: '16.0'
-    # ports:
-      # - "5678:5678"
-      # - "9999:9999"
+  # head-server:
+  #   image: decentralized-llm-thesis:latest
+  #   command: python server/server.py
+  #   # command: sleep infinity
+  #   # network_mode: "host"
+  #   environment:
+  #     - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+  #     # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+  #     - NUM_LAYERS=8
+  #     - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     # - OMP_NUM_THREADS=1
+  #     # - MKL_NUM_THREADS=1
+  #   volumes:
+  #     - ./models:/models:ro 
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #       limits:
+  #         memory: 6G
+  #       #   cpus: '16.0'
+  #   # ports:
+  #     # - "5678:5678"
+  #     # - "9999:9999"
 
   intermidiate-server:
     image: decentralized-llm-thesis:latest
@@ -33,11 +33,11 @@ services:
     # command: sleep infinity
     # network_mode: "host"
     environment:
-      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - NUM_LAYERS=4
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=head-server:5001
+      # - BOOTSTRAP_NODE_ADDR=head-server:5001
       # - OMP_NUM_THREADS=1
       # - MKL_NUM_THREADS=1
     volumes:
@@ -120,4 +120,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5678:5678"

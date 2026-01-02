@@ -17,4 +17,5 @@ class ClientServicer(nodeservice_pb2_grpc.ClientServiceServicer):
 
     def ReceiveResponse(self, request, context):
         self.client_node.inference_response = request
+        self.client_node.inference_response_event.set()
         return nodeservice_pb2.Empty()

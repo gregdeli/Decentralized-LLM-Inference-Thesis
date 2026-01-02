@@ -65,7 +65,7 @@ async def initialize_client():
 
     # Start GRPC server
     server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=2),
+        futures.ThreadPoolExecutor(max_workers=1),
         options=[
             ("grpc.max_send_message_length", MAX_MSG_SIZE),
             ("grpc.max_receive_message_length", MAX_MSG_SIZE),
@@ -73,8 +73,8 @@ async def initialize_client():
     )
     nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(state.client), server)
     server.add_insecure_port(grpc_addr)
-
     server.start()
+    
     logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
 
 

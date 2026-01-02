@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 import time
+import threading
 
 import grpc
 import torch
@@ -53,7 +54,9 @@ class Client:
         )
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
-        self.last_inference_response = None
+        self.inference_response = None
+        self.inference_response_event = threading.Event()
+
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
 
@@ -196,7 +199,17 @@ class Client:
             )
             request.response_address = self.grpc_addr
 
-            response = self.head_server_stub.RunLayers(request)
+            # response = self.head_server_stub.RunLayers(request)
+            _ = self.head_server_stub.RunLayers(request)
+
+            # Wait for the Tail to set the response_event
+            is_set = self.inference_response_event.wait(timeout=30)
+
+            if not is_set:
+                logger.error("Timeout waiting for response from Tail server.")
+                yield "Error: Timeout"
+            
+            response = self.inference_response
 
             if response.HasField("error_message"):
                 logger.error(f"Server-side failure: {response.error_message}")
