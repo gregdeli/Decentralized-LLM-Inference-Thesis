@@ -92,6 +92,9 @@ class Server:
         self.num_local_layers = 0
         self.layers_per_second = 0.0
 
+        # Client Stub
+        self.client_stub = None
+
         # If all layers are loaded then this node acts as a backup and doesn't load any layers
         if self.chain.is_backup():
             self._update_memory_usage()
@@ -320,7 +323,7 @@ class Server:
 
         # final_layer_response = None
         try:
-            final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
+            # final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
             self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
@@ -338,7 +341,7 @@ class Server:
                     )
 
         # return final_layer_response
-        return nodeservice_pb2.InferenceResponse(error_message=f"RPC Error: {e}")
+        return nodeservice_pb2.InferenceResponse()
 
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
         """

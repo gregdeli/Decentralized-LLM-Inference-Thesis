@@ -4,6 +4,8 @@ Future Features:
 TODO:
 * track network latency metrics
 
+* Quantize activations before sending
+
 * Simulate heterogeneity na dw tetradio
 
 * Repair chain if HEAD fails
@@ -13,8 +15,6 @@ TODO:
   
   Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose
 
-
-* Tail server na stelnei to response kateuthian ston client
 
 
 

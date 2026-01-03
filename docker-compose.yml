@@ -1,13 +1,13 @@
 services:
   head-server:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: sleep infinity
+    command: python server/server.py
+    # command: sleep infinity
     # network_mode: "host"
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=8
+      - NUM_LAYERS=16
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       # - OMP_NUM_THREADS=1
       # - MKL_NUM_THREADS=1
@@ -29,8 +29,8 @@ services:
 
   intermidiate-server:
     image: decentralized-llm-thesis:latest
-    command: python server/server.py
-    # command: sleep infinity
+    # command: python server/server.py
+    command: sleep infinity
     # network_mode: "host"
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
@@ -112,7 +112,7 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001 
+      - BOOTSTRAP_NODE_ADDR=head-server:5001 
       # - OMP_NUM_THREADS=1
       # - MKL_NUM_THREADS=1
     volumes:
