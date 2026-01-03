@@ -221,6 +221,7 @@ class Server:
         seq_length: int = None,
         input_pos: torch.Tensor = None,
         incoming_partial_rate: float = 0.0,
+        response_address: str = None,
     ) -> Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse]:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
@@ -276,10 +277,31 @@ class Server:
         # Move output tensor back to the cpu for serialization
         h = h.cpu()
 
+        # If TAIL Node -> Send response to Client
         if self.chain.is_tail():
+            # response = tensor_to_response(h)
+            # response.total_rate = my_partial_rate
+            # return response
+            if not response_address:
+                logger.error("Tail node has no response_address for the client!")
+                return
+            
             response = tensor_to_response(h)
             response.total_rate = my_partial_rate
-            return response
+
+            # Connect to Client
+            try:
+                if not self.client_stub:
+                    channel = grpc.insecure_channel(response_address)
+                    self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
+
+                self.client_stub.ReceiveResponse(response)
+            except grpc.RpcError as e:
+                logger.error(f"Failed to send result to client at {response_address}: {e}")
+
+            return nodeservice_pb2.InferenceResponse()
+
+        # INTERMIDIATE NODE -> FORWARD TO SUCCESSOR
 
         # Ensure the successor stub has been created
         if not self.successor_stub and not self.chain.is_tail():
@@ -294,10 +316,12 @@ class Server:
         )
 
         request.partial_rate = my_partial_rate
+        request.response_address = response_address
 
-        final_layer_response = None
+        # final_layer_response = None
         try:
             final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
+            self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")
@@ -313,7 +337,8 @@ class Server:
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
 
-        return final_layer_response
+        # return final_layer_response
+        return nodeservice_pb2.InferenceResponse(error_message=f"RPC Error: {e}")
 
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
         """

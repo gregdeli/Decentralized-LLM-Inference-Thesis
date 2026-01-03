@@ -3,6 +3,7 @@ env/
 .python-version
 
 # Environment variables
+.venv
 .env
 
 # LLM weights

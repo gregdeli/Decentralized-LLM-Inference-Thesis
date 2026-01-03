@@ -200,7 +200,12 @@ class Client:
             request.response_address = self.grpc_addr
 
             # response = self.head_server_stub.RunLayers(request)
-            _ = self.head_server_stub.RunLayers(request)
+            ack_response = self.head_server_stub.RunLayers(request)
+            if ack_response.HasField("error_message"):
+                logger.error(f"Server-side failure: {response.error_message}")
+                logger.error("Aborting generation task. Please try again.")
+                yield f"Server-side failure: {response.error_message}. Aborting generation task. Please try again."
+                return
 
             # Wait for the Tail to set the response_event
             is_set = self.inference_response_event.wait(timeout=30)

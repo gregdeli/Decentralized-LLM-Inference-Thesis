@@ -35,16 +35,20 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
         partial_rate = request.partial_rate
+        response_address = request.response_address
 
-        # Run the actual inference logic
-        final_layer_response = self.server_node.run_local_layers(
+        # Run the inference logic
+        # final_layer_response = self.server_node.run_local_layers(
+        self.server_node.run_local_layers(
             input_tensor, 
             max_returned_tokens, 
             seq_length, input_pos, 
-            partial_rate
+            partial_rate,
+            response_address
         )
 
-        return final_layer_response
+        # return final_layer_response
+        return nodeservice_pb2.InferenceResponse()
 
     def Check(self, request, context):
         """If the server is running it will return an Empty response"""
