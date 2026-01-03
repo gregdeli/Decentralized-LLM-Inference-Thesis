@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
 import time
 import threading
+from concurrent import futures
 
 import grpc
 import torch
 
+from client.servicer import ClientServicer
 from core.llm_loader import LLM
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address
@@ -17,6 +19,8 @@ from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
 
 logger = logging.getLogger(__name__)
+
+MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 class Client:
     def __init__(
@@ -44,12 +48,12 @@ class Client:
 
         head_server_addr = head_info["address"]
 
-        max_msg_size = 100 * 1024 * 1024
+        # max_msg_size = 100 * 1024 * 1024
         channel = grpc.insecure_channel(
             head_server_addr,
             options=[
-                ("grpc.max_send_message_length", max_msg_size),
-                ("grpc.max_receive_message_length", max_msg_size),
+                ("grpc.max_send_message_length", MAX_MSG_SIZE),
+                ("grpc.max_receive_message_length", MAX_MSG_SIZE),
             ],
         )
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
@@ -59,6 +63,27 @@ class Client:
 
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
+
+        # Start GRPC server in a seperate thread
+        grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
+        grpc_thread.start()
+
+        
+    def _run_grpc_server(self, grpc_addr):
+        # Start GRPC server
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=1),
+            options=[
+                ("grpc.max_send_message_length", MAX_MSG_SIZE),
+                ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+            ],
+        )
+        nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), server)
+        server.add_insecure_port(grpc_addr)
+        server.start()
+        
+        logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
+        server.wait_for_termination()
 
     def print_chain_status(self):
         self.chain.print_chain_status()

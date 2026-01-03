@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 
 from nicegui import ui, app
 from client.client import Client
-from client.servicer import ClientServicer
+# from client.servicer import ClientServicer
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address, get_ip_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
@@ -27,7 +27,7 @@ class AppState:
 state = AppState()
 
 GPRC_PORT = 5001
-MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
+# MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 async def initialize_client():
     load_dotenv()
@@ -53,7 +53,7 @@ async def initialize_client():
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
-    # Initialize your actual Client
+    # Initialize the Client Node
     grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
     state.client = Client(
         model_path=Path(model_path_str),
@@ -63,19 +63,19 @@ async def initialize_client():
     )
     logger.info("Client initialized.")
 
-    # Start GRPC server
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=1),
-        options=[
-            ("grpc.max_send_message_length", MAX_MSG_SIZE),
-            ("grpc.max_receive_message_length", MAX_MSG_SIZE),
-        ],
-    )
-    nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(state.client), server)
-    server.add_insecure_port(grpc_addr)
-    server.start()
+    # # Start GRPC server
+    # server = grpc.server(
+    #     futures.ThreadPoolExecutor(max_workers=1),
+    #     options=[
+    #         ("grpc.max_send_message_length", MAX_MSG_SIZE),
+    #         ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+    #     ],
+    # )
+    # nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(state.client), server)
+    # server.add_insecure_port(grpc_addr)
+    # server.start()
     
-    logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
+    # logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
 
 
 # ----- UI Components -----
@@ -129,6 +129,10 @@ def refresh_chain_view(chain_container: ui.column):
     chain_info = state.client.chain.get_chain_info()
 
     with chain_container:
+        if not chain_info:
+            ui.label("No chain info found.")
+            return
+
         # Layer Status
         ui.label("Global Keys").classes("font-bold text-lg")
         total_layers = chain_info.get(TOTAL_LAYERS_KEY)
