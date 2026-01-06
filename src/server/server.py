@@ -229,6 +229,9 @@ class Server:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
+        if not self.llm:
+            return nodeservice_pb2.InferenceResponse(error_message="A node in the chain does not have its layers loaded.")
+
         # Ensure inputs are on the same device as the model
         device = self.llm.device
 

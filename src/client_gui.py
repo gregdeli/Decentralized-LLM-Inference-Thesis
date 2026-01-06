@@ -319,4 +319,4 @@ async def main_page():
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
 
 
-ui.run(title="Distributed LLM Client", port=8080)
+ui.run(title="Distributed LLM Client", port=8080, host="0.0.0.0")

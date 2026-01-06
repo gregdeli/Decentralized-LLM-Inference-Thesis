@@ -3,7 +3,8 @@ FROM python:3.11.5-slim
 WORKDIR /app
 
 # Set the python path to include the app root
-ENV PYTHONPATH="/app${PYTHONPATH:+:${PYTHONPATH}}"
+# ENV PYTHONPATH="/app${PYTHONPATH:+:${PYTHONPATH}}"
+ENV PYTHONPATH="/app"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -12,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 RUN git clone https://github.com/learning-at-home/hivemind.git && \
     cd hivemind && \
+    pip install -r requirements.txt && \
     pip install .
 
 # Copy the application code 
