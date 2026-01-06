@@ -113,6 +113,7 @@ async def refresh_chain_view(chain_container: ui.column):
     with chain_container:
         if not chain_info:
             ui.label("No chain info found.")
+            chain_container.remove(spinner)
             return
 
         # Layer Status

@@ -116,7 +116,7 @@ class Client:
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         if not all_layers_loaded:
-            warning = "Not all model layers have been loaded on the server chain. Cannot initiate the generation task."
+            warning = "**Not all model layers have been loaded on the server chain. Cannot initiate the generation task.**"
             logger.warning(warning)
             return warning
 
@@ -227,7 +227,7 @@ class Client:
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
-                yield f"<br><br>Server-side failure: {ack_response.error_message}. Aborting generation task. Please try again."
+                yield f"<br><span style=\"color:red\">Server-side failure: {ack_response.error_message} Aborting generation task. Please try again.</span>"
                 return
 
             # Wait for the Tail to set the response_event
@@ -239,11 +239,11 @@ class Client:
             
             response = self.inference_response
 
-            if response.HasField("error_message"):
-                logger.error(f"Server-side failure: {response.error_message}")
-                logger.error("Aborting generation task. Please try again.")
-                yield f"Server-side failure: {response.error_message}. Aborting generation task. Please try again."
-                return
+            # if response.HasField("error_message"):
+            #     logger.error(f"Server-side failure: {response.error_message}")
+            #     logger.error("Aborting generation task. Please try again.")
+            #     yield f"Server-side failure: {response.error_message}. Aborting generation task. Please try again."
+            #     return
 
             # Capture TOTAL RATE
             if response.total_rate > 0:

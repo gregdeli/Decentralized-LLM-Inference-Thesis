@@ -382,17 +382,23 @@ class ChainManager:
 
         # Iterate through the backup_nodes list
         backup_nodes_info = []
-        for id in backup_nodes:
-            server_info = self.get_server_info(id)
-            if server_info:
-                server_info["id"] = id
-                backup_nodes_info.append(server_info)
+        if backup_nodes:
+            for id in backup_nodes:
+                server_info = self.get_server_info(id)
+                if server_info:
+                    server_info["id"] = id
+                    backup_nodes_info.append(server_info)
 
+        
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
 
+    def update_chain_tail(self, node_id: str):
+        """Updates the chain_tail key with the given node id"""
+        self.dht.store(TAIL_KEY, node_id, EXPIRATION_S)
+
     def update_all_layer_loaded(self):
-        "Checks the layers_loaded subkey in all the server nodes in the chain"
+        """Checks the layers_loaded subkey in all the server nodes in the chain"""
         # Global keys
         head_id = self.dht.get(HEAD_KEY)
 
@@ -426,7 +432,7 @@ class ChainManager:
                 break
 
     def update_layers_loaded(self, layers_loaded: bool):
-        "Subkey that that shows if all the server's assigned layers have been loaded"
+        """Subkey that that shows if all the server's assigned layers have been loaded"""
         self_info = self._get_self_info()
         self_info["layers_loaded"] = layers_loaded
 
@@ -463,59 +469,11 @@ class ChainManager:
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
-    def print_chain_status(self):
-        """
-        Prints the full status of the inference chain from the DHT.
-        """
-        print("--------- Chain Status ---------")
-        # Global keys
-        head_id = self.dht.get(HEAD_KEY)
-        tail_id = self.dht.get(TAIL_KEY)
-        total_layers = self.dht.get(TOTAL_LAYERS_KEY)
-        all_loaded = self.dht.get(ALL_LAYERS_KEY)
+    def update_successor(self, new_successor_data: str = None):
+        self_info = self._get_self_info()
+        self_info["successor"] = new_successor_data
 
-        print("Global Info:")
-        print(f"  - Total Layers: {total_layers if total_layers is not None else 'Not Found'}")
-        print(f"  - All Layers Loaded: {all_loaded if all_loaded is not None else 'Not Found'}")
-        print(f"  - Head Node ID: {head_id[:DIGITS_SHOW] if head_id else 'Not Found'}")
-        print(f"  - Tail Node ID: {tail_id[:DIGITS_SHOW] if tail_id else 'Not Found'}")
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
 
-        if not head_id:
-            print("\nChain is empty.")
-            print("---------- End of Status ---------")
-            return
-
-        # Traverse chain and print server info
-        print("\nServer Chain (from Head to Tail):")
-        current_node_id = head_id
-        counter = 1
-
-        while current_node_id:
-            server_key = f"{SERVER_INFO_PREFIX}{current_node_id}"
-            info = self.dht.get(server_key)
-            if not info:
-                print(f"  {counter}. Node ID: {current_node_id[:DIGITS_SHOW]}")
-                print("     [ERROR: Could not fetch info for this node. Chain traversal stopped.]")
-                break
-
-            # Extract info
-            address = info.get("address")
-            layers = info.get("layers")
-            successor_data = info.get("successor")
-            is_backup = info.get("is_backup", False)
-
-            print(f"  {counter}. Node ID: {current_node_id[:DIGITS_SHOW]}")
-            print(f"     - Address: {address}")
-            print(f"     - Layers: {layers}")
-
-            if successor_data:
-                print(f"     - Successor: {successor_data.get('id')[:DIGITS_SHOW]}")
-                current_node_id = successor_data.get("id")
-            else:
-                print("     - Successor: None")
-                current_node_id = None  # End of chain
-
-            counter += 1
-
-        print("--------- End of Status ---------")
 

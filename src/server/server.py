@@ -186,7 +186,6 @@ class Server:
             self.available_memory_mb = available_bytes / (1024 * 1024)
 
         # ---- VRAM ----
-        # if torch.cuda.is_available():
         if self.device == "cuda":
             free_bytes, total_bytes = torch.cuda.mem_get_info(self.device)
             self.vram_limit_mb = total_bytes / (1024 * 1024)
@@ -243,7 +242,6 @@ class Server:
             self.model.clear_kv_cache()
             self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
             self._update_memory_usage(update_on_dht=True)
-            # self._print_mem_usage("After Growing KV Cache")
 
         self.llm.prev_generated_seq_length = max_returned_tokens
 
@@ -271,6 +269,10 @@ class Server:
 
         # Move output tensor back to the cpu for serialization
         h = h.cpu()
+
+        # To prevent nonesense output when a node fails during inference
+        if not self.chain.get_all_layers_loaded():
+            return nodeservice_pb2.InferenceResponse(error_message="Inference requested without all the layers being loaded...")
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail():
@@ -429,6 +431,15 @@ class Server:
             # Else, try to find a backup node to take over
             else:
                 logger.info("Cannot load layers. Searching for a backup node...")
+                backup_nodes = self.chain.get_backup_nodes()
+                if backup_nodes:
+                    pass
+                else:
+                  logger.info("No backup nodes found. Setting this node as the tail...") 
+                  self.chain.update_chain_tail(self.chain.node_id)
+                  self.chain.update_successor(new_successor_data=None)
+                  self.chain.update_all_layer_loaded()
+                
                 # TODO: Implement backup node discovery
                 # backup_node = self.chain.find_backup_node()
                 # if backup_node:
@@ -557,8 +568,9 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            server_node._update_memory_usage()
             server_node.chain.republish_keys()
+            server_node._update_memory_usage()
+            server_node.chain.update_all_layer_loaded()
 
     def _grpc_heartbeat_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
