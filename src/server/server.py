@@ -135,7 +135,6 @@ class Server:
         total_layer_params = self.config["total_transformer_layer_params"]
         layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
 
-        # if torch.cuda.is_available():
         if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
@@ -171,16 +170,6 @@ class Server:
             pass
 
         return 0.0
-
-        # limit_bytes = None
-        # with open(cgroup_v2_path, "r") as f:
-        #     content = f.read().strip()
-        #     if content != "max":
-        #         limit_bytes = int(content)
-
-        # if limit_bytes:
-        #     return limit_bytes / (1024 * 1024)
-        # return None
 
     def _update_memory_usage(self, update_on_dht: bool = True):
         # ---- Memory ----
@@ -285,9 +274,6 @@ class Server:
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail():
-            # response = tensor_to_response(h)
-            # response.total_rate = my_partial_rate
-            # return response
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
                 return
@@ -324,9 +310,7 @@ class Server:
         request.partial_rate = my_partial_rate
         request.response_address = response_address
 
-        # final_layer_response = None
         try:
-            # final_layer_response = self.successor_stub.RunLayers(request, timeout=5)
             self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
@@ -334,7 +318,6 @@ class Server:
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    # self.repair_chain()
                     threading.Thread(target=self.repair_chain, daemon=True).start()
                     return nodeservice_pb2.InferenceResponse(error_message="A node in the chain has failed. The chain is being repaired...")
                 else:
@@ -343,7 +326,6 @@ class Server:
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
 
-        # return final_layer_response
         return nodeservice_pb2.InferenceResponse()
 
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):

@@ -128,13 +128,12 @@ class ChainManager:
 
         logger.info(f"Previous Tail Info: {tail_info}")
 
-    def get_head_server_info(self, attempts: int = 5) -> Optional[Dict[str, Any]]:
+    def get_head_server_info(self) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
 
         :return: A dictionary containing the head server's info, or None if not found.
         """
-        num_total_layers = self._get_num_total_layers()
 
         logger.info("Client searching for the head of the server chain...")
         head_id = self.dht.get(HEAD_KEY)
@@ -144,10 +143,6 @@ class ChainManager:
 
         head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
 
-        # If the head server doesn't hold all the layers,
-        # retry until its successor is not None
-        # for attempt in range(attempts):
-        # logger.info(f"Attempting to get head server info... (Attempt {attempt + 1})")
         logger.info(f"Attempting to get head server info...")
         head_info = self.dht.get(head_server_key)
         if not head_info:
@@ -156,12 +151,9 @@ class ChainManager:
 
         head_layers = head_info["layers"]
         head_successor = head_info["successor"]
-        # if head_layers[1] >= num_total_layers - 1 or head_successor is not None:
         logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
+
         return head_info
-            # logger.info(f"Attempt {attempt + 1}: Found head server but with layers < total and no successor.")
-            # logger.info(f"Retrying in 2 seconds...")
-            # time.sleep(2)
 
     def _get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
@@ -219,10 +211,7 @@ class ChainManager:
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
-        # num_total_layers = self._get_num_total_layers()
-        # layers = self.get_layers()
-
-        if tail_id == self.node_id: # and layers[1] == num_total_layers - 1:
+        if tail_id == self.node_id: 
             return True
 
         return False
@@ -233,10 +222,7 @@ class ChainManager:
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
-        # num_total_layers = self._get_num_total_layers()
-        # layers_loaded = self.get_layers_loaded()
-
-        if tail_id == node_id:  # and layers_loaded[1] == num_total_layers - 1:
+        if tail_id == node_id:  
             return True
 
         return False
@@ -332,9 +318,6 @@ class ChainManager:
             if num_total_layers:
                 self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
 
-            # all_layers_loaded = self.get_all_layers_loaded()
-            # if all_layers_loaded is not None:
-            #     self.dht.store(ALL_LAYERS_KEY, all_layers_loaded, EXPIRATION_S)
             self.update_all_layer_loaded()
 
             backup_nodes = self.get_backup_nodes()
@@ -536,43 +519,3 @@ class ChainManager:
 
         print("--------- End of Status ---------")
 
-
-# Example usage to demonstrate the flow
-def main():
-    # --- Start Server 1 (Head) ---
-    dht1 = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"])
-    dht1.start()
-    chain1 = ChainManager(dht1)
-
-    server1_info = {"num_layers": 4, "layers": (0, 3), "address": "localhost:50051"}
-    chain1.join_chain(server1_info)
-
-    # --- Start Server 2 (Joiner) ---
-    # It uses Server 1's address to connect
-    initial_peers = dht1.dht.get_visible_maddrs()
-    dht2 = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"], initial_peers=initial_peers)
-    dht2.start()
-    chain2 = ChainManager(dht2)
-
-    server2_info = {"num_layers": 4, "layers": (4, 7), "address": "localhost:50052"}
-    chain2.join_chain(server2_info)
-
-    # --- Client discovers the head ---
-    client_dht = DHTManager(host_maddrs=["/ip4/127.0.0.1/tcp/0"], initial_peers=initial_peers)
-    client_dht.start()
-    client_chain_manager = ChainManager(client_dht)
-
-    head_info = client_chain_manager.get_head_server_info()
-    if head_info:
-        print(f"\nClient successfully found head server. Address: {head_info.get('address')}")
-    else:
-        print("\nClient could not find the head server.")
-
-    # --- Shutdown ---
-    dht1.shutdown()
-    dht2.shutdown()
-    client_dht.shutdown()
-
-
-if __name__ == "__main__":
-    main()

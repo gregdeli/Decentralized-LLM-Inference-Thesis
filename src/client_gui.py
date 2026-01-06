@@ -1,17 +1,12 @@
 import asyncio
 import os
-import time
 from dotenv import load_dotenv
-from concurrent import futures
-import grpc
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
 from nicegui import ui, app
 from client.client import Client
-# from client.servicer import ClientServicer
-from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address, get_ip_address
 from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
 
@@ -27,13 +22,11 @@ class AppState:
 state = AppState()
 
 GPRC_PORT = 5001
-# MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 async def initialize_client():
     load_dotenv()
 
     model_path_str = os.getenv("MODEL_PATH")
-    # host_maddrs = os.getenv("HOST_MADDRS", "/ip4/0.0.0.0/tcp/0")
 
     my_ip = os.getenv("IP")
     if not my_ip:
@@ -47,7 +40,6 @@ async def initialize_client():
 
     if not bootstrap_addr:
         logger.error("Failed to find bootstrap node.")
-        # ui.notify("Failed to find bootstrap node!", type="negative")
         return
 
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
@@ -62,21 +54,6 @@ async def initialize_client():
         grpc_addr = grpc_addr
     )
     logger.info("Client initialized.")
-
-    # # Start GRPC server
-    # server = grpc.server(
-    #     futures.ThreadPoolExecutor(max_workers=1),
-    #     options=[
-    #         ("grpc.max_send_message_length", MAX_MSG_SIZE),
-    #         ("grpc.max_receive_message_length", MAX_MSG_SIZE),
-    #     ],
-    # )
-    # nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(state.client), server)
-    # server.add_insecure_port(grpc_addr)
-    # server.start()
-    
-    # logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
-
 
 # ----- UI Components -----
 def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
@@ -118,7 +95,7 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
 
 
-def refresh_chain_view(chain_container: ui.column):
+async def refresh_chain_view(chain_container: ui.column):
     """
     Fetches DHT data and updates the Left Sidebar.
     """
@@ -126,6 +103,11 @@ def refresh_chain_view(chain_container: ui.column):
         return
 
     chain_container.clear()
+    with chain_container:
+        spinner = ui.spinner().props("size=lg")
+
+    await asyncio.sleep(0.005)
+
     chain_info = state.client.chain.get_chain_info()
 
     with chain_container:
@@ -164,6 +146,8 @@ def refresh_chain_view(chain_container: ui.column):
             role = "Backup"
 
             render_server_card(node_id, role, backup_info)
+    
+    chain_container.remove(spinner)
 
 
 async def generate(
@@ -264,7 +248,7 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
     ui.notify("Reallocation complete.")
     stats_container.remove(spinner)
 
-    refresh_chain_view(chain_container)
+    asyncio.create_task(refresh_chain_view(chain_container))
 
 
 def run_background_init():
@@ -288,7 +272,7 @@ async def main_page():
 
             chain_container = ui.column().classes("w-full gap-2")
 
-            refresh_chain_view(chain_container)
+            await refresh_chain_view(chain_container)
 
             ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container)).classes("w-full")
 

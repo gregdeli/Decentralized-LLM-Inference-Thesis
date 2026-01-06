@@ -1,9 +1,6 @@
 import logging
 from typing import TYPE_CHECKING
 
-import grpc
-import torch
-
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 
 if TYPE_CHECKING:

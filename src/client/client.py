@@ -48,7 +48,6 @@ class Client:
 
         head_server_addr = head_info["address"]
 
-        # max_msg_size = 100 * 1024 * 1024
         channel = grpc.insecure_channel(
             head_server_addr,
             options=[
@@ -224,7 +223,6 @@ class Client:
             )
             request.response_address = self.grpc_addr
 
-            # response = self.head_server_stub.RunLayers(request)
             ack_response = self.head_server_stub.RunLayers(request)
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")

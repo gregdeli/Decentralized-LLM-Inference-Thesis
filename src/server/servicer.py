@@ -38,7 +38,6 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         response_address = request.response_address
 
         # Run the inference logic
-        # final_layer_response = self.server_node.run_local_layers(
         ack_response = self.server_node.run_local_layers(
             input_tensor, 
             max_returned_tokens, 
@@ -47,7 +46,6 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             response_address
         )
 
-        # return final_layer_response
         return ack_response
 
     def Check(self, request, context):
