@@ -55,6 +55,11 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
+        self.LoadLayers = channel.unary_unary(
+                '/nodeservice.NodeService/LoadLayers',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.LoadRequest.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.LoadResponse.FromString,
+                _registered_method=True)
 
 
 class NodeServiceServicer(object):
@@ -89,6 +94,13 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def LoadLayers(self, request, context):
+        """Triggers asigned layers loading on a backup node
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -111,6 +123,11 @@ def add_NodeServiceServicer_to_server(servicer, server):
                     servicer.Reallocate,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'LoadLayers': grpc.unary_unary_rpc_method_handler(
+                    servicer.LoadLayers,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.LoadRequest.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.LoadResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -222,6 +239,33 @@ class NodeService(object):
             '/nodeservice.NodeService/Reallocate',
             core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def LoadLayers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/LoadLayers',
+            core_dot_remote_dot_nodeservice__pb2.LoadRequest.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.LoadResponse.FromString,
             options,
             channel_credentials,
             insecure,

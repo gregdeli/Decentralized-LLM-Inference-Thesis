@@ -266,7 +266,13 @@ class ChainManager:
         successor_data["successor"] = successor_2_data
         return successor_data
 
-    def repair(self, layers: Tuple[int, int], successor_2_data: Optional[Dict[str, Any]], succ_was_tail: Optional[bool]):
+    def repair(
+            self, 
+            layers: Tuple[int, int], 
+            successor_2_data: Optional[Dict[str, Any]], 
+            succ_was_tail: Optional[bool], 
+            replacement_node_id: Optional[str] = None,
+            ):
         """
         Updates the DHT after a node has taken over the layers of a failed successor.
 
@@ -276,24 +282,41 @@ class ChainManager:
         """
         logger.info(f"Repairing chain on DHT. New layers: {layers}, New successor: {successor_2_data}")
 
-        # Update this node's info
         self_info = self._get_self_info()
-        self_info["layers"] = layers
+
+        if replacement_node_id:
+            logger.info(f"With replacement backup node: {replacement_node_id}")
+            replacement_info = self.get_server_info(replacement_node_id)
+            replacement_info["is_backup"] = False
+
+            # Remove the replacement node from the backup_nodes list
+            backup_nodes = self.get_backup_nodes()
+            backup_nodes.remove(replacement_node_id)
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            
+            # Also update this nodes successor to be the replacement
+            new_successor_data = {"id": replacement_node_id, "address": replacement_info.get("address")}
+            self.update_successor(new_successor_data)
+        else:
+            replacement_node_id = self.node_id
+            replacement_info = self_info
+
+        # Update the replacement node's info
+        replacement_info["layers"] = layers
         if successor_2_data:
-            self_info["successor"] = successor_2_data
+            replacement_info["successor"] = successor_2_data
 
         # If the dead successor was the tail, set this node as the tail
         elif succ_was_tail:
-            self_info["successor"] = None
-            self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
+            replacement_info["successor"] = None
+            self.dht.store(TAIL_KEY, replacement_node_id, EXPIRATION_S)
 
-        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-        self.dht.store(server_key, self_info, EXPIRATION_S)
+        server_key = f"{SERVER_INFO_PREFIX}{replacement_node_id}"
+        self.dht.store(server_key, replacement_info, EXPIRATION_S)
 
-        # Set the "all_layers_loaded" key to True
-        self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
+        self.update_all_layer_loaded()
 
-        # Rebublish keys since the tail node could have did and heartbeat task would fail
+        # Rebublish keys since the tail node could have died and heartbeat task would fail
         self.republish_keys()
 
     def republish_keys(self):
@@ -453,18 +476,20 @@ class ChainManager:
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
-    def update_memory(self, mem_usage: float, mem_limit: float):
+    def update_memory(self, mem_usage: float, mem_limit: float, avail_mem: float):
         self_info = self._get_self_info()
         self_info["memory_usage"] = mem_usage
         self_info["memory_limit"] = mem_limit
+        self_info["available_memory"] = avail_mem
 
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
-    def update_vram(self, vram_usage: float, vram_limit: float):
+    def update_vram(self, vram_usage: float, vram_limit: float, avail_vram: float):
         self_info = self._get_self_info()
         self_info["vram_usage"] = vram_usage
         self_info["vram_limit"] = vram_limit
+        self_info["available_vram"] = avail_vram
 
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)

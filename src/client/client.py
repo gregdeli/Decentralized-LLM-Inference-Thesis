@@ -116,7 +116,7 @@ class Client:
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         if not all_layers_loaded:
-            warning = "**Not all model layers have been loaded on the server chain. Cannot initiate the generation task.**"
+            warning = "<span style=\"color:red\">Not all model layers have been loaded on the server chain. Cannot initiate the generation task.</span>"
             logger.warning(warning)
             return warning
 

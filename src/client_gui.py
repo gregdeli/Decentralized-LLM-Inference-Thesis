@@ -86,10 +86,18 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
             mem_limit = info["memory_limit"]
             ui.label(f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB").classes("font-mono text-sm")
 
+        if "available_memory" in info:
+            avail_mem = info["available_memory"]
+            ui.label(f"Available Memory: {int(avail_mem)} MB").classes("font-mono text-sm")
+
         if "vram_usage" in info and "vram_limit" in info:
             vram_usage = info["vram_usage"]
             vram_limit = info["vram_limit"]
             ui.label(f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB").classes("font-mono text-sm")
+
+        if "available_vram" in info:
+            avail_vram = info["available_vram"]
+            ui.label(f"Available VRAM: {int(avail_vram)} MB").classes("font-mono text-sm")
 
         if "address" in info:
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
@@ -249,7 +257,7 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
     ui.notify("Reallocation complete.")
     stats_container.remove(spinner)
 
-    asyncio.create_task(refresh_chain_view(chain_container))
+    await refresh_chain_view(chain_container)
 
 
 def run_background_init():

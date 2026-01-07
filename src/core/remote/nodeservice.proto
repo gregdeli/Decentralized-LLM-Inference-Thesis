@@ -15,9 +15,14 @@ service NodeService {
 
   // Triggers the layer re-allocation process
   rpc Reallocate(ReallocateRequest) returns (Empty) {}
+
+  // Triggers asigned layers loading on a backup node
+  rpc LoadLayers(Empty) returns (Empty) {}
 }
 
+// The service definition for a client node that receives inference responses form the TAIL node.
 service ClientService {
+  // Receives the inference response from the tail node and returns an empty message.
   rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
 }
 
@@ -57,4 +62,13 @@ message ReallocateRequest {
   float total_rate = 1;
   int32 start_layer_index = 2;
 }
+
+// message LoadRequest {
+//   int32 start = 1;
+//   int32 end = 2;
+// }
+
+// message LoadResponse {
+//   bool layers_loaded = 1;
+// }
 

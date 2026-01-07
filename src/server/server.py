@@ -126,7 +126,12 @@ class Server:
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
 
-    def _mem_to_num_layers(self, bytes_per_param: int) -> int:
+    def _mem_to_num_layers(
+            self,
+            bytes_per_param: int, 
+            avail_mem: float = None, 
+            avail_vram: float = None,
+        ) -> int:
         """
         Calculates how many layers fit in the available memory/VRAM
         """
@@ -135,7 +140,14 @@ class Server:
         total_layer_params = self.config["total_transformer_layer_params"]
         layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
 
-        if self.device == "cuda":
+        # If avail_mem or avail_vram is given, max_num_layers is requested for a different node that this one
+        if avail_mem or avail_vram:
+            if avail_vram:
+                available = avail_vram
+            else:
+                available = avail_mem
+
+        elif self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
             available = self.available_memory_mb - RESERVED_MEM_MB
@@ -150,10 +162,12 @@ class Server:
         self,
         num_layers: Optional[int] = None,
         layers: Optional[Tuple[int, int]] = None,
+        avail_mem: float = None,
+        avail_vram: float = None,
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
-        max_num_layers = self._mem_to_num_layers(bytes_per_param=4)
+        max_num_layers = self._mem_to_num_layers(bytes_per_param=4, avail_mem=avail_mem, avail_vram=avail_vram)
         return num_layers <= max_num_layers
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
@@ -193,10 +207,10 @@ class Server:
             self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
 
         if update_on_dht:
-            self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb)
-            # if torch.cuda.is_available():
+            self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb, self.available_memory_mb)
+            
             if self.device == "cuda":
-                self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb)
+                self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb)
 
     def _print_mem_usage(self, title: str):
         logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
@@ -433,23 +447,25 @@ class Server:
                 logger.info("Cannot load layers. Searching for a backup node...")
                 backup_nodes = self.chain.get_backup_nodes()
                 if backup_nodes:
-                    pass
+                    # Find backup node with enough memory
+                    for backup_id in backup_nodes:
+                        backup_info = self.chain.get_server_info(backup_id)
+                        avail_mem = backup_info.get("available_memory")
+                        avail_vram = backup_info.get("available_vram")
+                        
+                        if self._can_load(layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
+                            self.chain.repair(orphaned_layers, successor_2_data, succ_was_tail, replacement_node_id=backup_id)
+
+                            channel = grpc.insecure_channel(backup_info.get("address"))
+                            backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                            backup_stub.LoadLayers(nodeservice_pb2.Empty())
+                            
+                            self._connect_to_successor()    
                 else:
                   logger.info("No backup nodes found. Setting this node as the tail...") 
                   self.chain.update_chain_tail(self.chain.node_id)
                   self.chain.update_successor(new_successor_data=None)
                   self.chain.update_all_layer_loaded()
-                
-                # TODO: Implement backup node discovery
-                # backup_node = self.chain.find_backup_node()
-                # if backup_node:
-                #    logger.info(f"Found backup node {backup_node.id}. Triggering takeover...")
-                #    # TODO: Implement gRPC call to backup node to tell it to
-                #    # take over the 'dead_successor_data'
-                #    # This node would then set its successor to the backup node.
-                #    return
-
-        # Otherwise, the chain can't be repaired
 
     def _reload_llm(self, layers: Tuple[int, int]):
         """Helper to reload the model with explicit GC"""
