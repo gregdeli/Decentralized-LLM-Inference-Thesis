@@ -57,8 +57,8 @@ class NodeServiceStub(object):
                 _registered_method=True)
         self.LoadLayers = channel.unary_unary(
                 '/nodeservice.NodeService/LoadLayers',
-                request_serializer=core_dot_remote_dot_nodeservice__pb2.LoadRequest.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.LoadResponse.FromString,
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
 
 
@@ -126,8 +126,8 @@ def add_NodeServiceServicer_to_server(servicer, server):
             ),
             'LoadLayers': grpc.unary_unary_rpc_method_handler(
                     servicer.LoadLayers,
-                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.LoadRequest.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.LoadResponse.SerializeToString,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -264,8 +264,8 @@ class NodeService(object):
             request,
             target,
             '/nodeservice.NodeService/LoadLayers',
-            core_dot_remote_dot_nodeservice__pb2.LoadRequest.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.LoadResponse.FromString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
@@ -278,7 +278,8 @@ class NodeService(object):
 
 
 class ClientServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """The service definition for a client node that receives inference responses form the TAIL node.
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -294,10 +295,12 @@ class ClientServiceStub(object):
 
 
 class ClientServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """The service definition for a client node that receives inference responses form the TAIL node.
+    """
 
     def ReceiveResponse(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Receives the inference response from the tail node and returns an empty message.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -319,7 +322,8 @@ def add_ClientServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ClientService(object):
-    """Missing associated documentation comment in .proto file."""
+    """The service definition for a client node that receives inference responses form the TAIL node.
+    """
 
     @staticmethod
     def ReceiveResponse(request,

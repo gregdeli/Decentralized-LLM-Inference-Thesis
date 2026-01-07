@@ -57,17 +57,3 @@ class ReallocateRequest(_message.Message):
     total_rate: float
     start_layer_index: int
     def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ...) -> None: ...
-
-class LoadRequest(_message.Message):
-    __slots__ = ("start", "end")
-    START_FIELD_NUMBER: _ClassVar[int]
-    END_FIELD_NUMBER: _ClassVar[int]
-    start: int
-    end: int
-    def __init__(self, start: _Optional[int] = ..., end: _Optional[int] = ...) -> None: ...
-
-class LoadResponse(_message.Message):
-    __slots__ = ("layers_loaded",)
-    LAYERS_LOADED_FIELD_NUMBER: _ClassVar[int]
-    layers_loaded: bool
-    def __init__(self, layers_loaded: bool = ...) -> None: ...

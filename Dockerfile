@@ -3,7 +3,6 @@ FROM python:3.11.5-slim
 WORKDIR /app
 
 # Set the python path to include the app root
-# ENV PYTHONPATH="/app${PYTHONPATH:+:${PYTHONPATH}}"
 ENV PYTHONPATH="/app"
 
 COPY requirements.txt .
@@ -18,7 +17,6 @@ RUN git clone https://github.com/learning-at-home/hivemind.git && \
 
 # Copy the application code 
 COPY src .
-# COPY protos ./protos
 
 # Generate gRPC code (this ensures it's always up-to-date in the image)
 RUN python -m grpc_tools.protoc \

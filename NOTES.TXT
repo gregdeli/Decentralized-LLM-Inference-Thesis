@@ -2,6 +2,8 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
+* An node thelei polla layers kai den afhnei tpt gia allous sto chain, its ok as ta parei kai na ginoun oi alloi backup
+
 * track network latency metrics
 
 * Quantize activations before sending
