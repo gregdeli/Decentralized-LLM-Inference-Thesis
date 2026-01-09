@@ -111,8 +111,9 @@ async def refresh_chain_view(chain_container: ui.column):
         return
 
     chain_container.clear()
+    spinner = ui.spinner().props("size=lg")
     with chain_container:
-        spinner = ui.spinner().props("size=lg")
+        spinner
 
     await asyncio.sleep(0.005)
 
@@ -121,40 +122,36 @@ async def refresh_chain_view(chain_container: ui.column):
     with chain_container:
         if not chain_info:
             ui.label("No chain info found.")
-            chain_container.remove(spinner)
-            return
 
-        # Layer Status
-        ui.label("Global Keys").classes("font-bold text-lg")
-        total_layers = chain_info.get(TOTAL_LAYERS_KEY)
-        all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
-        ui.label(f"Total Layers: {total_layers}")
-        ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
+        else:
+            # Layer Status
+            ui.label("Global Keys").classes("font-bold text-lg")
+            total_layers = chain_info.get(TOTAL_LAYERS_KEY)
+            all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
+            ui.label(f"Total Layers: {total_layers}")
+            ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
 
-        # Chain Info
-        ui.label("Active Chain").classes("font-bold text-lg")
-        if not chain_info:
-            ui.label("No Chain Found").classes("text-red-500 italic")
-            return
+            # Chain Info
+            ui.label("Active Chain").classes("font-bold text-lg")
 
-        for server_info in chain_info["servers"]:
-            node_id = server_info["id"]
-            role = "Intermidiate"
-            if node_id == chain_info[HEAD_KEY]:
-                role = "Head"
-            elif node_id == chain_info[TAIL_KEY]:
-                role = "Tail"
+            for server_info in chain_info["servers"]:
+                node_id = server_info["id"]
+                role = "Intermidiate"
+                if node_id == chain_info[HEAD_KEY]:
+                    role = "Head"
+                elif node_id == chain_info[TAIL_KEY]:
+                    role = "Tail"
 
-            render_server_card(node_id, role, server_info)
+                render_server_card(node_id, role, server_info)
 
-        # Backup Nodes
-        ui.label("Backup Nodes").classes("font-bold text-lg")
+            # Backup Nodes
+            ui.label("Backup Nodes").classes("font-bold text-lg")
 
-        for backup_info in chain_info[BACKUPS_KEY]:
-            node_id = backup_info["id"]
-            role = "Backup"
+            for backup_info in chain_info[BACKUPS_KEY]:
+                node_id = backup_info["id"]
+                role = "Backup"
 
-            render_server_card(node_id, role, backup_info)
+                render_server_card(node_id, role, backup_info)
     
     chain_container.remove(spinner)
 

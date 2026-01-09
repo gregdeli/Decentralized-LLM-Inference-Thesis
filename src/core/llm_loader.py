@@ -76,6 +76,11 @@ class LLM:
         # Initialize model
         model = Llama3(config, is_client, layers_to_load)
         model.eval()
+        
+        # if device == "cuda":
+        #     model.to(device, dtype=torch.float16)
+        # else:
+        #     model.to(device)
         model.to(device)
 
         # Setup preprocessor

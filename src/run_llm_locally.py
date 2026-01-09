@@ -2,10 +2,10 @@ from pathlib import Path
 
 from core.llm_loader import LLM
 
-# model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-3B-Instruct")
-model_path = Path(r"/home/greg/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
-llm = LLM.load(model_path, layers_to_load=(0, 15))
-# llm = LLM.load(model_path, layers_to_load=(0, 27))
+model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-3B-Instruct")
+# model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
+# llm = LLM.load(model_path, layers_to_load=(0, 15))
+llm = LLM.load(model_path, layers_to_load=(0, 27))
 
 # No Stream
 # prompt = "What is the capital of France?"

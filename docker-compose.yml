@@ -120,4 +120,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5678:5678"
