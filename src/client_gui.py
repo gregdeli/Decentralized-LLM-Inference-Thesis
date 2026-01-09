@@ -310,3 +310,4 @@ async def main_page():
 
 
 ui.run(title="Distributed LLM Client", port=8080, host="0.0.0.0")
+# ui.run(native=True)
