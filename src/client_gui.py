@@ -111,18 +111,19 @@ async def refresh_chain_view(chain_container: ui.column):
         return
 
     chain_container.clear()
-    spinner = ui.spinner().props("size=lg")
-    with chain_container:
-        spinner
+    # spinner = ui.spinner().props("size=lg")
+    # with chain_container:
+    #     spinner
 
-    await asyncio.sleep(0.005)
+    # await asyncio.sleep(0.005)
 
-    chain_info = state.client.chain.get_chain_info()
+    # chain_info = state.client.chain.get_chain_info()
+    chain_info = await asyncio.to_thread(state.client.chain.get_chain_info)
 
     with chain_container:
         if not chain_info:
-            ui.label("No chain info found.")
-
+            ui.label("No chain info found.") 
+ 
         else:
             # Layer Status
             ui.label("Global Keys").classes("font-bold text-lg")
@@ -153,7 +154,7 @@ async def refresh_chain_view(chain_container: ui.column):
 
                 render_server_card(node_id, role, backup_info)
     
-    chain_container.remove(spinner)
+    # chain_container.remove(spinner)
 
 
 async def generate(
@@ -217,6 +218,9 @@ async def generate(
     send_btn.visible = True
     stop_btn.visible = False
 
+    # Refresh chain info
+    await refresh_chain_view(chain_container)
+
     # Update Stats
     stats = state.client.last_inference_stats
     latency = stats["latency"]
@@ -243,13 +247,15 @@ def stop_generation():
 
 async def trigger_reallocation(stats_container: ui.column, chain_container: ui.column):
 
+    spinner = ui.spinner().props("size=lg")
     with stats_container:
-        spinner = ui.spinner().props("size=lg")
+        # spinner = ui.spinner().props("size=lg")
+        spinner
 
     ui.notify("Triggering layer reallocation.")
     await asyncio.sleep(0.005)
 
-    state.client.trigger_reallocation()
+    await asyncio.to_thread(state.client.trigger_reallocation)
 
     ui.notify("Reallocation complete.")
     stats_container.remove(spinner)
@@ -281,6 +287,9 @@ async def main_page():
             await refresh_chain_view(chain_container)
 
             ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container)).classes("w-full")
+
+            # Backgroud auto-refresh
+            ui.timer(1.0, lambda: refresh_chain_view(chain_container))
 
         # Center: Chat Area (Flexible Width)
         with ui.column().classes("flex-1 h-full relative p-4"):
