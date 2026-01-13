@@ -12,7 +12,7 @@ TODO:
 
 * Repair chain if HEAD fails
 
-* An intermidiate kai tail server kanoun join to dht tautoxrono, vlepoun kai oi duo ton head ws tail server kai kanoun load ta idia layers 
+* An intermediate kai tail server kanoun join to dht tautoxrono, vlepoun kai oi duo ton head ws tail server kai kanoun load ta idia layers 
   me ton teleutaio na ginetai o actual successor tou head. 
   
   Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose

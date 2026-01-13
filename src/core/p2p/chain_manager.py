@@ -14,7 +14,7 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 60.0 
+EXPIRATION_S = 30.0 
 HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0 
 
 DIGITS_SHOW = 12

@@ -27,7 +27,7 @@ services:
       # - "5678:5678"
       # - "9999:9999"
 
-  intermidiate-server:
+  intermediate-server:
     image: decentralized-llm-thesis:latest
     command: python server/server.py
     # command: sleep infinity
@@ -61,7 +61,7 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - NUM_LAYERS=7
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=intermidiate-server:5001
+      - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
       # - OMP_NUM_THREADS=1
       # - MKL_NUM_THREADS=1
     volumes:
@@ -73,7 +73,7 @@ services:
           # cpus: '2.0'
     depends_on:
       - head-server
-      - intermidiate-server
+      - intermediate-server
     # ports:
       # - "5678:5678"
       # - 9999:9999 
@@ -98,7 +98,7 @@ services:
           memory: 4G
     depends_on:
       - head-server
-      - intermidiate-server
+      - intermediate-server
     # ports:
     #   - "5678:5678"
 
@@ -120,4 +120,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      - "5678:5678"
+      # - "5678:5678"

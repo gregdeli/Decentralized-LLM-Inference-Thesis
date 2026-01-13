@@ -12,11 +12,17 @@ from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAY
 
 logger = logging.getLogger(__name__)
 
+class UIReferences:
+    def __init__(self):
+        self.global_labels = {}     # Global info labels
+        self.node_labels = {}         # Label references for each node id
+        self.last_topology = None   # Signature of the current chain structure
 
 class AppState:
     def __init__(self):
         self.client: Client = None
         self.is_generating = False
+        self.ui = UIReferences()
 
 
 state = AppState()
@@ -56,12 +62,14 @@ async def initialize_client():
     logger.info("Client initialized.")
 
 # ----- UI Components -----
-def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
+def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[str, ui.label]:
     """
     Renders a single server node card on the Left Sidebar.
-    Roles: Head, Tail, Intermidiate,
+    Roles: Head, Tail, Intermediate,
     """
-    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100" if role == "Intermidiate" else "gray-100"
+    labels = {}
+
+    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100" if role == "Intermediate" else "gray-100"
 
     with ui.card().classes(f"w-full p-2 bg-{color} gap-2"):
         with ui.row().classes("w-full items-center justify-between"):
@@ -73,10 +81,11 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
         if "layers" in info:
             layers = info["layers"]
             num_layers = layers[1] - layers[0] + 1
-            ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
+            # ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
+            labels["layers"] = ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
 
         layers_loaded = info.get("layers_loaded", False)
-        ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
+        labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
 
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
@@ -84,77 +93,147 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]):
         if "memory_usage" in info and "memory_limit" in info:
             mem_usage = info["memory_usage"]
             mem_limit = info["memory_limit"]
-            ui.label(f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB").classes("font-mono text-sm")
+            labels["memory"] = ui.label(f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB").classes("font-mono text-sm")
 
         if "available_memory" in info:
             avail_mem = info["available_memory"]
-            ui.label(f"Available Memory: {int(avail_mem)} MB").classes("font-mono text-sm")
+            labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes("font-mono text-sm")
 
         if "vram_usage" in info and "vram_limit" in info:
             vram_usage = info["vram_usage"]
             vram_limit = info["vram_limit"]
-            ui.label(f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB").classes("font-mono text-sm")
+            labels["vram"] = ui.label(f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB").classes("font-mono text-sm")
 
         if "available_vram" in info:
             avail_vram = info["available_vram"]
-            ui.label(f"Available VRAM: {int(avail_vram)} MB").classes("font-mono text-sm")
+            labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes("font-mono text-sm")
 
         if "address" in info:
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
+    
+    return labels
 
 
-async def refresh_chain_view(chain_container: ui.column):
+async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = False):
     """
     Fetches DHT data and updates the Left Sidebar.
     """
     if not state.client:
         return
 
-    chain_container.clear()
-    # spinner = ui.spinner().props("size=lg")
-    # with chain_container:
-    #     spinner
+    # Fetch chain info
+    try:
+        chain_info = await asyncio.to_thread(state.client.chain.get_chain_info)
+    except Exception as e:
+        logger.error(f"Error fetching chain info: {e}")
 
-    # await asyncio.sleep(0.005)
+    if not chain_info:
+        chain_container.clear()
+        with chain_container:
+            ui.label("No chain found.").classes("text-2xl text-red-600")
+            return
 
-    # chain_info = state.client.chain.get_chain_info()
-    chain_info = await asyncio.to_thread(state.client.chain.get_chain_info)
+    # Extract topology signature
+    current_topology = []
 
-    with chain_container:
-        if not chain_info:
-            ui.label("No chain info found.") 
- 
-        else:
+    # Process Active Chain
+    server_list = chain_info.get("servers", [])
+    for s in server_list:
+        role = "Head" if s["id"] == chain_info[HEAD_KEY] else "Tail" if s["id"] == chain_info[TAIL_KEY] else "Intemediate"
+        current_topology.append((s["id"], role))
+
+    # Process Backups
+    backups_list = chain_info.get(BACKUPS_KEY, [])
+    for b in backups_list:
+        current_topology.append((b["id"], "Backup"))
+
+    # Check if the topology matches the previous state
+    topology_changed = (state.ui.last_topology != current_topology) or (full_rebuild)
+
+    if not topology_changed:
+        # --- Update in place ---
+
+        # Global Keys
+        if "total_layers" in state.ui.global_labels:
+            state.ui.global_labels["total_layers"].text = f"Total Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
+
+        if "all_loaded" in state.ui.global_labels:
+            all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
+            state.ui.global_labels["all_loaded"].text = f"All Layers Loaded: {all_loaded}"
+            state.ui.global_labels["all_loaded"].classes(replace="text-green-600" if all_loaded else "text-red-600")
+        
+        # Node Info
+        def update_node_labels(nodes_list: List[Dict[str, Any]]):
+            for node_info in nodes_list:
+                node_id = node_info["id"]
+                if node_id in state.ui.node_labels:
+                    labels = state.ui.node_labels[node_id]
+
+                    # Update Layers
+                    if "layers" in labels and "layers" in node_info:
+                        l = node_info["layers"]
+                        labels["layers"].text = f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}"
+                    
+                    # Update Loaded Status
+                    if "layers_loaded" in labels:
+                        labels["layers_loaded"].text = f"Layers Loaded: {node_info.get('layers_loaded', False)}"
+
+                    # if 
+                    
+                    # Update Memory
+                    if "memory" in labels and "memory_usage" in node_info and "memory_limit" in node_info:
+                        labels["memory"].text = f"Memory Usage: {int(node_info['memory_usage'])}/{int(node_info['memory_limit'])} MB"
+                        
+                    # Update VRAM
+                    if "vram" in labels and "vram_usage" in node_info and "vram_limit" in node_info:
+                        labels["vram"].text = f"VRAM Usage: {int(node_info['vram_usage'])}/{int(node_info['vram_limit'])} MB"
+
+                    
+        
+        update_node_labels(server_list)
+        update_node_labels(backups_list)
+
+    else:
+        # --- Full Rebuild (Topology changed) ---
+
+        chain_container.clear()
+        state.ui.global_labels = {}
+        state.ui.node_labels = {}
+
+        spinner = ui.spinner().props("size=lg")
+        with chain_container:
+            spinner
+        await asyncio.sleep(0.005)
+    
+        with chain_container:
             # Layer Status
             ui.label("Global Keys").classes("font-bold text-lg")
             total_layers = chain_info.get(TOTAL_LAYERS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
-            ui.label(f"Total Layers: {total_layers}")
-            ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
+            state.ui.global_labels["total_layers"] = ui.label(f"Total Layers: {total_layers}")
+            state.ui.global_labels["all_loaded"] = ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
 
-            # Chain Info
+            # Active Chain Info
             ui.label("Active Chain").classes("font-bold text-lg")
-
-            for server_info in chain_info["servers"]:
+            for server_info in server_list:
                 node_id = server_info["id"]
-                role = "Intermidiate"
-                if node_id == chain_info[HEAD_KEY]:
-                    role = "Head"
-                elif node_id == chain_info[TAIL_KEY]:
-                    role = "Tail"
+                role = "Head" if node_id == chain_info[HEAD_KEY] else "Tail" if node_id == chain_info[TAIL_KEY] else "Intermediate"
 
-                render_server_card(node_id, role, server_info)
+                labels = render_server_card(node_id, role, server_info)
+                state.ui.node_labels[node_id] = labels
 
-            # Backup Nodes
+            # Backup Nodes Info
             ui.label("Backup Nodes").classes("font-bold text-lg")
-
-            for backup_info in chain_info[BACKUPS_KEY]:
+            for backup_info in backups_list:
                 node_id = backup_info["id"]
                 role = "Backup"
 
-                render_server_card(node_id, role, backup_info)
+                labels = render_server_card(node_id, role, backup_info)
+                state.ui.node_labels[node_id] = labels
+            
+            chain_container.remove(spinner)
     
-    # chain_container.remove(spinner)
+    state.ui.last_topology = current_topology
 
 
 async def generate(
@@ -249,7 +328,6 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
 
     spinner = ui.spinner().props("size=lg")
     with stats_container:
-        # spinner = ui.spinner().props("size=lg")
         spinner
 
     ui.notify("Triggering layer reallocation.")
@@ -284,9 +362,9 @@ async def main_page():
 
             chain_container = ui.column().classes("w-full gap-2")
 
-            await refresh_chain_view(chain_container)
+            await refresh_chain_view(chain_container, full_rebuild=True)
 
-            ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container)).classes("w-full")
+            ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container, full_rebuild=True)).classes("w-full")
 
             # Backgroud auto-refresh
             ui.timer(1.0, lambda: refresh_chain_view(chain_container))

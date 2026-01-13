@@ -309,7 +309,7 @@ class Server:
 
             return nodeservice_pb2.InferenceResponse()
 
-        # INTERMIDIATE NODE -> FORWARD TO SUCCESSOR
+        # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
         # Ensure the successor stub has been created
         if not self.successor_stub and not self.chain.is_tail():
@@ -450,22 +450,27 @@ class Server:
                     # Find backup node with enough memory
                     for backup_id in backup_nodes:
                         backup_info = self.chain.get_server_info(backup_id)
-                        avail_mem = backup_info.get("available_memory")
-                        avail_vram = backup_info.get("available_vram")
-                        
-                        if self._can_load(layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
-                            self.chain.repair(orphaned_layers, successor_2_data, succ_was_tail, replacement_node_id=backup_id)
-
-                            channel = grpc.insecure_channel(backup_info.get("address"))
-                            backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                            backup_stub.LoadLayers(nodeservice_pb2.Empty())
+                        if backup_info:
+                            avail_mem = backup_info.get("available_memory")
+                            avail_vram = backup_info.get("available_vram")
                             
-                            self._connect_to_successor()    
-                else:
-                  logger.info("No backup nodes found. Setting this node as the tail...") 
-                  self.chain.update_chain_tail(self.chain.node_id)
-                  self.chain.update_successor(new_successor_data=None)
-                  self.chain.update_all_layer_loaded()
+                            if self._can_load(layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
+                                self.chain.repair(orphaned_layers, successor_2_data, succ_was_tail, replacement_node_id=backup_id)
+                                
+                                try:
+                                    channel = grpc.insecure_channel(backup_info.get("address"))
+                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                                    backup_stub.LoadLayers(nodeservice_pb2.Empty())
+                                
+                                    self._connect_to_successor()
+                                    return    
+                                except grpc.RpcError as e:
+                                    logger.error(f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}")
+                # else:
+                logger.info("No backup nodes found. Setting this node as the tail...") 
+                self.chain.update_chain_tail(self.chain.node_id)
+                self.chain.update_successor(new_successor_data=None)
+                self.chain.update_all_layer_loaded()
 
     def _reload_llm(self, layers: Tuple[int, int]):
         """Helper to reload the model with explicit GC"""
