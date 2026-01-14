@@ -56,6 +56,7 @@ message InferenceResponse {
   optional string error_message = 4;
 
   float total_rate = 5;
+  float processing_time = 6;
 }
 
 message ReallocateRequest {

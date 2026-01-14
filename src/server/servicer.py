@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 import grpc
 import torch
+import time
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import message_to_tensor
@@ -25,6 +26,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[0]))
 
     def RunLayers(self, request, context):
+        start = time.perf_counter()
+
         # Deserialize the incoming request to a tensor
         input_tensor = message_to_tensor(request)
 
@@ -45,6 +48,13 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             partial_rate,
             response_address
         )
+
+        end = time.perf_counter()
+        ack_response.processing_time = end - start
+
+        # Update successor network latency on the dht
+        self.server_node.chain.update_network_latency(self.server_node.succ_network_latency)
+
 
         return ack_response
 

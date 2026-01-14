@@ -501,4 +501,11 @@ class ChainManager:
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
+    def update_network_latency(self, network_latency: float = 0.0):
+        self_info = self._get_self_info()
+        self_info["network_latency"] = network_latency
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
+
 

@@ -90,7 +90,9 @@ class Server:
         self.model = None
         self.successor_stub = None
         self.num_local_layers = 0
+
         self.layers_per_second = 0.0
+        self.succ_network_latency = 0.0
 
         # Client Stub
         self.client_stub = None
@@ -227,7 +229,7 @@ class Server:
         input_pos: torch.Tensor = None,
         incoming_partial_rate: float = 0.0,
         response_address: str = None,
-    ) -> Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse]:
+    ) -> nodeservice_pb2.InferenceResponse:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
@@ -262,9 +264,9 @@ class Server:
         # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
 
         # Inference
-        start_time = time.perf_counter()
+        start = time.perf_counter()
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
-        computational_delay = time.perf_counter() - start_time
+        computational_delay = time.perf_counter() - start
 
         # Get the server's layer processing rate for this inference run
         if computational_delay > 0 and self.num_local_layers > 0:
@@ -303,7 +305,17 @@ class Server:
                     channel = grpc.insecure_channel(response_address)
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
+                start = time.perf_counter()
                 self.client_stub.ReceiveResponse(response)
+
+                current_network_latency = time.perf_counter() - start
+                if self.succ_network_latency > 0.0:
+                    self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
+                else:
+                    self.succ_network_latency = current_network_latency
+
+                # self.succ_network_latency = time.perf_counter() - start
+                logger.info(f"Communication Latency with Client: {self.succ_network_latency:.6f}s")
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 
@@ -327,7 +339,20 @@ class Server:
         request.response_address = response_address
 
         try:
-            self.successor_stub.RunLayers(request, timeout=5)
+            start = time.perf_counter()
+            response = self.successor_stub.RunLayers(request, timeout=5)
+            end = time.perf_counter()
+
+            if response.processing_time > 0:
+                total_rpc_time = end - start
+                current_network_latency = total_rpc_time - response.processing_time
+                if self.succ_network_latency > 0.0:
+                    self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
+                else:
+                    self.succ_network_latency = current_network_latency
+
+                logger.info(f"Total RPC Latency: {total_rpc_time:.6f}s")
+                logger.info(f"Communication Latency with Successor: {self.succ_network_latency:.6f}s")
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")
@@ -362,11 +387,16 @@ class Server:
         else:
             ideal_layer_count = 0
 
+        logger.info(f"Idead Layer Count: {ideal_layer_count}")
+
         current_num_layers = self.num_local_layers
         max_extra_num_layers = self._mem_to_num_layers(bytes_per_param=4)
         max_num_layers = current_num_layers + max_extra_num_layers
 
+        logger.info(f"Max Num Layers: {max_num_layers}")
+
         target_layer_count = min(int(round(ideal_layer_count)), max_num_layers)
+        # target_layer_count = max_num_layers if max_num_layers > ideal_layer_count else ideal_layer_count
 
         # Rounding logic
         if self.chain.is_tail():
@@ -376,10 +406,11 @@ class Server:
             target_layer_count = 1
         elif (start_layer_index + target_layer_count) >= num_total_layers:
             # Leave at least 1 layer for the rest of the chain if not tail
-            target_layer_count = num_total_layers - start_layer_index - 1
+            target_layer_count = num_total_layers - start_layer_index #- 1
 
         end_layer_index = start_layer_index + target_layer_count - 1
         new_layers = (start_layer_index, end_layer_index)
+        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}")
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
@@ -404,7 +435,7 @@ class Server:
         To repair the chain:
         1. If this node can hold the orphaned layers of the failed node, it loads them.
         2. Else, if a backup node is available it prompts it to take the place of the failed node.
-        3. Otherwise, the chain can't be repaired.
+        3. Otherwise, the chain can't be repaired and the repairing node becomes the new tail.
         """
         with self._repair_lock:
             # Re-validate the failure. Another thread could have already repaired the chain

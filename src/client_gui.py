@@ -87,6 +87,10 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         layers_loaded = info.get("layers_loaded", False)
         labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
 
+        if "network_latency" in info:
+            net_latency = info.get("network_latency", 0.0)
+            labels["network_latency"] = ui.label(f"Successor Network Latency: {net_latency:.6f}s").classes("font-mono text-sm")
+
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
 
@@ -178,7 +182,8 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     if "layers_loaded" in labels:
                         labels["layers_loaded"].text = f"Layers Loaded: {node_info.get('layers_loaded', False)}"
 
-                    # if 
+                    if "network_latency" in labels:
+                        labels["network_latency"].text = f"Successor Network Latency: {node_info.get('network_latency', 0.0):.6f}s"
                     
                     # Update Memory
                     if "memory" in labels and "memory_usage" in node_info and "memory_limit" in node_info:
@@ -397,4 +402,3 @@ async def main_page():
 
 
 ui.run(title="Distributed LLM Client", port=8080, host="0.0.0.0")
-# ui.run(native=True)
