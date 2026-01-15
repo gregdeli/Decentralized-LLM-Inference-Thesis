@@ -59,6 +59,7 @@ class Client:
 
         self.inference_response = None
         self.inference_response_event = threading.Event()
+        self.final_activations = None
 
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
@@ -231,28 +232,25 @@ class Client:
                 return
 
             # Wait for the Tail to set the response_event
-            is_set = self.inference_response_event.wait(timeout=30)
+            is_set = self.inference_response_event.wait(timeout=15)
 
             if not is_set:
                 logger.error("Timeout waiting for response from Tail server.")
                 yield "Error: Timeout"
             
-            response = self.inference_response
-
-            # if response.HasField("error_message"):
-            #     logger.error(f"Server-side failure: {response.error_message}")
-            #     logger.error("Aborting generation task. Please try again.")
-            #     yield f"Server-side failure: {response.error_message}. Aborting generation task. Please try again."
-            #     return
+            # response = self.inference_response
 
             # Capture TOTAL RATE
-            if response.total_rate > 0:
-                self.total_rate = response.total_rate
+            # if response.total_rate > 0:
+            #     self.total_rate = response.total_rate
 
-            x = message_to_tensor(response)
+            # x = message_to_tensor(response)
+
+
 
             # Run clients final layers
-            logits = self.model.forward_client_final(x)
+            # logits = self.model.forward_client_final(x)
+            logits = self.model.forward_client_final(self.final_activations)
 
             # Sample the next token
             next_token = self.llm.sample_logits(logits, temperature, top_p)

@@ -91,6 +91,7 @@ class Server:
         self.successor_stub = None
         self.num_local_layers = 0
 
+        self.inference_delay = 0.0
         self.layers_per_second = 0.0
         self.succ_network_latency = 0.0
 
@@ -265,12 +266,14 @@ class Server:
 
         # Inference
         start = time.perf_counter()
+
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
-        computational_delay = time.perf_counter() - start
+
+        self.inference_delay = time.perf_counter() - start
 
         # Get the server's layer processing rate for this inference run
-        if computational_delay > 0 and self.num_local_layers > 0:
-            current_rate = self.num_local_layers / computational_delay
+        if self.inference_delay > 0 and self.num_local_layers > 0:
+            current_rate = self.num_local_layers / self.inference_delay
 
             # Moving average to avoid jitter
             if self.layers_per_second == 0:
@@ -278,7 +281,7 @@ class Server:
             else:
                 self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
 
-        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {computational_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
         # Calculate partial rate to send forward
         my_partial_rate = incoming_partial_rate + self.layers_per_second
@@ -296,6 +299,7 @@ class Server:
                 logger.error("Tail node has no response_address for the client!")
                 return
             
+            # start = time.perf_counter()
             response = tensor_to_response(h)
             response.total_rate = my_partial_rate
 
@@ -313,8 +317,7 @@ class Server:
                     self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
                 else:
                     self.succ_network_latency = current_network_latency
-
-                # self.succ_network_latency = time.perf_counter() - start
+                    
                 logger.info(f"Communication Latency with Client: {self.succ_network_latency:.6f}s")
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
@@ -326,6 +329,8 @@ class Server:
         # Ensure the successor stub has been created
         if not self.successor_stub and not self.chain.is_tail():
             self._connect_to_successor()
+        
+        # start = time.perf_counter()
 
         # Call the successor via gRPC
         request = tensor_to_request(
@@ -351,8 +356,8 @@ class Server:
                 else:
                     self.succ_network_latency = current_network_latency
 
-                logger.info(f"Total RPC Latency: {total_rpc_time:.6f}s")
-                logger.info(f"Communication Latency with Successor: {self.succ_network_latency:.6f}s")
+                # logger.info(f"Total RPC Latency: {total_rpc_time:.6f}s")
+                # logger.info(f"Communication Latency with Successor: {self.succ_network_latency:.6f}s")
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")

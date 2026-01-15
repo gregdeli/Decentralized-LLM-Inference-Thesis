@@ -50,11 +50,14 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         )
 
         end = time.perf_counter()
-        ack_response.processing_time = end - start
+
+        total_processing_time = end - start
+        ack_response.processing_time = total_processing_time
+
+        # logger.info(f"Total Processing Time: {total_processing_time:.6f}s")
 
         # Update successor network latency on the dht
         self.server_node.chain.update_network_latency(self.server_node.succ_network_latency)
-
 
         return ack_response
 
