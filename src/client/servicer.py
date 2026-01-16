@@ -1,3 +1,4 @@
+import time
 import logging
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ class ClientServicer(nodeservice_pb2_grpc.ClientServiceServicer):
 
     def ReceiveResponse(self, request, context):
         # response = self.inference_response
+        start = time.perf_counter()
 
         # Capture TOTAL RATE
         if request.total_rate > 0:
@@ -24,4 +26,7 @@ class ClientServicer(nodeservice_pb2_grpc.ClientServiceServicer):
 
         # self.client_node.inference_response = request
         self.client_node.inference_response_event.set()
-        return nodeservice_pb2.Empty()
+
+        processing_time = time.perf_counter() - start
+        # return nodeservice_pb2.Empty()
+        return nodeservice_pb2.InferenceResponse(processing_time=processing_time)

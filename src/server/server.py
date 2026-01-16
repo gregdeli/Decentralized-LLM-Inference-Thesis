@@ -310,15 +310,19 @@ class Server:
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
                 start = time.perf_counter()
-                self.client_stub.ReceiveResponse(response)
+                client_response = self.client_stub.ReceiveResponse(response)
+                end = time.perf_counter()
 
-                current_network_latency = time.perf_counter() - start
-                if self.succ_network_latency > 0.0:
-                    self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
-                else:
-                    self.succ_network_latency = current_network_latency
-                    
-                logger.info(f"Communication Latency with Client: {self.succ_network_latency:.6f}s")
+                if client_response.processing_time > 0:
+                    total_rpc_time = end - start
+                    current_network_latency = total_rpc_time - client_response.processing_time
+
+                    if self.succ_network_latency > 0.0:
+                        self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
+                    else:
+                        self.succ_network_latency = current_network_latency
+                        
+                    logger.info(f"Client Receive Response Time: {self.succ_network_latency:.6f}s")
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 

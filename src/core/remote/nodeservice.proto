@@ -23,7 +23,8 @@ service NodeService {
 // The service definition for a client node that receives inference responses form the TAIL node.
 service ClientService {
   // Receives the inference response from the tail node and returns an empty message.
-  rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
+  // rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
+  rpc ReceiveResponse(InferenceResponse) returns (InferenceResponse) {}
 }
 
 message Empty {}

@@ -290,7 +290,7 @@ class ClientServiceStub(object):
         self.ReceiveResponse = channel.unary_unary(
                 '/nodeservice.ClientService/ReceiveResponse',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
                 _registered_method=True)
 
 
@@ -300,6 +300,7 @@ class ClientServiceServicer(object):
 
     def ReceiveResponse(self, request, context):
         """Receives the inference response from the tail node and returns an empty message.
+        rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -311,7 +312,7 @@ def add_ClientServiceServicer_to_server(servicer, server):
             'ReceiveResponse': grpc.unary_unary_rpc_method_handler(
                     servicer.ReceiveResponse,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -341,7 +342,7 @@ class ClientService(object):
             target,
             '/nodeservice.ClientService/ReceiveResponse',
             core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
             options,
             channel_credentials,
             insecure,
