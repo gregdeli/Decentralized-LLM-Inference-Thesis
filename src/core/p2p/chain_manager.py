@@ -501,11 +501,17 @@ class ChainManager:
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
-    def update_network_latency(self, network_latency: float = 0.0):
+    def update_inference_delay(self, inference_delay: float = 0.0):
         self_info = self._get_self_info()
-        self_info["network_latency"] = network_latency
+        self_info["inference_delay"] = inference_delay
 
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
+    def update_grpc_overhead(self, grpc_overhead: float = 0.0):
+        self_info = self._get_self_info()
+        self_info["grpc_overhead"] = grpc_overhead
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
 

@@ -61,6 +61,7 @@ class Client:
         self.inference_response_event = threading.Event()
         self.final_activations = None
 
+        self.head_communication_latency = 0.0
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
 
@@ -216,15 +217,39 @@ class Client:
         tokens_generated = 0
         for i in range(max_new_tokens):
             # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
+            start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
+            initial_inference_delay = time.perf_counter() - start_token_gen
+            print()
+            logger.info(f"Initial Inference Delay: {initial_inference_delay:.6f}")
 
             # Call the remote server chain
+            start = time.perf_counter()
             request = tensor_to_request(
                 x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
             )
             request.response_address = self.grpc_addr
 
+            serialization_delay = time.perf_counter() - start
+            logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+
+            start = time.perf_counter()
             ack_response = self.head_server_stub.RunLayers(request)
+            end = time.perf_counter()
+
+            total_rpc_time = end - start
+            # logger.info(f"Total HEAD RPC Delay: {total_rpc_time:.6f}")
+            if ack_response.processing_time > 0:
+                    total_rpc_time = end - start
+                    current_network_latency = total_rpc_time - ack_response.processing_time
+
+                    if self.head_communication_latency > 0.0:
+                        self.head_communication_latency = (0.7 * self.head_communication_latency) + (0.3 * current_network_latency)
+                    else:
+                        self.head_communication_latency = current_network_latency
+                        
+                    logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
+
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
@@ -238,37 +263,57 @@ class Client:
                 logger.error("Timeout waiting for response from Tail server.")
                 yield "Error: Timeout"
             
-            # response = self.inference_response
+            response = self.inference_response
 
             # Capture TOTAL RATE
-            # if response.total_rate > 0:
-            #     self.total_rate = response.total_rate
+            if response.total_rate > 0:
+                self.total_rate = response.total_rate
 
-            # x = message_to_tensor(response)
-
-
+            start = time.perf_counter()
+            x = message_to_tensor(response)
+            deserialization_delay = time.perf_counter() - start
+            logger.info(f"Deserialization Delay: {deserialization_delay:.6f}")
 
             # Run clients final layers
             # logits = self.model.forward_client_final(x)
-            logits = self.model.forward_client_final(self.final_activations)
+            start = time.perf_counter()
+            # logits = self.model.forward_client_final(self.final_activations)
+            logits = self.model.forward_client_final(x)
+            final_inference_delay = time.perf_counter() - start
+            logger.info(f"Final Inference Delay: {final_inference_delay:.6f}")
 
             # Sample the next token
+            start = time.perf_counter()
             next_token = self.llm.sample_logits(logits, temperature, top_p)
+            sample_delay = time.perf_counter() - start
+            logger.info(f"Sampling Delay: {sample_delay:.6f}")
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
+                token_gen_delay = time.perf_counter() - start_token_gen
+                logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
                 break
 
             # Decode and yield the new token
+            start = time.perf_counter()
             decoded_token = self.llm.preprocessor.decode(next_token)
+            decode_delay = time.perf_counter() - start
+            logger.info(f"Decoding Delay: {decode_delay:.6f}")
+
             tokens_generated += 1
 
+            start = time.perf_counter()
             yield decoded_token
+            yield_delay = time.perf_counter() - start
+            logger.info(f"Yield Delay: {yield_delay:.6f}")
 
             input_tensor = next_token
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
+
+            token_gen_delay = time.perf_counter() - start_token_gen
+            logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
 
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0

@@ -87,12 +87,16 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         layers_loaded = info.get("layers_loaded", False)
         labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
 
-        if "network_latency" in info:
-            net_latency = info.get("network_latency", 0.0)
-            labels["network_latency"] = ui.label(f"Successor Network Latency: {net_latency:.6f}s").classes("font-mono text-sm")
-
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
+
+        if "inference_delay" in info:
+            inference_latency = info.get("inference_delay", 0.0)
+            labels["inference_delay"] = ui.label(f"Inference Delay: {inference_latency:.6f}s").classes("font-mono text-sm")
+
+        if "grpc_overhead" in info:
+            grpc_overhead = info.get("grpc_overhead", 0.0)
+            labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes("font-mono text-sm")
 
         if "memory_usage" in info and "memory_limit" in info:
             mem_usage = info["memory_usage"]
@@ -182,8 +186,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     if "layers_loaded" in labels:
                         labels["layers_loaded"].text = f"Layers Loaded: {node_info.get('layers_loaded', False)}"
 
-                    if "network_latency" in labels:
-                        labels["network_latency"].text = f"Successor Network Latency: {node_info.get('network_latency', 0.0):.6f}s"
+                    if "inference_delay" in labels:
+                        labels["inference_delay"].text = f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"
+
+                    if "grpc_overhead" in labels:
+                        labels["grpc_overhead"].text = f"GRPC Overhead: {node_info.get('grpc_overhead', 0.0):.6f}s"
                     
                     # Update Memory
                     if "memory" in labels and "memory_usage" in node_info and "memory_limit" in node_info:
@@ -287,7 +294,7 @@ async def generate(
                 with response_message:
                     ui.markdown(full_response)
                 token_count += 1
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001)
 
                 # Scroll to bottom
                 ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
@@ -320,6 +327,9 @@ async def generate(
 
         if state.client.total_rate > 0:
             ui.button("Trigger Reallocation", on_click=lambda: trigger_reallocation(stats_container, chain_container)).classes("w-full")
+
+        ui.separator()
+        ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
 
 
 def stop_generation():

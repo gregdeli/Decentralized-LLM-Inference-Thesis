@@ -15,16 +15,9 @@ class ClientServicer(nodeservice_pb2_grpc.ClientServiceServicer):
         self.client_node = client_node
 
     def ReceiveResponse(self, request, context):
-        # response = self.inference_response
         start = time.perf_counter()
 
-        # Capture TOTAL RATE
-        if request.total_rate > 0:
-            self.client_node.total_rate = request.total_rate
-
-        self.client_node.final_activations = message_to_tensor(request)
-
-        # self.client_node.inference_response = request
+        self.client_node.inference_response = request
         self.client_node.inference_response_event.set()
 
         processing_time = time.perf_counter() - start
