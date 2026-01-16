@@ -290,7 +290,7 @@ class ClientServiceStub(object):
         self.ReceiveResponse = channel.unary_unary(
                 '/nodeservice.ClientService/ReceiveResponse',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
                 _registered_method=True)
 
 
@@ -312,7 +312,7 @@ def add_ClientServiceServicer_to_server(servicer, server):
             'ReceiveResponse': grpc.unary_unary_rpc_method_handler(
                     servicer.ReceiveResponse,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -342,7 +342,7 @@ class ClientService(object):
             target,
             '/nodeservice.ClientService/ReceiveResponse',
             core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
+            core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
             options,
             channel_credentials,
             insecure,
