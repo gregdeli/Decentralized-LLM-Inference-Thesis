@@ -45,7 +45,6 @@ message InferenceRequest {
   optional int64 input_pos = 6;
 
   float partial_rate = 7;
-
   string response_address = 8;
 }
 

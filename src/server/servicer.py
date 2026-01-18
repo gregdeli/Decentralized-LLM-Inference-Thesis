@@ -52,13 +52,15 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         end = time.perf_counter()
 
         total_grpc_time = end - start
+        # my_total_grpc_time = total_grpc_time - ack_response.processing_time
         self.server_node.grpc_overhead = total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
-
+        
         logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")
 
         ack_response.processing_time = total_grpc_time
 
-        # Update inference delay and grpc overhead on the dht
+        # Update processing rate, inference delay and grpc overhead on the dht
+        self.server_node.chain.update_processing_rate(self.server_node.layers_per_second)
         self.server_node.chain.update_inference_delay(self.server_node.inference_delay)
         self.server_node.chain.update_grpc_overhead(self.server_node.grpc_overhead)
 
@@ -81,4 +83,4 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # end_idx = request.end
 
         self.server_node._load_llm()
-        return nodeservice_pb2.Empty()
+        return nodeservice_pb2.Empty() 

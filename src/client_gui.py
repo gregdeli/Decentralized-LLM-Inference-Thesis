@@ -90,6 +90,10 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
 
+        if "processing_rate" in info:
+            processing_rate = info.get("processing_rate", 0.0)
+            labels["processing_rate"] = ui.label(f"Processing Rate: {processing_rate:.6f} layers/sec").classes("font-mono text-sm")
+
         if "inference_delay" in info:
             inference_latency = info.get("inference_delay", 0.0)
             labels["inference_delay"] = ui.label(f"Inference Delay: {inference_latency:.6f}s").classes("font-mono text-sm")
@@ -185,6 +189,9 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     # Update Loaded Status
                     if "layers_loaded" in labels:
                         labels["layers_loaded"].text = f"Layers Loaded: {node_info.get('layers_loaded', False)}"
+                    
+                    if "processing_rate" in labels:
+                        labels["processing_rate"].text = f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} layers/sec"
 
                     if "inference_delay" in labels:
                         labels["inference_delay"].text = f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"

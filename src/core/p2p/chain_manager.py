@@ -501,6 +501,13 @@ class ChainManager:
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
 
+    def update_processing_rate(self, processing_rate: float = 0.0):
+        self_info = self._get_self_info()
+        self_info["processing_rate"] = processing_rate
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
+
     def update_inference_delay(self, inference_delay: float = 0.0):
         self_info = self._get_self_info()
         self_info["inference_delay"] = inference_delay
@@ -514,4 +521,23 @@ class ChainManager:
 
         self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self.dht.store(self_key, self_info, EXPIRATION_S)
+    
+    def become_backup(self):
+        self_info = self._get_self_info()
+        self_info["is_backup"] = True
+        self_info["successor"] = None
+        self_info["layers"] = None
+        self_info["layers_loaded"] = False
+
+        self_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(self_key, self_info, EXPIRATION_S)
+
+        backups_list = self.get_backup_nodes()
+        backups_list.append(self.node_id)
+
+        self.dht.store(BACKUPS_KEY, backups_list, EXPIRATION_S)
+
+        
+
+
 

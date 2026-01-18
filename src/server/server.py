@@ -35,11 +35,14 @@ class Server:
         self,
         model_path: Path,
         num_layers: int = None,
+        added_delay: float = None, # Debugging
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
         grpc_addr: str = "head-server:5001",
     ) -> None:
+        self.added_delay = added_delay
+
         self.model_path = model_path
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # self.device = "cpu"
@@ -269,6 +272,8 @@ class Server:
         start = time.perf_counter()
 
         h = self.model.forward_server(input_tensor, seq_length, input_pos)
+        if self.added_delay:
+            time.sleep(self.added_delay)
 
         self.inference_delay = time.perf_counter() - start
 
@@ -314,15 +319,13 @@ class Server:
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 
-            return nodeservice_pb2.InferenceResponse(processing_time=client_response.processing_time)
+            return nodeservice_pb2.InferenceResponse(processing_time=client_response.processing_time, total_rate=0.0)
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
         # Ensure the successor stub has been created
         if not self.successor_stub and not self.chain.is_tail():
             self._connect_to_successor()
-        
-        # start = time.perf_counter()
 
         # Call the successor via gRPC
         request = tensor_to_request(
@@ -336,20 +339,7 @@ class Server:
         request.response_address = response_address
 
         try:
-            # start = time.perf_counter()
-            response = self.successor_stub.RunLayers(request, timeout=5)
-            # end = time.perf_counter()
-
-            # if response.processing_time > 0:
-            #     total_rpc_time = end - start
-            #     current_network_latency = total_rpc_time - response.processing_time
-            #     if self.succ_network_latency > 0.0:
-            #         self.succ_network_latency = (0.7 * self.succ_network_latency) + (0.3 * current_network_latency)
-            #     else:
-            #         self.succ_network_latency = current_network_latency
-
-                # logger.info(f"Total RPC Latency: {total_rpc_time:.6f}s")
-                # logger.info(f"Communication Latency with Successor: {self.succ_network_latency:.6f}s")
+            response = self.successor_stub.RunLayers(request, timeout=2)
         except grpc.RpcError as e:
             if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 logger.warning(f"Successor failure detected during INFERENCE.")
@@ -364,7 +354,8 @@ class Server:
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
 
-        return nodeservice_pb2.InferenceResponse(processing_time=response.processing_time)
+        # return nodeservice_pb2.InferenceResponse(processing_time=response.processing_time)
+        return response
 
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
         """
@@ -402,9 +393,10 @@ class Server:
         elif target_layer_count < 1:
             target_layer_count = 1
         elif (start_layer_index + target_layer_count) >= num_total_layers:
-            # Leave at least 1 layer for the rest of the chain if not tail
+            # Dont exceed the available layers
             target_layer_count = num_total_layers - start_layer_index #- 1
 
+        # if target_layer_count > 0:
         end_layer_index = start_layer_index + target_layer_count - 1
         new_layers = (start_layer_index, end_layer_index)
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}")
@@ -416,10 +408,20 @@ class Server:
         else:
             logger.info("Layer assignment unchanged.")
 
+        next_start_index = end_layer_index + 1
+        # else:
+        #     # Set this node as a backup
+        #     logger.info(f"Target Layer Count: {target_layer_count}. Setting this node as a backup")
+        #     # self.successor_stub = None
+        #     self.llm = None
+        #     self.num_local_layers = 0
+        #     self.chain.become_backup()
+
+        #     next_start_index = start_layer_index
+
         # Propagate to successor
         if not self.chain.is_tail() and self.successor_stub:
-            next_start_index = end_layer_index + 1
-
+            # next_start_index = end_layer_index + 1
             request = nodeservice_pb2.ReallocateRequest(total_rate=total_system_rate, start_layer_index=next_start_index)
             try:
                 self.successor_stub.Reallocate(request)
@@ -558,6 +560,9 @@ def serve():
     num_layers_str = os.getenv("NUM_LAYERS")
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
+    added_delay_str = os.getenv("ADDED_DELAY")
+    added_delay = float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
+
     # hostname = socket.gethostname()
     my_ip = os.getenv("IP")
     if not my_ip:
@@ -591,6 +596,7 @@ def serve():
     server_node = Server(
         model_path=model_path,
         num_layers=num_layers,
+        added_delay=added_delay,
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
@@ -666,7 +672,8 @@ def serve():
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):
-        server.stop(5)
+        server_node.dht.shutdown()
+        server.stop(grace=2)
 
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop

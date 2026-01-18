@@ -265,7 +265,7 @@ class Client:
             
             response = self.inference_response
 
-            # Capture TOTAL RATE
+            # Capture the TOTAL PROCESSING RATE
             if response.total_rate > 0:
                 self.total_rate = response.total_rate
 
