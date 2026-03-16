@@ -113,6 +113,7 @@ class Server:
     ):
         """Loads the layers assigned by the ChainManager."""
         if self.chain.is_backup():
+            self._profile_backup_node()
             return
 
         layers_to_loaded = self.chain.get_layers()
@@ -218,12 +219,41 @@ class Server:
             
             if self.device == "cuda":
                 self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb)
+    
+    @torch.no_grad()
+    def _profile_backup_node(self):
+        """ Measures a backup node's processing rate by doing an inference run on a dummy input."""
+        # Load the first Transformer layer
+        self.llm = LLM.load(
+            self.model_path,
+            is_client=False,
+            layers_to_load=(0,0)
+        )
+        self.model = self.llm.model
 
-    def _print_mem_usage(self, title: str):
-        logger.info(f"{title}: Memory Usage: {self.memory_usage_mb:.2f}/{self.memory_limit_mb}MB")
-        logger.info(f"{title}: Available Memory: {self.available_memory_mb:.2f}MB")
-        logger.info(f"{title}: VRAM Usage: {self.vram_usage_mb:.2f}/{self.vram_limit_mb}MB")
-        logger.info(f"{title}: Available VRAM: {self.available_vram_mb:.2f}MB")
+        self.chain.update_device(self.llm.device)
+        self._update_memory_usage()
+
+        # Inference with dummy input
+        hidden_size = self.config["hidden_size"]
+        seq_len = 30 # short sequence for profiling
+
+        # Profiling parameters
+        profiling_runs = 100
+
+        dummy_input = torch.randn(1, seq_len, hidden_size, device=self.llm.device, dtype=torch.float32)
+        
+        start = time.perf_counter()
+        for _ in range(profiling_runs):
+            self.model.forward_server(dummy_input, seq_length=seq_len, input_pos=None)
+        elapsed = time.perf_counter() - start
+
+        avg_latency = elapsed / profiling_runs
+        processing_rate = self.model.num_layers / avg_latency
+        logger.info(f"Backup profiling: avg latency {avg_latency:.6f}s/run, layers/sec {processing_rate:.2f}")
+
+        self.chain.update_processing_rate(processing_rate)
+        
 
     @torch.no_grad()
     def run_local_layers(

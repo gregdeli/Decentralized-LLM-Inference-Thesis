@@ -46,7 +46,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 10G
+          memory: 2.5G
           # cpus: '1.0'
     # ports:
     #   - "5678:5678"  
@@ -80,7 +80,7 @@ services:
     #   - "5678:5678"
       # - 9999:9999 
 
-  server-A:
+  server:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
     command: sleep infinity
@@ -96,13 +96,18 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 4G
     depends_on:
       - head-server
       - intermediate-server
-    # ports:
-    #   - "5678:5678"
+    ports:
+      - "5678:5678"
 
   client:
     image: decentralized-llm-thesis:latest 
