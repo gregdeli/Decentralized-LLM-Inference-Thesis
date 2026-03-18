@@ -27,7 +27,7 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
+    def join_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int) -> None:
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.

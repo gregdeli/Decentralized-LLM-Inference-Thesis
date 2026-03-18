@@ -1,3 +1,8 @@
+"""
+A minimal CLI test script that discovers a bootstrap peer, creates a Client, 
+and generates text from a hard-coded prompt.
+"""
+
 import os
 from pathlib import Path
 import time
