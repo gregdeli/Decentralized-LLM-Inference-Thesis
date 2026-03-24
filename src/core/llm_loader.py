@@ -163,7 +163,7 @@ class LLM:
             )
 
         if not self.kv_cache_initialized:
-            device = self.preprocessor.device
+            device = self.device
             if time_it:
                 start = time.perf_counter()
             # Na allaksw to batch_size otan kanw batched inference
@@ -173,11 +173,11 @@ class LLM:
                 elapsed = time.perf_counter() - start
                 print(f"KV cache initialization time: {elapsed:.5f} seconds")
 
-        # Dynamically grow the kv cache size if necessary
+        # Grow the kv cache size if necessary
         elif self.prev_generated_seq_length < max_returned_tokens:
-            tmp_device = self.model.mask_cache.device
+            device = self.model.mask_cache.device
             self.model.clear_kv_cache()
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
 
         self.prev_generated_seq_length = max_returned_tokens
 

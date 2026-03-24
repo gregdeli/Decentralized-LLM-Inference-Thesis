@@ -246,6 +246,8 @@ class Server:
         start = time.perf_counter()
         for _ in range(profiling_runs):
             self.model.forward_server(dummy_input, seq_length=seq_len, input_pos=None)
+            if self.added_delay:
+                time.sleep(self.added_delay)
         elapsed = time.perf_counter() - start
 
         avg_latency = elapsed / profiling_runs

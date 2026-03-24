@@ -184,8 +184,8 @@ class Llama3(nn.Module):
         self,
         batch_size: int,
         max_seq_length: Optional[int] = None,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        device: Optional[torch.device] = "cpu",
+        dtype: Optional[torch.dtype] = torch.get_default_dtype(),
     ) -> None:
         """
         Pre-allocates the K-V cache for each transformer block.
@@ -363,12 +363,10 @@ class RMSNorm(torch.nn.Module):
     Root Mean Square Layer Normalization.
     """
 
-    def __init__(self, size: int, dim: int = -1, eps: float = 1e-05, add_unit_offset: bool = False) -> None:
+    def __init__(self, size: int, eps: float = 1e-05) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.ones(size))
         self.eps = eps
-        # self.dim = dim
-        # self.add_unit_offset = add_unit_offset
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         input_dtype = x.dtype
@@ -380,8 +378,7 @@ class RMSNorm(torch.nn.Module):
 
 class KVCache(nn.Module):
     """
-    Buffers `k`, `v` have shape
-    `(batch_size, n_query_groups, max_seq_length, head_size)`.
+    Buffers `k`, `v` have shape (batch_size, n_query_groups, max_seq_length, head_size)`.
     """
 
     def __init__(
@@ -404,10 +401,11 @@ class KVCache(nn.Module):
             input_pos = torch.arange(0, seq_len, device=k.device)
 
         # Ensure correct dtype
-        if self.k.dtype != k.dtype:
-            self.k = self.k.to(k.dtype)
-        if self.v.dtype != v.dtype:
-            self.v = self.v.to(v.dtype)
+        # Error: self.k = ... destroys pytorch buffer registration
+        # if self.k.dtype != k.dtype:
+        #     self.k = self.k.to(k.dtype)
+        # if self.v.dtype != v.dtype:
+        #     self.v = self.v.to(v.dtype)
 
         # Update cache
         self.k.index_copy_(2, input_pos, k)

@@ -4,8 +4,6 @@ Future Features:
 TODO:
 * An node thelei polla layers kai den afhnei tpt gia allous sto chain, its ok as ta parei kai na ginoun oi alloi backup
 
-* track network latency metrics
-
 * Quantize activations before sending
 
 * Simulate heterogeneity na dw tetradio
@@ -29,8 +27,6 @@ TODO:
 
 - Greedy alloc
 - Random Allocation !!!! 
-
-- Na dw pioi komvoi exoun gpu
 
 
 Idea Mitsou:
