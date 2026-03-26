@@ -8,6 +8,7 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - NUM_LAYERS=8
+      # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       # - OMP_NUM_THREADS=1
       # - MKL_NUM_THREADS=1
@@ -88,6 +89,7 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - NUM_LAYERS=4
+      # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=tail-server:5001
       # - OMP_NUM_THREADS=1

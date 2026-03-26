@@ -103,35 +103,62 @@ class Server:
         self.client_stub = None
 
         # If all layers are loaded then this node acts as a backup and doesn't load any layers
-        if self.chain.is_backup():
-            self._update_memory_usage()
-            return
+        # if self.chain.is_backup():
+        #     self._update_memory_usage()
+        #     return
+
 
     def _load_llm(
         self,
         time_it: bool = False,
     ):
         """Loads the layers assigned by the ChainManager."""
-        if self.chain.is_backup():
-            self._profile_backup_node()
-            return
+        layers_to_load = self.chain.get_layers()
 
-        layers_to_loaded = self.chain.get_layers()
-        logger.info(f"Loading layers: {layers_to_loaded}...")
+        if self.chain.is_backup():
+            num_layers = self._mem_to_num_layers(bytes_per_param=4)
+            layers_to_load = (0, num_layers - 1)
+
+        logger.info(f"Loading layers: {layers_to_load}...")
 
         self.llm = LLM.load(
             self.model_path,
             is_client=False,
-            layers_to_load=layers_to_loaded,
+            layers_to_load=layers_to_load,
             time_it=time_it,
         )
         self.model = self.llm.model
         self.num_local_layers = self.llm.model.num_layers
 
         # Update DHT and Chain Status
-        self.chain.update_layers_loaded(True)
-        self.chain.update_all_layer_loaded()
         self.chain.update_device(self.llm.device)
+        self._update_memory_usage()
+        if not self.chain.is_backup():
+            self.chain.update_layers_loaded(True)
+            self.chain.update_all_layer_loaded()
+        else:
+            self._profile_backup_node()
+    
+    def _unload_llm(self):
+        """Helper to unload the model with explicit GC"""
+        self.model = None
+        self.llm = None
+        self.num_local_layers = 0
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        self._update_memory_usage()
+
+    def _reload_llm(self, layers: Tuple[int, int]):
+        """Helper to reload the model with explicit GC"""
+        logger.info(f"Reloading model with layers: {layers}")
+        
+        self._unload_llm()
+
+        self.llm = LLM.load(self.model_path, is_client=False, layers_to_load=layers)
+        self.model = self.llm.model
+        self.num_local_layers = self.llm.model.num_layers
         self._update_memory_usage()
 
     def _mem_to_num_layers(
@@ -141,7 +168,7 @@ class Server:
             avail_vram: float = None,
         ) -> int:
         """
-        Calculates how many layers fit in the available memory/VRAM
+        Calculates how many layers fit in the available Memory/VRAM
         """
         self._update_memory_usage(update_on_dht=False)
 
@@ -222,39 +249,54 @@ class Server:
     
     @torch.no_grad()
     def _profile_backup_node(self):
-        """ Measures a backup node's processing rate by doing an inference run on a dummy input."""
-        # Load the first Transformer layer
-        self.llm = LLM.load(
-            self.model_path,
-            is_client=False,
-            layers_to_load=(0,0)
-        )
-        self.model = self.llm.model
-
-        self.chain.update_device(self.llm.device)
-        self._update_memory_usage()
+        """ Measures a backup node's processing rate by doing a fake generation on a dummy input."""
+        # LLM has already been loaded for profiling with the number of layers the backup node can hold 
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
-        seq_len = 30 # short sequence for profiling
 
-        # Profiling parameters
+        dummy_prompt_length = 30 # short sequence for profiling
+        dummy_input = torch.randn(1, dummy_prompt_length, hidden_size, device=self.llm.device, dtype=torch.float32)
+        dummy_input_pos = None
+
         profiling_runs = 100
+        max_returned_tokens = dummy_prompt_length + profiling_runs
 
-        dummy_input = torch.randn(1, seq_len, hidden_size, device=self.llm.device, dtype=torch.float32)
+        if not self.llm.kv_cache_initialized:
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device)
+            self.llm.kv_cache_initialized = True
+            self._update_memory_usage(update_on_dht=True)
+
+        dummy_seq_len = dummy_prompt_length
         
-        start = time.perf_counter()
-        for _ in range(profiling_runs):
-            self.model.forward_server(dummy_input, seq_length=seq_len, input_pos=None)
+        for i in range(profiling_runs):
+            start = time.perf_counter()
+            _ = self.model.forward_server(dummy_input, seq_length=dummy_seq_len, input_pos=dummy_input_pos)
             if self.added_delay:
                 time.sleep(self.added_delay)
-        elapsed = time.perf_counter() - start
+            
+            self.inference_delay = time.perf_counter() - start
 
-        avg_latency = elapsed / profiling_runs
-        processing_rate = self.model.num_layers / avg_latency
-        logger.info(f"Backup profiling: avg latency {avg_latency:.6f}s/run, layers/sec {processing_rate:.2f}")
+            # Get the server's layer processing rate for this inference run
+            if self.inference_delay > 0 and self.num_local_layers > 0:
+                current_rate = self.num_local_layers / self.inference_delay
 
-        self.chain.update_processing_rate(processing_rate)
+                # Moving average to avoid jitter
+                if self.layers_per_second == 0:
+                    self.layers_per_second = current_rate
+                else:
+                    self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
+
+            logger.info(f"Backup profiling: Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+
+            dummy_input = torch.randn(1, 1, hidden_size, device=self.llm.device, dtype=torch.float32)
+            current_pos = dummy_prompt_length + (i + 1)
+            dummy_input_pos = torch.tensor([current_pos], device=self.llm.device)
+            dummy_seq_len = 1
+
+        logger.info(f"Backup Node Profiling Complete")
+        self.chain.update_processing_rate(self.layers_per_second)
+        self._unload_llm()
         
 
     @torch.no_grad()
@@ -534,19 +576,6 @@ class Server:
                 self.chain.update_successor(new_successor_data=None)
                 self.chain.update_all_layer_loaded()
 
-    def _reload_llm(self, layers: Tuple[int, int]):
-        """Helper to reload the model with explicit GC"""
-        logger.info(f"Reloading model with layers: {layers}")
-        self.model = None
-        self.llm = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        self.llm = LLM.load(self.model_path, is_client=False, layers_to_load=layers)
-        self.model = self.llm.model
-        self.num_local_layers = self.llm.model.num_layers
-        self._update_memory_usage()
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""

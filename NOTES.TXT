@@ -2,6 +2,8 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
+* Improve front end Refresh to update the server cards when new data appears on the dht
+
 * An node thelei polla layers kai den afhnei tpt gia allous sto chain, its ok as ta parei kai na ginoun oi alloi backup
 
 * Quantize activations before sending
