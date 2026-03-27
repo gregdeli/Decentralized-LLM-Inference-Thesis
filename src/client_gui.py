@@ -76,7 +76,11 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
             ui.label(role).classes("font-bold text-xs uppercase text-gray-600")
             ui.icon("dns", color="gray").classes("text-sm")
 
+        # Node ID
         ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
+
+        # Hostname px. "nafplio"
+        ui.label(f"Hostname: {info.get('hostname', None)}").classes("font-mono text-sm")
 
         if "layers" in info:
             layers = info["layers"]

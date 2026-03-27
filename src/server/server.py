@@ -80,7 +80,7 @@ class Server:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
         # Join the Inference Chain
-        server_info = {"address": grpc_addr}
+        server_info = {"address": grpc_addr, "hostname": socket.gethostname()}
 
         self.chain.join_chain(
             server_info,
@@ -137,7 +137,7 @@ class Server:
             self.chain.update_layers_loaded(True)
             self.chain.update_all_layer_loaded()
         else:
-            self._profile_backup_node()
+            self._profile_backup_node(dummy_prompt_length=30, profiling_runs=100)
     
     def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
@@ -246,26 +246,54 @@ class Server:
             
             if self.device == "cuda":
                 self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb)
+
+    def _ensure_kv_cache(self, max_returned_tokens: int):
+        """Ensures the KV cache is initialized and large enough for the request."""
+        cache_updated = False
+
+        # Initialize the kv cache if necessary
+        if not self.llm.kv_cache_initialized:
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device)
+            self.llm.kv_cache_initialized = True
+            cache_updated = True
+
+        # Dynamically grow the kv cache size if necessary
+        elif self.llm.prev_generated_seq_length < max_returned_tokens:
+            tmp_device = self.model.mask_cache.device
+            self.model.clear_kv_cache()
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+            cache_updated = True
+
+        self.llm.prev_generated_seq_length = max_returned_tokens
+
+        if cache_updated:
+            self._update_memory_usage(update_on_dht=True)
+
+    def _calculate_processing_rate(self, delay: float):
+        """Calculates and updates the moving average of layers processed per second."""
+        if delay > 0 and self.num_local_layers > 0:
+            current_rate = self.num_local_layers / delay
+
+            # Moving average to avoid jitter
+            if self.layers_per_second == 0:
+                self.layers_per_second = current_rate
+            else:
+                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
     
     @torch.no_grad()
-    def _profile_backup_node(self):
+    def _profile_backup_node(self, dummy_prompt_length: int = 30, profiling_runs: int = 100):
         """ Measures a backup node's processing rate by doing a fake generation on a dummy input."""
         # LLM has already been loaded for profiling with the number of layers the backup node can hold 
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
 
-        dummy_prompt_length = 30 # short sequence for profiling
-        dummy_input = torch.randn(1, dummy_prompt_length, hidden_size, device=self.llm.device, dtype=torch.float32)
+        dummy_input = torch.randn(1, dummy_prompt_length, hidden_size, device=self.device, dtype=torch.float32)
         dummy_input_pos = None
 
-        profiling_runs = 100
         max_returned_tokens = dummy_prompt_length + profiling_runs
 
-        if not self.llm.kv_cache_initialized:
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device)
-            self.llm.kv_cache_initialized = True
-            self._update_memory_usage(update_on_dht=True)
+        self._ensure_kv_cache(max_returned_tokens)
 
         dummy_seq_len = dummy_prompt_length
         
@@ -276,22 +304,14 @@ class Server:
                 time.sleep(self.added_delay)
             
             self.inference_delay = time.perf_counter() - start
-
-            # Get the server's layer processing rate for this inference run
-            if self.inference_delay > 0 and self.num_local_layers > 0:
-                current_rate = self.num_local_layers / self.inference_delay
-
-                # Moving average to avoid jitter
-                if self.layers_per_second == 0:
-                    self.layers_per_second = current_rate
-                else:
-                    self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
+            
+            self._calculate_processing_rate(self.inference_delay)
 
             logger.info(f"Backup profiling: Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
-            dummy_input = torch.randn(1, 1, hidden_size, device=self.llm.device, dtype=torch.float32)
+            dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=torch.float32)
             current_pos = dummy_prompt_length + (i + 1)
-            dummy_input_pos = torch.tensor([current_pos], device=self.llm.device)
+            dummy_input_pos = torch.tensor([current_pos], device=self.device)
             dummy_seq_len = 1
 
         logger.info(f"Backup Node Profiling Complete")
@@ -325,22 +345,7 @@ class Server:
             input_pos = input_pos.to(device)
 
         # KV Cache
-        if not self.llm.kv_cache_initialized:
-            # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
-            self.llm.kv_cache_initialized = True
-            self._update_memory_usage(update_on_dht=True)
-
-        # Dynamically grow the kv cache size if necessary
-        elif self.llm.prev_generated_seq_length < max_returned_tokens:
-            tmp_device = self.model.mask_cache.device
-            self.model.clear_kv_cache()
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
-            self._update_memory_usage(update_on_dht=True)
-
-        self.llm.prev_generated_seq_length = max_returned_tokens
-
-        # logger.info(f"Processing layers {self.llm.layers_loaded}...")  # Debugging
+        self._ensure_kv_cache(max_returned_tokens)
 
         # Inference
         start = time.perf_counter()
@@ -351,15 +356,7 @@ class Server:
 
         self.inference_delay = time.perf_counter() - start
 
-        # Get the server's layer processing rate for this inference run
-        if self.inference_delay > 0 and self.num_local_layers > 0:
-            current_rate = self.num_local_layers / self.inference_delay
-
-            # Moving average to avoid jitter
-            if self.layers_per_second == 0:
-                self.layers_per_second = current_rate
-            else:
-                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
+        self._calculate_processing_rate(self.inference_delay)
 
         logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
 
@@ -624,7 +621,6 @@ def serve():
     added_delay_str = os.getenv("ADDED_DELAY")
     added_delay = float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
 
-    # hostname = socket.gethostname()
     my_ip = os.getenv("IP")
     if not my_ip:
         my_ip = get_ip_address()
