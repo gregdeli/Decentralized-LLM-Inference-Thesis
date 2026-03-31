@@ -19,11 +19,20 @@ import torch
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
-from core.remote.utils import get_bootstrap_peer_address, get_ip_address, discover_bootstrap_node_address
+from core.remote.utils import (
+    get_bootstrap_peer_address,
+    get_ip_address,
+    discover_bootstrap_node_address,
+)
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager, HEARTBEAT_INTERVAL_S, ALL_LAYERS_KEY, EXPIRATION_S
+from core.p2p.chain_manager import (
+    ChainManager,
+    HEARTBEAT_INTERVAL_S,
+    ALL_LAYERS_KEY,
+    EXPIRATION_S,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +44,7 @@ class Server:
         self,
         model_path: Path,
         num_layers: int = None,
-        added_delay: float = None, # Debugging
+        added_delay: float = None,  # Debugging
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
@@ -74,9 +83,13 @@ class Server:
         self._update_memory_usage(update_on_dht=False)
         if not num_layers:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
-            logger.info(f"Node with {self.available_memory_mb} MB available can load {num_layers} layers.")
+            logger.info(
+                f"Node with {self.available_memory_mb} MB available can load {num_layers} layers."
+            )
         elif not self._can_load(num_layers=num_layers):
-            logger.warning(f"Requested {num_layers} layers but memory is insufficient. Adjusting...")
+            logger.warning(
+                f"Requested {num_layers} layers but memory is insufficient. Adjusting..."
+            )
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
         # Join the Inference Chain
@@ -107,7 +120,6 @@ class Server:
         #     self._update_memory_usage()
         #     return
 
-
     def _load_llm(
         self,
         time_it: bool = False,
@@ -133,12 +145,12 @@ class Server:
         # Update DHT and Chain Status
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
-        if not self.chain.is_backup():
+        if self.chain.is_backup():
+            self._profile_backup_node(dummy_seq_length=30, profiling_runs=100)
+        else:
             self.chain.update_layers_loaded(True)
             self.chain.update_all_layer_loaded()
-        else:
-            self._profile_backup_node(dummy_prompt_length=30, profiling_runs=100)
-    
+
     def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
         self.model = None
@@ -147,13 +159,13 @@ class Server:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        
+
         self._update_memory_usage()
 
     def _reload_llm(self, layers: Tuple[int, int]):
         """Helper to reload the model with explicit GC"""
         logger.info(f"Reloading model with layers: {layers}")
-        
+
         self._unload_llm()
 
         self.llm = LLM.load(self.model_path, is_client=False, layers_to_load=layers)
@@ -162,11 +174,11 @@ class Server:
         self._update_memory_usage()
 
     def _mem_to_num_layers(
-            self,
-            bytes_per_param: int, 
-            avail_mem: float = None, 
-            avail_vram: float = None,
-        ) -> int:
+        self,
+        bytes_per_param: int,
+        avail_mem: float = None,
+        avail_vram: float = None,
+    ) -> int:
         """
         Calculates how many layers fit in the available Memory/VRAM
         """
@@ -202,7 +214,9 @@ class Server:
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
-        max_num_layers = self._mem_to_num_layers(bytes_per_param=4, avail_mem=avail_mem, avail_vram=avail_vram)
+        max_num_layers = self._mem_to_num_layers(
+            bytes_per_param=4, avail_mem=avail_mem, avail_vram=avail_vram
+        )
         return num_layers <= max_num_layers
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
@@ -242,10 +256,14 @@ class Server:
             self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
 
         if update_on_dht:
-            self.chain.update_memory(self.memory_usage_mb, self.memory_limit_mb, self.available_memory_mb)
-            
+            self.chain.update_memory(
+                self.memory_usage_mb, self.memory_limit_mb, self.available_memory_mb
+            )
+
             if self.device == "cuda":
-                self.chain.update_vram(self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb)
+                self.chain.update_vram(
+                    self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
+                )
 
     def _ensure_kv_cache(self, max_returned_tokens: int):
         """Ensures the KV cache is initialized and large enough for the request."""
@@ -253,7 +271,9 @@ class Server:
 
         # Initialize the kv cache if necessary
         if not self.llm.kv_cache_initialized:
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device)
+            self.model.set_kv_cache(
+                batch_size=1, max_seq_length=max_returned_tokens, device=self.device
+            )
             self.llm.kv_cache_initialized = True
             cache_updated = True
 
@@ -261,7 +281,9 @@ class Server:
         elif self.llm.prev_generated_seq_length < max_returned_tokens:
             tmp_device = self.model.mask_cache.device
             self.model.clear_kv_cache()
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device)
+            self.model.set_kv_cache(
+                batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device
+            )
             cache_updated = True
 
         self.llm.prev_generated_seq_length = max_returned_tokens
@@ -278,46 +300,59 @@ class Server:
             if self.layers_per_second == 0:
                 self.layers_per_second = current_rate
             else:
-                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
-    
+                self.layers_per_second = (0.7 * self.layers_per_second) + (
+                    0.3 * current_rate
+                )
+
     @torch.no_grad()
-    def _profile_backup_node(self, dummy_prompt_length: int = 30, profiling_runs: int = 100):
-        """ Measures a backup node's processing rate by doing a fake generation on a dummy input."""
-        # LLM has already been loaded for profiling with the number of layers the backup node can hold 
+    def _profile_backup_node(
+        self, dummy_seq_length: int = 30, profiling_runs: int = 100
+    ):
+        """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
+        # LLM has already been loaded for profiling with the number of layers the backup node can hold
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
 
-        dummy_input = torch.randn(1, dummy_prompt_length, hidden_size, device=self.device, dtype=torch.float32)
+        dummy_input = torch.randn(
+            1, dummy_seq_length, hidden_size, device=self.device, dtype=torch.float32
+        )
         dummy_input_pos = None
 
-        max_returned_tokens = dummy_prompt_length + profiling_runs
+        max_returned_tokens = dummy_seq_length + profiling_runs
 
         self._ensure_kv_cache(max_returned_tokens)
 
-        dummy_seq_len = dummy_prompt_length
-        
+        starting_dummy_seq_len = dummy_seq_length
+
         for i in range(profiling_runs):
             start = time.perf_counter()
-            _ = self.model.forward_server(dummy_input, seq_length=dummy_seq_len, input_pos=dummy_input_pos)
+            _ = self.model.forward_server(
+                dummy_input, seq_length=dummy_seq_length, input_pos=dummy_input_pos
+            )
             if self.added_delay:
                 time.sleep(self.added_delay)
-            
+
             self.inference_delay = time.perf_counter() - start
-            
+
             self._calculate_processing_rate(self.inference_delay)
 
-            logger.info(f"Backup profiling: Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+            logger.info(
+                f"Backup profiling: Layers {self.llm.layers_loaded}: "
+                f"Delay: {self.inference_delay:.4f}s "
+                f"Layers/sec: {self.layers_per_second:.2f} "
+            )
 
-            dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=torch.float32)
-            current_pos = dummy_prompt_length + (i + 1)
+            dummy_input = torch.randn(
+                1, 1, hidden_size, device=self.device, dtype=torch.float32
+            )
+            current_pos = starting_dummy_seq_len + (i + 1)
             dummy_input_pos = torch.tensor([current_pos], device=self.device)
-            dummy_seq_len = 1
+            dummy_seq_length = 1
 
         logger.info(f"Backup Node Profiling Complete")
         self.chain.update_processing_rate(self.layers_per_second)
         self._unload_llm()
-        
 
     @torch.no_grad()
     def run_local_layers(
@@ -333,7 +368,9 @@ class Server:
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
         if not self.llm:
-            return nodeservice_pb2.InferenceResponse(error_message="A node in the chain does not have its layers loaded.")
+            return nodeservice_pb2.InferenceResponse(
+                error_message="A node in the chain does not have its layers loaded."
+            )
 
         # Ensure inputs are on the same device as the model
         device = self.llm.device
@@ -358,7 +395,11 @@ class Server:
 
         self._calculate_processing_rate(self.inference_delay)
 
-        logger.info(f"Layers {self.llm.layers_loaded}: " f"Delay: {self.inference_delay:.4f}s " f"Layers/sec: {self.layers_per_second:.2f} ")
+        logger.info(
+            f"Layers {self.llm.layers_loaded}: "
+            f"Delay: {self.inference_delay:.4f}s "
+            f"Layers/sec: {self.layers_per_second:.2f} "
+        )
 
         # Calculate partial rate to send forward
         my_partial_rate = incoming_partial_rate + self.layers_per_second
@@ -368,14 +409,16 @@ class Server:
 
         # To prevent nonesense output when a node fails during inference
         if not self.chain.get_all_layers_loaded():
-            return nodeservice_pb2.InferenceResponse(error_message="Inference requested without all the layers being loaded...")
+            return nodeservice_pb2.InferenceResponse(
+                error_message="Inference requested without all the layers being loaded..."
+            )
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail():
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
                 return
-            
+
             response = tensor_to_response(h)
             response.total_rate = my_partial_rate
 
@@ -386,11 +429,15 @@ class Server:
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
                 client_response = self.client_stub.ReceiveResponse(response)
-                
-            except grpc.RpcError as e:
-                logger.error(f"Failed to send result to client at {response_address}: {e}")
 
-            return nodeservice_pb2.InferenceResponse(processing_time=client_response.processing_time, total_rate=0.0)
+            except grpc.RpcError as e:
+                logger.error(
+                    f"Failed to send result to client at {response_address}: {e}"
+                )
+
+            return nodeservice_pb2.InferenceResponse(
+                processing_time=client_response.processing_time, total_rate=0.0
+            )
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
@@ -412,15 +459,22 @@ class Server:
         try:
             response = self.successor_stub.RunLayers(request, timeout=2)
         except grpc.RpcError as e:
-            if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+            if (
+                e.code() == grpc.StatusCode.UNAVAILABLE
+                or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+            ):
                 logger.warning(f"Successor failure detected during INFERENCE.")
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
                     self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     threading.Thread(target=self.repair_chain, daemon=True).start()
-                    return nodeservice_pb2.InferenceResponse(error_message="A node in the chain has failed. The chain is being repaired...")
+                    return nodeservice_pb2.InferenceResponse(
+                        error_message="A node in the chain has failed. The chain is being repaired..."
+                    )
                 else:
-                    logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
+                    logger.error(
+                        f"Could not retrieve successor data from DHT! Chain is broken."
+                    )
                     return nodeservice_pb2.InferenceResponse(
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
@@ -442,7 +496,9 @@ class Server:
         # layers_to_load = num_total_layers * (my_rate / total_rate)
         if total_system_rate > 0:
             # Epic equation
-            ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
+            ideal_layer_count = num_total_layers * (
+                self.layers_per_second / total_system_rate
+            )
         else:
             ideal_layer_count = 0
 
@@ -465,12 +521,14 @@ class Server:
             target_layer_count = 1
         elif (start_layer_index + target_layer_count) >= num_total_layers:
             # Dont exceed the available layers
-            target_layer_count = num_total_layers - start_layer_index #- 1
+            target_layer_count = num_total_layers - start_layer_index  # - 1
 
         # if target_layer_count > 0:
         end_layer_index = start_layer_index + target_layer_count - 1
         new_layers = (start_layer_index, end_layer_index)
-        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}")
+        logger.info(
+            f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}"
+        )
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
@@ -493,7 +551,9 @@ class Server:
         # Propagate to successor
         if not self.chain.is_tail() and self.successor_stub:
             # next_start_index = end_layer_index + 1
-            request = nodeservice_pb2.ReallocateRequest(total_rate=total_system_rate, start_layer_index=next_start_index)
+            request = nodeservice_pb2.ReallocateRequest(
+                total_rate=total_system_rate, start_layer_index=next_start_index
+            )
             try:
                 self.successor_stub.Reallocate(request)
             except grpc.RpcError as e:
@@ -515,16 +575,22 @@ class Server:
                     logger.info("Successor is ALIVE. Aborting unnecessary repair...")
                     return
                 except grpc.RpcError as e:
-                    logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
+                    logger.warning(
+                        f"Successor confirmed DEAD. Proceeding with repair..."
+                    )
 
             dead_successor_data = self.chain.get_failed_successor_data()
 
             if not dead_successor_data:
-                logger.error("Could not retrieve successor data from DHT! Chain is broken.")
+                logger.error(
+                    "Could not retrieve successor data from DHT! Chain is broken."
+                )
                 return
 
             self.successor_stub = None
-            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)  # 'all_layers_loaded' -> False
+            self.chain.dht.store(
+                ALL_LAYERS_KEY, False, EXPIRATION_S
+            )  # 'all_layers_loaded' -> False
 
             # Repair
             orphaned_layers = dead_successor_data.get("layers")
@@ -537,7 +603,9 @@ class Server:
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(layers=orphaned_layers):
                 layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
-                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}")
+                logger.info(
+                    f"Taking over layers {orphaned_layers}. New range: {layers_to_load}"
+                )
 
                 self._reload_llm(layers_to_load)
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
@@ -554,25 +622,39 @@ class Server:
                         if backup_info:
                             avail_mem = backup_info.get("available_memory")
                             avail_vram = backup_info.get("available_vram")
-                            
-                            if self._can_load(layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
-                                self.chain.repair(orphaned_layers, successor_2_data, succ_was_tail, replacement_node_id=backup_id)
-                                
+
+                            if self._can_load(
+                                layers=orphaned_layers,
+                                avail_mem=avail_mem,
+                                avail_vram=avail_vram,
+                            ):
+                                self.chain.repair(
+                                    orphaned_layers,
+                                    successor_2_data,
+                                    succ_was_tail,
+                                    replacement_node_id=backup_id,
+                                )
+
                                 try:
-                                    channel = grpc.insecure_channel(backup_info.get("address"))
-                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                                    channel = grpc.insecure_channel(
+                                        backup_info.get("address")
+                                    )
+                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(
+                                        channel
+                                    )
                                     backup_stub.LoadLayers(nodeservice_pb2.Empty())
-                                
+
                                     self._connect_to_successor()
-                                    return    
+                                    return
                                 except grpc.RpcError as e:
-                                    logger.error(f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}")
+                                    logger.error(
+                                        f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
+                                    )
                 # else:
-                logger.info("No backup nodes found. Setting this node as the tail...") 
+                logger.info("No backup nodes found. Setting this node as the tail...")
                 self.chain.update_chain_tail(self.chain.node_id)
                 self.chain.update_successor(new_successor_data=None)
                 self.chain.update_all_layer_loaded()
-
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
@@ -598,7 +680,9 @@ class Server:
             logger.error(f"Connection to {successor_addr} timed out.")
             self.successor_stub = None
         except grpc.RpcError as e:
-            logger.error(f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}")
+            logger.error(
+                f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}"
+            )
             self.successor_stub = None
 
 
@@ -610,7 +694,7 @@ MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 def serve():
     """The main function to start the server."""
     load_dotenv()
-    
+
     # Read configuration from environment variables
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
@@ -619,7 +703,9 @@ def serve():
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
     added_delay_str = os.getenv("ADDED_DELAY")
-    added_delay = float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
+    added_delay = (
+        float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
+    )
 
     my_ip = os.getenv("IP")
     if not my_ip:
@@ -667,7 +753,9 @@ def serve():
             ("grpc.max_receive_message_length", MAX_MSG_SIZE),
         ],
     )
-    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
+    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(
+        NodeServicer(server_node), server
+    )
     server.add_insecure_port(grpc_addr)
 
     server.start()
@@ -688,7 +776,15 @@ def serve():
         """Backgroud task to check on the node's successor status"""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            if server_node.chain.is_backup() or server_node.chain.is_tail():
+            if server_node.chain.is_backup():
+                # Opportunistic Takeover
+                weak_node_info = server_node.chain.evaluate_takeover_eligibility()
+
+                if weak_node_info:
+                    server_node.opportunistic_takeover()
+                
+
+            elif server_node.chain.is_tail():
                 continue
 
             # Perform the health check on the successor
@@ -698,12 +794,19 @@ def serve():
                     server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
                     logger.info(f"Successor is ALIVE.")  # Debugging
             except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                    logger.warning(f"Successor failure detected during HEARTBEAT CHECK.")  # Debugging
+                if (
+                    e.code() == grpc.StatusCode.UNAVAILABLE
+                    or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+                ):
+                    logger.warning(
+                        f"Successor failure detected during HEARTBEAT CHECK."
+                    )  # Debugging
                     server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     server_node.repair_chain()
                 else:
-                    logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                    logger.warning(
+                        f"A gRPC error occurred during health check: {e.code().name}"
+                    )
                     server_node.successor_stub = None
 
     def _udp_discovery_server():
@@ -718,10 +821,14 @@ def serve():
             if data == b"DISCOVER_BOOTSTRAP":
                 sock.sendto(response_b, addr)
 
-    grpc_heartbeat_thread = threading.Thread(target=_grpc_heartbeat_task, args=(server_node,), daemon=True)
+    grpc_heartbeat_thread = threading.Thread(
+        target=_grpc_heartbeat_task, args=(server_node,), daemon=True
+    )
     grpc_heartbeat_thread.start()
 
-    dht_heartbeat_thread = threading.Thread(target=_dht_heartbeat_task, args=(server_node,), daemon=True)
+    dht_heartbeat_thread = threading.Thread(
+        target=_dht_heartbeat_task, args=(server_node,), daemon=True
+    )
     dht_heartbeat_thread.start()
 
     udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)

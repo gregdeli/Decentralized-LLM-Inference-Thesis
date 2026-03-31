@@ -14,9 +14,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0 
-# EXPIRATION_S = 7200.0 
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0 
+# EXPIRATION_S = 30.0 
+EXPIRATION_S = 7200.0 
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0 
+HEARTBEAT_INTERVAL_S = 30.0
 
 DIGITS_SHOW = 12
 
@@ -319,6 +320,49 @@ class ChainManager:
 
         # Rebublish keys since the tail node could have died and heartbeat task would fail
         self.republish_keys()
+    
+    def evaluate_takeover_eligibility(self) -> Optional[Dict[str, Any]]:
+        """
+        Executed by a backup node, this method compare the processing_rate and memory_limit metrics of the backup node 
+        and all the nodes in the active chain, to determine if a node takeover should take place.
+
+        Returns: the weaker nodes' info if one is found, otherwise None
+        """
+        self_info = self._get_self_info()
+        self_proc_rate = self_info.get("processing_rate")
+        self_device = self_info.get("device")
+        self_mem_limit = self_info.get("vram_limit") if self_device == "cuda" else self_info.get("memory_limit")
+
+        head_id = self.dht.get(HEAD_KEY)
+        current_node_id = head_id
+
+        # Iterate through the active chain nodes
+        while current_node_id:
+            server_info = self.get_server_info(current_node_id)
+            if not server_info:
+                break
+
+            target_successor_data = server_info.get("successor")
+            next_node_id = target_successor_data.get("id") if target_successor_data else None
+
+            target_proc_rate = server_info.get("processing_rate")
+            target_device = server_info.get("device")
+            target_mem_limit = server_info.get("vram_limit") if target_device == "cuda" else server_info.get("memory_limit")
+
+            if not target_proc_rate:
+                logger.info(f"No processing rate recorded for node: {current_node_id[:DIGITS_SHOW]}")
+                current_node_id = next_node_id
+                continue
+            
+            if (self_proc_rate > target_proc_rate) and (self_mem_limit and target_mem_limit and self_mem_limit >= target_mem_limit):
+                return server_info
+
+            current_node_id = next_node_id
+        
+        return None
+                
+            
+
 
     def republish_keys(self):
         """
@@ -381,11 +425,9 @@ class ChainManager:
         # Traverse chain and print server info
         server_list = []
         current_node_id = head_id
-        counter = 1
 
         while current_node_id:
-            server_key = f"{SERVER_INFO_PREFIX}{current_node_id}"
-            server_info = self.dht.get(server_key)
+            server_info = self.get_server_info(current_node_id)
             if not server_info:
                 break
 
@@ -399,8 +441,6 @@ class ChainManager:
                 current_node_id = successor_data.get("id")
             else:
                 current_node_id = None  # End of chain
-
-            counter += 1
 
         chain_info["servers"] = server_list
 

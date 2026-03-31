@@ -1,5 +1,6 @@
 import asyncio
 import os
+import grpc
 from dotenv import load_dotenv
 import logging
 from pathlib import Path
@@ -309,7 +310,7 @@ async def generate(
 
                 # Scroll to bottom
                 ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
-    except (RuntimeError, AttributeError) as e:
+    except (RuntimeError, AttributeError, grpc.RpcError) as e:
         state.is_generating = False
         ui.notify(f"Generation Failed: {str(e)}", type="negative")
         send_btn.visible = True
