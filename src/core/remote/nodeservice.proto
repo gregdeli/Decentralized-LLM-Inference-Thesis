@@ -16,8 +16,14 @@ service NodeService {
   // Triggers the layer re-allocation process
   rpc Reallocate(ReallocateRequest) returns (Empty) {}
 
-  // Triggers asigned layers loading on a backup node
+  // Runs server_node._connect_to_successor()
+  rpc UpdateSuccessor(Empty) returns (Empty) {}
+
+  // Triggers assigned layers loading on a backup node
   rpc LoadLayers(Empty) returns (Empty) {}
+
+  // Triggers layer unloading on a node
+  rpc UnloadLayers(Empty) returns (Empty) {}
 }
 
 // The service definition for a client node that receives inference responses form the TAIL node.
@@ -64,12 +70,4 @@ message ReallocateRequest {
   int32 start_layer_index = 2;
 }
 
-// message LoadRequest {
-//   int32 start = 1;
-//   int32 end = 2;
-// }
-
-// message LoadResponse {
-//   bool layers_loaded = 1;
-// }
 

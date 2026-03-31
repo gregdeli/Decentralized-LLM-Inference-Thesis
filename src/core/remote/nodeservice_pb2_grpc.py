@@ -55,8 +55,18 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
+        self.UpdateSuccessor = channel.unary_unary(
+                '/nodeservice.NodeService/UpdateSuccessor',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
         self.LoadLayers = channel.unary_unary(
                 '/nodeservice.NodeService/LoadLayers',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
+        self.UnloadLayers = channel.unary_unary(
+                '/nodeservice.NodeService/UnloadLayers',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
@@ -94,8 +104,22 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UpdateSuccessor(self, request, context):
+        """Runs server_node._connect_to_successor()
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def LoadLayers(self, request, context):
-        """Triggers asigned layers loading on a backup node
+        """Triggers assigned layers loading on a backup node
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UnloadLayers(self, request, context):
+        """Triggers layer unloading on a node
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -124,8 +148,18 @@ def add_NodeServiceServicer_to_server(servicer, server):
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
+            'UpdateSuccessor': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateSuccessor,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
             'LoadLayers': grpc.unary_unary_rpc_method_handler(
                     servicer.LoadLayers,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'UnloadLayers': grpc.unary_unary_rpc_method_handler(
+                    servicer.UnloadLayers,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
@@ -250,6 +284,33 @@ class NodeService(object):
             _registered_method=True)
 
     @staticmethod
+    def UpdateSuccessor(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/UpdateSuccessor',
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def LoadLayers(request,
             target,
             options=(),
@@ -264,6 +325,33 @@ class NodeService(object):
             request,
             target,
             '/nodeservice.NodeService/LoadLayers',
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UnloadLayers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/UnloadLayers',
             core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,

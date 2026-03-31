@@ -78,9 +78,14 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         self.server_node.reallocate_layers(total_rate, start_layer_index)
         return nodeservice_pb2.Empty()
     
+    def UpdateSuccessor(self, request, context):
+        self.server_node._connect_to_successor()
+        return nodeservice_pb2.Empty()
+    
     def LoadLayers(self, request, context):
-        # start_idx = request.start
-        # end_idx = request.end
-
         self.server_node._load_llm()
+        return nodeservice_pb2.Empty() 
+    
+    def UnloadLayers(self, request, context):
+        self.server_node._unload_llm()
         return nodeservice_pb2.Empty() 

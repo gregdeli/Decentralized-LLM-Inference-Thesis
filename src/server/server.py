@@ -93,7 +93,7 @@ class Server:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
         # Join the Inference Chain
-        server_info = {"address": grpc_addr, "hostname": socket.gethostname()}
+        server_info = {"id": self.chain.node_id, "address": grpc_addr, "hostname": socket.gethostname()}
 
         self.chain.join_chain(
             server_info,
@@ -145,9 +145,7 @@ class Server:
         # Update DHT and Chain Status
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
-        if self.chain.is_backup():
-            self._profile_backup_node(dummy_seq_length=30, profiling_runs=100)
-        else:
+        if not self.chain.is_backup():
             self.chain.update_layers_loaded(True)
             self.chain.update_all_layer_loaded()
 
@@ -172,6 +170,7 @@ class Server:
         self.model = self.llm.model
         self.num_local_layers = self.llm.model.num_layers
         self._update_memory_usage()
+        self.chain.update_layers_loaded(True)
 
     def _mem_to_num_layers(
         self,
@@ -655,11 +654,54 @@ class Server:
                 self.chain.update_chain_tail(self.chain.node_id)
                 self.chain.update_successor(new_successor_data=None)
                 self.chain.update_all_layer_loaded()
+    
+    def opportunistic_takeover(self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]):
+        """
+        After a backup node finds a weak node in the chain to replace.
+        1. It loads the layers of the weak node.
+        2. The backup node takes its place in the active chain by making the neccesary changes to the dht.
+        3. It sends a grpc request to its predecessor to update its successor_stub attribute.
+        3. It sends a grpc request to the weak node, to unload its layers.
+        """
+        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+
+        layers_to_takeover = weak_node_info.get("layers")
+        weak_node_id = weak_node_info.get("id")
+        weak_node_succ_data = weak_node_info.get("successor")
+        weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
+        logger.info(f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}.")
+
+        if self._can_load(layers=layers_to_takeover):
+            self._reload_llm(layers_to_takeover)
+            self.chain.repair(layers_to_takeover, weak_node_succ_data, weak_node_was_tail, replacee_node_id=weak_node_id, replacee_predecessor_info=predecessor_info)
+
+            # Update the predecessor's successor_stub to point to this node
+            if predecessor_info:
+                try:
+                    channel = grpc.insecure_channel(predecessor_info.get("address"))
+                    predecessor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                    predecessor_stub.UpdateSuccessor(nodeservice_pb2.Empty())
+                except grpc.RpcError as e:
+                    logger.error(f"A gRPC error occurred while connecting to {predecessor_info.get('address')}: {e.code().name}")
+
+            # Send GRPC request to the weak node to unload its layers
+            try:
+                channel = grpc.insecure_channel(weak_node_info.get("address"))
+                weak_node_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                weak_node_stub.UnloadLayers(nodeservice_pb2.Empty())
+            except grpc.RpcError as e:
+                logger.error(f"A gRPC error occurred while connecting to {weak_node_info.get('address')}: {e.code().name}")
+            
+
+            self._connect_to_successor()
+        
+        else:
+            logger.info(f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node.")
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
-        if self.successor_stub is not None:
-            return
+        # if self.successor_stub is not None:
+        #     return
 
         if self.chain.is_tail() or self.chain.is_backup():
             self.successor_stub = None
@@ -778,10 +820,10 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
                 # Opportunistic Takeover
-                weak_node_info = server_node.chain.evaluate_takeover_eligibility()
+                weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
                 if weak_node_info:
-                    server_node.opportunistic_takeover()
+                    server_node.opportunistic_takeover(weak_node_info, predecessor_info)
                 
 
             elif server_node.chain.is_tail():
@@ -843,6 +885,10 @@ def serve():
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
     server_node._load_llm()
+
+    # Profile if backup node for the opportunistic takeover feature
+    if server_node.chain.is_backup():
+        server_node._profile_backup_node(dummy_seq_length=30, profiling_runs=100)
 
     server.wait_for_termination()
 

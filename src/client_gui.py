@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class UIReferences:
     def __init__(self):
         self.global_labels = {}     # Global info labels
-        self.node_labels = {}         # Label references for each node id
+        self.node_labels = {}       # Label references for each node id
         self.last_topology = None   # Signature of the current chain structure
 
 class AppState:
@@ -84,10 +84,10 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         ui.label(f"Hostname: {info.get('hostname', None)}").classes("font-mono text-sm")
 
         if "layers" in info:
-            layers = info["layers"]
-            num_layers = layers[1] - layers[0] + 1
-            # ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
-            labels["layers"] = ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
+            layers = info.get("layers")
+            if layers:
+                num_layers = layers[1] - layers[0] + 1
+                labels["layers"] = ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
 
         layers_loaded = info.get("layers_loaded", False)
         labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
