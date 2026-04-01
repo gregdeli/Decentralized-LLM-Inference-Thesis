@@ -93,7 +93,7 @@ class Server:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
         # Join the Inference Chain
-        server_info = {"id": self.chain.node_id, "address": grpc_addr, "hostname": socket.gethostname()}
+        server_info = {"id": self.chain.node_id, "address": grpc_addr, "hostname": socket.gethostname(), "processing_rate": 0.0}
 
         self.chain.join_chain(
             server_info,
