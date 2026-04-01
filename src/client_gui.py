@@ -157,12 +157,12 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
     server_list = chain_info.get("servers", [])
     for s in server_list:
         role = "Head" if s["id"] == chain_info[HEAD_KEY] else "Tail" if s["id"] == chain_info[TAIL_KEY] else "Intemediate"
-        current_topology.append((s["id"], role))
+        current_topology.append((s["id"], role, len(s)))
 
     # Process Backups
     backups_list = chain_info.get(BACKUPS_KEY, [])
     for b in backups_list:
-        current_topology.append((b["id"], "Backup"))
+        current_topology.append((b["id"], "Backup", len(b)))
 
     # Check if the topology matches the previous state
     topology_changed = (state.ui.last_topology != current_topology) or (full_rebuild)

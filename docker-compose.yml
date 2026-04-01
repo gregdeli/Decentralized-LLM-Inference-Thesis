@@ -61,7 +61,7 @@ services:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - NUM_LAYERS=4
-      - ADDED_DELAY=0.05
+      # - ADDED_DELAY=0.05
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
     volumes:
@@ -80,8 +80,8 @@ services:
 
   server:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: sleep infinity
+    command: python server/server.py
+    # command: sleep infinity
     hostname: server-1
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
@@ -104,8 +104,8 @@ services:
     depends_on:
       - head-server
       - intermediate-server
-    ports:
-      - "5678:5678"
+    # ports:
+    #   - "5678:5678"
 
   client:
     image: decentralized-llm-thesis:latest 
@@ -124,4 +124,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5678:5678"
