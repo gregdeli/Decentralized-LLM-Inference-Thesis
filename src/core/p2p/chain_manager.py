@@ -14,9 +14,9 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0 
-# EXPIRATION_S = 7200.0 
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0 
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
 # HEARTBEAT_INTERVAL_S = 30.0
 
 DIGITS_SHOW = 12
@@ -29,7 +29,9 @@ class ChainManager:
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
 
-    def join_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int) -> None:
+    def join_chain(
+        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+    ) -> None:
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
@@ -47,12 +49,16 @@ class ChainManager:
             logger.info("No existing chain found. Forming a new one...")
             self._form_initial_chain(self_info, max_num_layers, num_total_layers)
         else:
-            logger.info(f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail...")
+            logger.info(
+                f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail..."
+            )
             self._join_existing_chain(self_info, max_num_layers, num_total_layers)
 
         logger.info(f"Self Info: {self._get_self_info()}")
 
-    def _form_initial_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
+    def _form_initial_chain(
+        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+    ):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
@@ -76,12 +82,16 @@ class ChainManager:
         self._update_server_info(self.node_id, self_info)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
-    def _join_existing_chain(self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int):
+    def _join_existing_chain(
+        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+    ):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
-            raise RuntimeError("Chain head exists, but tail was not found. The network is in an inconsistent state.")
+            raise RuntimeError(
+                "Chain head exists, but tail was not found. The network is in an inconsistent state."
+            )
 
         # Get the current tail's info to update its successor
         tail_info = self.get_server_info(tail_id)
@@ -116,7 +126,9 @@ class ChainManager:
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
         self._update_server_info(tail_id, tail_info)
-        logger.info(f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}.")
+        logger.info(
+            f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}."
+        )
 
         # Store self info and update the chain_tail value
         self_info["successor"] = None
@@ -259,10 +271,9 @@ class ChainManager:
                     server_info["id"] = id
                     backup_nodes_info.append(server_info)
 
-        
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
-    
+
     def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
         """
         Gets the data of this node's successor from the DHT.
@@ -278,7 +289,9 @@ class ChainManager:
         successor_key = f"{SERVER_INFO_PREFIX}{successor_data.get('id')}"
         successor_info = self.dht.get(successor_key)
         if not successor_info:
-            logger.warning(f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired.")
+            logger.warning(
+                f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired."
+            )
             return None
 
         successor_data["layers"] = successor_info.get("layers")
@@ -310,7 +323,7 @@ class ChainManager:
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
-        if tail_id == self.node_id: 
+        if tail_id == self.node_id:
             return True
 
         return False
@@ -321,7 +334,7 @@ class ChainManager:
         if not tail_id:
             raise RuntimeError("Tail server not found")
 
-        if tail_id == node_id:  
+        if tail_id == node_id:
             return True
 
         return False
@@ -331,16 +344,15 @@ class ChainManager:
         self_info = self._get_self_info()
         return bool(self_info.get("is_backup", False))
 
-
     def repair(
-            self, 
-            layers: Tuple[int, int], 
-            replacee_succ_data: Optional[Dict[str, Any]], 
-            replacee_was_tail: Optional[bool], 
-            replacee_node_id: Optional[str] = None,
-            replacee_predecessor_info: Optional[Dict[str, Any]] = None,
-            replacement_node_id: Optional[str] = None,
-            ):
+        self,
+        layers: Tuple[int, int],
+        replacee_succ_data: Optional[Dict[str, Any]],
+        replacee_was_tail: Optional[bool],
+        replacee_node_id: Optional[str] = None,
+        replacee_predecessor_info: Optional[Dict[str, Any]] = None,
+        replacement_node_id: Optional[str] = None,
+    ):
         """
         Apply chain recovery state after takeover/repair.
 
@@ -366,19 +378,23 @@ class ChainManager:
         # If the node that instigated the repair was a backup (Opportunistic Takeover)
         if self_info.get("is_backup"):
             # Make it an active node
-            logger.info(f"[Opportunistic Takeover]: This node was a backup and is taking the place of a weak node...")
+            logger.info(
+                f"[Opportunistic Takeover]: This node was a backup and is taking the place of a weak node..."
+            )
             self_info["is_backup"] = False
             backup_nodes = self.get_backup_nodes()
             backup_nodes.remove(self.node_id)
             self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
             # Update the replacee nodes' predecessor's successor to be the replacement backup node
-            replacee_predecessor_info["successor"] = {"id": self.node_id, "address": self_info.get("address")}
-            self._update_server_info(replacee_predecessor_info.get('id'), replacee_predecessor_info)
+            replacee_predecessor_info["successor"] = {
+                "id": self.node_id,
+                "address": self_info.get("address"),
+            }
+            self._update_server_info(replacee_predecessor_info.get("id"), replacee_predecessor_info)
 
             # The replacee becomes a backup
             self.make_node_backup(replacee_node_id)
-            
 
         # If a backup node replacement is used during repair
         if replacement_node_id:
@@ -390,18 +406,23 @@ class ChainManager:
             backup_nodes = self.get_backup_nodes()
             backup_nodes.remove(replacement_node_id)
             self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
-            
+
             # Also update this nodes successor to be the replacement
-            new_successor_data = {"id": replacement_node_id, "address": replacement_info.get("address")}
+            new_successor_data = {
+                "id": replacement_node_id,
+                "address": replacement_info.get("address"),
+            }
             self.update_successor(new_successor_data)
-        
+
         # If this node is the replacement
         else:
             replacement_node_id = self.node_id
             replacement_info = self_info
 
         # Update the replacement node's info
-        logger.info(f"Replacement Node {replacement_node_id[:DIGITS_SHOW]} taking on layers: {layers} and successor: {replacee_succ_data}...")
+        logger.info(
+            f"Replacement Node {replacement_node_id[:DIGITS_SHOW]} taking on layers: {layers} and successor: {replacee_succ_data}..."
+        )
         replacement_info["layers"] = layers
         if replacee_succ_data:
             replacement_info["successor"] = replacee_succ_data
@@ -413,15 +434,16 @@ class ChainManager:
 
         self._update_server_info(replacement_node_id, replacement_info)
 
-        self.update_all_layer_loaded()
+        self.update_all_layers_loaded()
 
         # Rebublish keys since the tail node could have died and heartbeat task would fail
         self.republish_keys()
 
-    
-    def evaluate_takeover_eligibility(self) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    def evaluate_takeover_eligibility(
+        self,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """
-        Executed by a backup node, this method compare the processing_rate and memory_limit metrics of the backup node 
+        Executed by a backup node, this method compare the processing_rate and memory_limit metrics of the backup node
         and all the nodes in the active chain, to determine if a node takeover should take place.
 
         Returns: the first weaker nodes' info if one is found along with its predecessors' info, otherwise (None, None)
@@ -429,7 +451,9 @@ class ChainManager:
         self_info = self._get_self_info()
         self_proc_rate = self_info.get("processing_rate")
         self_device = self_info.get("device")
-        self_mem_limit = self_info.get("vram_limit") if self_device == "cuda" else self_info.get("memory_limit")
+        self_mem_limit = (
+            self_info.get("vram_limit") if self_device == "cuda" else self_info.get("memory_limit")
+        )
 
         head_id = self.dht.get(HEAD_KEY)
         current_node_id = head_id
@@ -446,22 +470,29 @@ class ChainManager:
 
             target_proc_rate = server_info.get("processing_rate")
             target_device = server_info.get("device")
-            target_mem_limit = server_info.get("vram_limit") if target_device == "cuda" else server_info.get("memory_limit")
+            target_mem_limit = (
+                server_info.get("vram_limit")
+                if target_device == "cuda"
+                else server_info.get("memory_limit")
+            )
 
             if not target_proc_rate:
-                logger.info(f"No processing rate recorded for node: {current_node_id[:DIGITS_SHOW]}")
+                logger.info(
+                    f"No processing rate recorded for node: {current_node_id[:DIGITS_SHOW]}"
+                )
                 current_node_id = next_node_id
                 continue
-            
-            if (self_proc_rate > target_proc_rate) and (self_mem_limit and target_mem_limit and self_mem_limit >= target_mem_limit):
+
+            if (self_proc_rate > target_proc_rate) and (
+                self_mem_limit and target_mem_limit and self_mem_limit >= target_mem_limit
+            ):
                 return server_info, predecessor_info
 
             # Assign predecessor_info and go to the next node id
             predecessor_info = server_info.copy()
             current_node_id = next_node_id
-        
+
         return (None, None)
-                
 
     def republish_keys(self):
         """
@@ -483,7 +514,7 @@ class ChainManager:
             if num_total_layers:
                 self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
 
-            self.update_all_layer_loaded()
+            self.update_all_layers_loaded()
 
             backup_nodes = self.get_backup_nodes()
             if backup_nodes is not None:
@@ -495,15 +526,13 @@ class ChainManager:
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
 
-    
-
-    # ---- Global key update methods ---- 
+    # ---- Global key update methods ----
 
     def update_chain_tail(self, node_id: str):
         """Updates the chain_tail key with the given node id"""
         self.dht.store(TAIL_KEY, node_id, EXPIRATION_S)
 
-    def update_all_layer_loaded(self):
+    def update_all_layers_loaded(self):
         """Checks the layers_loaded subkey in all the server nodes in the chain"""
         # Global keys
         head_id = self.dht.get(HEAD_KEY)
@@ -543,7 +572,6 @@ class ChainManager:
         """Helper that updates the server_info_(node_id) key of a specific node."""
         server_key = f"{SERVER_INFO_PREFIX}{node_id}"
         self.dht.store(server_key, updated_server_info, EXPIRATION_S)
-
 
     def update_layers(self, new_layers: Tuple[int, int]):
         self_info = self._get_self_info()
@@ -613,8 +641,3 @@ class ChainManager:
         backups_list = self.get_backup_nodes()
         backups_list.append(node_id)
         self.dht.store(BACKUPS_KEY, backups_list, EXPIRATION_S)
-
-        
-
-
-

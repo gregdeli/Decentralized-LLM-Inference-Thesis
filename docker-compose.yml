@@ -30,6 +30,7 @@ services:
   intermediate-server:
     image: decentralized-llm-thesis:latest
     command: python server/server.py
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     # network_mode: "host"
     hostname: intermediate-server
@@ -124,4 +125,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      - "5678:5678"
+      # - "5678:5678"

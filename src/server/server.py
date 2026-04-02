@@ -32,6 +32,7 @@ from core.p2p.chain_manager import (
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
     EXPIRATION_S,
+    DIGITS_SHOW,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,7 @@ class Server:
         self.llm = None
         self.model = None
         self.successor_stub = None
+        self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
         self.num_local_layers = 0
 
         self.inference_delay = 0.0
@@ -154,7 +156,7 @@ class Server:
         self._update_memory_usage()
         if not self.chain.is_backup():
             self.chain.update_layers_loaded(True)
-            self.chain.update_all_layer_loaded()
+            self.chain.update_all_layers_loaded()
 
     def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
@@ -596,6 +598,7 @@ class Server:
                 self._reload_llm(layers_to_load)
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
                 self._connect_to_successor()
+                return
 
             # Else, try to find a backup node to take over
             else:
@@ -608,6 +611,9 @@ class Server:
                         if backup_info:
                             avail_mem = backup_info.get("available_memory")
                             avail_vram = backup_info.get("available_vram")
+                            logger.info(
+                                f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
+                            )
 
                             if self._can_load(
                                 layers=orphaned_layers,
@@ -632,11 +638,17 @@ class Server:
                                     logger.error(
                                         f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
                                     )
-                # else:
-                logger.info("No backup nodes found. Setting this node as the tail...")
+                            else:
+                                logger.error(
+                                    f"The backup node cannot load the orphaned layers.\nSetting this node as the tail..."
+                                )
+                else:
+                    logger.info("No backup nodes found. Setting this node as the tail...")
+
+                # Set this node as the TAIL
                 self.chain.update_chain_tail(self.chain.node_id)
                 self.chain.update_successor(new_successor_data=None)
-                self.chain.update_all_layer_loaded()
+                self.chain.update_all_layers_loaded()
 
     def opportunistic_takeover(
         self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
@@ -698,8 +710,13 @@ class Server:
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
-        # if self.successor_stub is not None:
-        #     return
+        # Check if the successor stub exists and its address corresponds to the successor address stored on the dht.
+        # After an opportunistic takeover they would be different.
+        if (
+            self.successor_stub is not None
+            and self.successor_stub_addr == self.chain.get_successor_address()
+        ):
+            return
 
         if self.chain.is_tail() or self.chain.is_backup():
             self.successor_stub = None
@@ -715,6 +732,7 @@ class Server:
             channel = grpc.insecure_channel(successor_addr)
             grpc.channel_ready_future(channel).result(timeout=10)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+            self.successor_stub_addr = successor_addr
             logger.info(f"Connection to successor: {successor_addr} established.")
         except grpc.FutureTimeoutError:
             logger.error(f"Connection to {successor_addr} timed out.")
@@ -784,17 +802,17 @@ def serve():
     )
 
     # Start GRPC server
-    server = grpc.server(
+    grpc_server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=2),
         options=[
             ("grpc.max_send_message_length", MAX_MSG_SIZE),
             ("grpc.max_receive_message_length", MAX_MSG_SIZE),
         ],
     )
-    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
-    server.add_insecure_port(grpc_addr)
+    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), grpc_server)
+    grpc_server.add_insecure_port(grpc_addr)
 
-    server.start()
+    grpc_server.start()
     logger.info("Server is ready to accept grpc connections.")
 
     # Initialize the successor stub
@@ -806,7 +824,7 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node.chain.republish_keys()
             server_node._update_memory_usage()
-            server_node.chain.update_all_layer_loaded()
+            server_node.chain.update_all_layers_loaded()
 
     def _grpc_heartbeat_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
@@ -869,8 +887,13 @@ def serve():
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):
-        server_node.dht.shutdown()
-        server.stop(grace=2)
+        # server.stop(grace=2)
+
+        # Its not realistic to expect a grace period in a real distributed system node failure
+        logger.info("Shutting down gRPC server...")
+        grpc_server.stop(grace=None)
+
+        # server_node.dht.shutdown()
 
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
@@ -879,9 +902,9 @@ def serve():
 
     # Profile if backup node for the opportunistic takeover feature
     if server_node.chain.is_backup():
-        server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=200)
+        server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=300)
 
-    server.wait_for_termination()
+    grpc_server.wait_for_termination()
 
 
 if __name__ == "__main__":
