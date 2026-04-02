@@ -93,7 +93,12 @@ class Server:
             num_layers = self._mem_to_num_layers(bytes_per_param=4)
 
         # Join the Inference Chain
-        server_info = {"id": self.chain.node_id, "address": grpc_addr, "hostname": socket.gethostname(), "processing_rate": 0.0}
+        server_info = {
+            "id": self.chain.node_id,
+            "address": grpc_addr,
+            "hostname": socket.gethostname(),
+            "processing_rate": 0.0,
+        }
 
         self.chain.join_chain(
             server_info,
@@ -128,8 +133,10 @@ class Server:
         layers_to_load = self.chain.get_layers()
 
         if self.chain.is_backup():
-            num_layers = self._mem_to_num_layers(bytes_per_param=4)
-            layers_to_load = (0, num_layers - 1)
+            # num_layers = self._mem_to_num_layers(bytes_per_param=4)
+            # layers_to_load = (0, num_layers - 1)
+            # Load only a single layer for fast but still accurate profiling
+            layers_to_load = (0, 0)
 
         logger.info(f"Loading layers: {layers_to_load}...")
 
@@ -299,14 +306,10 @@ class Server:
             if self.layers_per_second == 0:
                 self.layers_per_second = current_rate
             else:
-                self.layers_per_second = (0.7 * self.layers_per_second) + (
-                    0.3 * current_rate
-                )
+                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
 
     @torch.no_grad()
-    def _profile_backup_node(
-        self, dummy_seq_length: int = 30, profiling_runs: int = 100
-    ):
+    def _profile_backup_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
         # LLM has already been loaded for profiling with the number of layers the backup node can hold
 
@@ -342,9 +345,7 @@ class Server:
                 f"Layers/sec: {self.layers_per_second:.2f} "
             )
 
-            dummy_input = torch.randn(
-                1, 1, hidden_size, device=self.device, dtype=torch.float32
-            )
+            dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=torch.float32)
             current_pos = starting_dummy_seq_len + (i + 1)
             dummy_input_pos = torch.tensor([current_pos], device=self.device)
             dummy_seq_length = 1
@@ -430,9 +431,7 @@ class Server:
                 client_response = self.client_stub.ReceiveResponse(response)
 
             except grpc.RpcError as e:
-                logger.error(
-                    f"Failed to send result to client at {response_address}: {e}"
-                )
+                logger.error(f"Failed to send result to client at {response_address}: {e}")
 
             return nodeservice_pb2.InferenceResponse(
                 processing_time=client_response.processing_time, total_rate=0.0
@@ -471,9 +470,7 @@ class Server:
                         error_message="A node in the chain has failed. The chain is being repaired..."
                     )
                 else:
-                    logger.error(
-                        f"Could not retrieve successor data from DHT! Chain is broken."
-                    )
+                    logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
                     return nodeservice_pb2.InferenceResponse(
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
@@ -495,9 +492,7 @@ class Server:
         # layers_to_load = num_total_layers * (my_rate / total_rate)
         if total_system_rate > 0:
             # Epic equation
-            ideal_layer_count = num_total_layers * (
-                self.layers_per_second / total_system_rate
-            )
+            ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
         else:
             ideal_layer_count = 0
 
@@ -525,9 +520,7 @@ class Server:
         # if target_layer_count > 0:
         end_layer_index = start_layer_index + target_layer_count - 1
         new_layers = (start_layer_index, end_layer_index)
-        logger.info(
-            f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}"
-        )
+        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}")
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
@@ -574,16 +567,12 @@ class Server:
                     logger.info("Successor is ALIVE. Aborting unnecessary repair...")
                     return
                 except grpc.RpcError as e:
-                    logger.warning(
-                        f"Successor confirmed DEAD. Proceeding with repair..."
-                    )
+                    logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
 
             dead_successor_data = self.chain.get_failed_successor_data()
 
             if not dead_successor_data:
-                logger.error(
-                    "Could not retrieve successor data from DHT! Chain is broken."
-                )
+                logger.error("Could not retrieve successor data from DHT! Chain is broken.")
                 return
 
             self.successor_stub = None
@@ -602,9 +591,7 @@ class Server:
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(layers=orphaned_layers):
                 layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
-                logger.info(
-                    f"Taking over layers {orphaned_layers}. New range: {layers_to_load}"
-                )
+                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}")
 
                 self._reload_llm(layers_to_load)
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
@@ -635,12 +622,8 @@ class Server:
                                 )
 
                                 try:
-                                    channel = grpc.insecure_channel(
-                                        backup_info.get("address")
-                                    )
-                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(
-                                        channel
-                                    )
+                                    channel = grpc.insecure_channel(backup_info.get("address"))
+                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
                                     backup_stub.LoadLayers(nodeservice_pb2.Empty())
 
                                     self._connect_to_successor()
@@ -654,8 +637,10 @@ class Server:
                 self.chain.update_chain_tail(self.chain.node_id)
                 self.chain.update_successor(new_successor_data=None)
                 self.chain.update_all_layer_loaded()
-    
-    def opportunistic_takeover(self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]):
+
+    def opportunistic_takeover(
+        self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
+    ):
         """
         After a backup node finds a weak node in the chain to replace.
         1. It loads the layers of the weak node.
@@ -669,11 +654,19 @@ class Server:
         weak_node_id = weak_node_info.get("id")
         weak_node_succ_data = weak_node_info.get("successor")
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
-        logger.info(f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}.")
+        logger.info(
+            f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
+        )
 
         if self._can_load(layers=layers_to_takeover):
             self._reload_llm(layers_to_takeover)
-            self.chain.repair(layers_to_takeover, weak_node_succ_data, weak_node_was_tail, replacee_node_id=weak_node_id, replacee_predecessor_info=predecessor_info)
+            self.chain.repair(
+                layers_to_takeover,
+                weak_node_succ_data,
+                weak_node_was_tail,
+                replacee_node_id=weak_node_id,
+                replacee_predecessor_info=predecessor_info,
+            )
 
             # Update the predecessor's successor_stub to point to this node
             if predecessor_info:
@@ -682,7 +675,9 @@ class Server:
                     predecessor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
                     predecessor_stub.UpdateSuccessor(nodeservice_pb2.Empty())
                 except grpc.RpcError as e:
-                    logger.error(f"A gRPC error occurred while connecting to {predecessor_info.get('address')}: {e.code().name}")
+                    logger.error(
+                        f"A gRPC error occurred while connecting to {predecessor_info.get('address')}: {e.code().name}"
+                    )
 
             # Send GRPC request to the weak node to unload its layers
             try:
@@ -690,13 +685,16 @@ class Server:
                 weak_node_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
                 weak_node_stub.UnloadLayers(nodeservice_pb2.Empty())
             except grpc.RpcError as e:
-                logger.error(f"A gRPC error occurred while connecting to {weak_node_info.get('address')}: {e.code().name}")
-            
+                logger.error(
+                    f"A gRPC error occurred while connecting to {weak_node_info.get('address')}: {e.code().name}"
+                )
 
             self._connect_to_successor()
-        
+
         else:
-            logger.info(f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node.")
+            logger.info(
+                f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node."
+            )
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""
@@ -745,9 +743,7 @@ def serve():
     num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
 
     added_delay_str = os.getenv("ADDED_DELAY")
-    added_delay = (
-        float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
-    )
+    added_delay = float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
 
     my_ip = os.getenv("IP")
     if not my_ip:
@@ -795,9 +791,7 @@ def serve():
             ("grpc.max_receive_message_length", MAX_MSG_SIZE),
         ],
     )
-    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(
-        NodeServicer(server_node), server
-    )
+    nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), server)
     server.add_insecure_port(grpc_addr)
 
     server.start()
@@ -824,7 +818,6 @@ def serve():
 
                 if weak_node_info:
                     server_node.opportunistic_takeover(weak_node_info, predecessor_info)
-                
 
             elif server_node.chain.is_tail():
                 continue
@@ -846,9 +839,7 @@ def serve():
                     server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     server_node.repair_chain()
                 else:
-                    logger.warning(
-                        f"A gRPC error occurred during health check: {e.code().name}"
-                    )
+                    logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
                     server_node.successor_stub = None
 
     def _udp_discovery_server():
@@ -888,7 +879,7 @@ def serve():
 
     # Profile if backup node for the opportunistic takeover feature
     if server_node.chain.is_backup():
-        server_node._profile_backup_node(dummy_seq_length=30, profiling_runs=100)
+        server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=200)
 
     server.wait_for_termination()
 
