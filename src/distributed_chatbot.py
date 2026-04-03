@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 from pathlib import Path
 import logging
 
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    load_dotenv()
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
 
