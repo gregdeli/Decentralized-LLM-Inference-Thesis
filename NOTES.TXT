@@ -2,7 +2,6 @@ Future Features:
     * litgpt kanei combined qkv proj 
 
 TODO:
-* Improve front end Refresh to update the server cards when new data appears on the dht
 
 * Pipilining feature
 
