@@ -4,33 +4,42 @@ from pathlib import Path
 import logging
 
 from client.client import Client
-from core.remote.utils import get_bootstrap_peer_address
+from core.remote.utils import get_bootstrap_peer_address, get_ip_address, discover_bootstrap_node_address
 
 logger = logging.getLogger(__name__)
 
+GPRC_PORT = 5001
 
 def main():
     load_dotenv()
     model_path_str = os.getenv("MODEL_PATH")
-    model_path = Path(model_path_str)
 
-    host_maddrs = os.getenv("HOST_MADDRS")
-    bootstrap_node_addr_str = os.getenv("BOOTSTRAP_NODE_ADDR")
+    my_ip = os.getenv("IP")
+    if not my_ip:
+        my_ip = get_ip_address()
+    host_maddrs = f"/ip4/{my_ip}/tcp/0"
 
-    # Connect to the bootstrap node to get its p2p Multiaddress
-    bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=10)
+    bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR")
 
-    if not bootstrap_peer_addr:
+    if not bootstrap_addr:
+        bootstrap_addr = discover_bootstrap_node_address()
+
+    if not bootstrap_addr:
+        logger.error("Failed to find bootstrap node.")
         return
 
-    initial_peers = [bootstrap_peer_addr]
-    print(f"Successfully discovered bootstrap peer: {initial_peers[0]}")
+    bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
+    initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
+    # Initialize the Client Node
+    grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
     client = Client(
-        model_path=model_path,
+        model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
+        grpc_addr = grpc_addr
     )
+    logger.info("Client initialized.")
 
     try:
         conversation = ""  # Chat history

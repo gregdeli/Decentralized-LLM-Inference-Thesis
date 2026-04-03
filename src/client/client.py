@@ -87,7 +87,8 @@ class Client:
         server.wait_for_termination()
 
     def print_chain_status(self):
-        self.chain.print_chain_status()
+        # self.chain.print_chain_status()
+        print(self.chain.get_chain_info())
 
     def trigger_reallocation(self):
         """
