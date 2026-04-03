@@ -221,8 +221,8 @@ class Client:
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
             initial_inference_delay = time.perf_counter() - start_token_gen
-            print()
-            #logger.info(f"Initial Inference Delay: {initial_inference_delay:.6f}")
+
+            # logger.info(f"\nInitial Inference Delay: {initial_inference_delay:.6f}")
 
             # Call the remote server chain
             start = time.perf_counter()

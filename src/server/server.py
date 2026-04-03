@@ -748,6 +748,9 @@ GRPC_PORT = 5001
 UDP_PORT = 9999
 MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
+# To not show netlinkrib errors on moto
+os.environ["GOLOG_LOG_LEVEL"] = "fatal"
+
 
 def serve():
     """The main function to start the server."""
