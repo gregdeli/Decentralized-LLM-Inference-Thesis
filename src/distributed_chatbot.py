@@ -8,6 +8,9 @@ from core.remote.utils import get_bootstrap_peer_address, get_ip_address, discov
 
 logger = logging.getLogger(__name__)
 
+# To not show netlinkrib errors on moto
+os.environ["GOLOG_LOG_LEVEL"] = "fatal"
+
 GPRC_PORT = 5001
 
 def main():
@@ -64,10 +67,9 @@ def main():
                 print(token, end="", flush=True)
 
             conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
-            print("\n")
 
             # Layer Reallocation
-            client.trigger_reallocation()
+            #client.trigger_reallocation()
 
     except KeyboardInterrupt:
         print("\nExiting...")  # Ctrl+C

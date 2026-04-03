@@ -222,7 +222,7 @@ class Client:
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
             initial_inference_delay = time.perf_counter() - start_token_gen
             print()
-            logger.info(f"Initial Inference Delay: {initial_inference_delay:.6f}")
+            #logger.info(f"Initial Inference Delay: {initial_inference_delay:.6f}")
 
             # Call the remote server chain
             start = time.perf_counter()
@@ -232,7 +232,7 @@ class Client:
             request.response_address = self.grpc_addr
 
             serialization_delay = time.perf_counter() - start
-            logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+            #logger.info(f"Serialization Delay: {serialization_delay:.6f}")
 
             start = time.perf_counter()
             ack_response = self.head_server_stub.RunLayers(request)
@@ -249,7 +249,7 @@ class Client:
                     else:
                         self.head_communication_latency = current_network_latency
                         
-                    logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
+                    #logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
 
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")
@@ -273,7 +273,7 @@ class Client:
             start = time.perf_counter()
             x = message_to_tensor(response)
             deserialization_delay = time.perf_counter() - start
-            logger.info(f"Deserialization Delay: {deserialization_delay:.6f}")
+            #logger.info(f"Deserialization Delay: {deserialization_delay:.6f}")
 
             # Run clients final layers
             # logits = self.model.forward_client_final(x)
@@ -281,32 +281,32 @@ class Client:
             # logits = self.model.forward_client_final(self.final_activations)
             logits = self.model.forward_client_final(x)
             final_inference_delay = time.perf_counter() - start
-            logger.info(f"Final Inference Delay: {final_inference_delay:.6f}")
+            #logger.info(f"Final Inference Delay: {final_inference_delay:.6f}")
 
             # Sample the next token
             start = time.perf_counter()
             next_token = self.llm.sample_logits(logits, temperature, top_p)
             sample_delay = time.perf_counter() - start
-            logger.info(f"Sampling Delay: {sample_delay:.6f}")
+            #logger.info(f"Sampling Delay: {sample_delay:.6f}")
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 token_gen_delay = time.perf_counter() - start_token_gen
-                logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
+                #logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
                 break
 
             # Decode and yield the new token
             start = time.perf_counter()
             decoded_token = self.llm.preprocessor.decode(next_token)
             decode_delay = time.perf_counter() - start
-            logger.info(f"Decoding Delay: {decode_delay:.6f}")
+            #logger.info(f"Decoding Delay: {decode_delay:.6f}")
 
             tokens_generated += 1
 
             start = time.perf_counter()
             yield decoded_token
             yield_delay = time.perf_counter() - start
-            logger.info(f"Yield Delay: {yield_delay:.6f}")
+            #logger.info(f"Yield Delay: {yield_delay:.6f}")
 
             input_tensor = next_token
             current_pos = prompt_length + (i + 1)
@@ -314,7 +314,7 @@ class Client:
             seq_length = 1
 
             token_gen_delay = time.perf_counter() - start_token_gen
-            logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
+            #logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
 
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
