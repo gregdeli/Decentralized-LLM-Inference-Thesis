@@ -5,11 +5,12 @@ from typing import Optional, Union
 
 # A mapping from PyTorch dtypes to string representations
 DTYPE_MAP = {
-    torch.float32: "float32",
     torch.float16: "float16",
+    torch.bfloat16: "bfloat16",
+    torch.float32: "float32",
     torch.int64: "int64",
 }
-# INV_DTYPE_MAP = {v: k for k, v in DTYPE_MAP.items()}
+INV_DTYPE_MAP = {dtype_str: dtype for dtype, dtype_str in DTYPE_MAP.items()}
 
 
 def tensor_to_request(
@@ -19,7 +20,8 @@ def tensor_to_request(
     input_pos: Optional[int],
 ) -> nodeservice_pb2.InferenceRequest:
     """Serializes a tensor and metadata into an InferenceRequest."""
-    tensor_data = tensor.numpy().tobytes()
+    view_dtype = torch.int16 if tensor.element_size() == 2 else tensor.dtype
+    tensor_data = tensor.view(view_dtype).numpy().tobytes()
     tensor_shape = list(tensor.shape)
     dtype = DTYPE_MAP[tensor.dtype]
 
@@ -41,7 +43,8 @@ def tensor_to_request(
 
 
 def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceResponse:
-    tensor_data = tensor.numpy().tobytes()
+    view_dtype = torch.int16 if tensor.element_size() == 2 else tensor.dtype
+    tensor_data = tensor.view(view_dtype).numpy().tobytes()
     tensor_shape = list(tensor.shape)
     dtype = DTYPE_MAP[tensor.dtype]
 
@@ -59,6 +62,10 @@ def message_to_tensor(message: Union[nodeservice_pb2.InferenceRequest, nodeservi
     shape = tuple(message.tensor_shape)
     dtype_str = message.dtype
 
-    np_array = np.frombuffer(message.tensor_data, dtype=getattr(np, dtype_str)).copy()
+    torch_dtype = INV_DTYPE_MAP[dtype_str]
+    is_2byte = torch_dtype.itemsize == 2
+    np_dtype = np.int16 if is_2byte else getattr(np, dtype_str)
+
+    np_array = np.frombuffer(message.tensor_data, dtype=np_dtype)
     tensor = torch.from_numpy(np_array).reshape(shape)
-    return tensor
+    return tensor.view(torch_dtype) if is_2byte else tensor

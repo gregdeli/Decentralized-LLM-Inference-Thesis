@@ -1,7 +1,8 @@
 services:
   head-server:
     image: decentralized-llm-thesis:latest
-    command: python server/server.py
+    # command: python server/server.py
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     hostname: head-server
     # network_mode: "host"
@@ -29,8 +30,8 @@ services:
 
   intermediate-server:
     image: decentralized-llm-thesis:latest
-    command: python server/server.py
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    # command: python server/server.py
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     # network_mode: "host"
     hostname: intermediate-server
@@ -54,7 +55,8 @@ services:
 
   tail-server:
     image: decentralized-llm-thesis:latest
-    command: python server/server.py
+    # command: python server/server.py
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     # network_mode: "host"
     hostname: tail-server
@@ -81,7 +83,8 @@ services:
 
   server:
     image: decentralized-llm-thesis:latest
-    command: python server/server.py
+    # command: python server/server.py
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     hostname: server-1
     environment:
@@ -101,7 +104,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 1G
     depends_on:
       - head-server
       - intermediate-server
@@ -113,6 +116,7 @@ services:
     # command: python dht_test.py 
     # command: python distributed_chatbot.py 
     # command: python client_gui.py 
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     command: sleep infinity 
     hostname: client
     environment:

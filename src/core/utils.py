@@ -2,11 +2,22 @@ from typing import Dict, Any
 import logging
 from pathlib import Path
 import json
+import torch
 
 
 logger = logging.getLogger(__name__)
 
 """-------------- LLM Loader Utils --------------"""
+
+def get_dtype_from_config(config: Dict[str, Any]) -> torch.dtype:
+    dtype_str = config.get("torch_dtype")
+    dtype_map = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+        "float": torch.float32
+    }
+    return dtype_map.get(dtype_str, torch.float32)
 
 
 def get_relevant_safetensor_files(weight_map: Dict[str, str]):

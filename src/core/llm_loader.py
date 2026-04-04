@@ -8,7 +8,7 @@ import gc
 from safetensors.torch import load_file
 
 from core.model import Llama3
-from core.utils import remove_model_prefix, is_instruct_model, get_relevant_safetensor_files
+from core.utils import remove_model_prefix, is_instruct_model, get_relevant_safetensor_files, get_dtype_from_config
 
 from transformers import AutoTokenizer
 
@@ -19,7 +19,7 @@ class LLM:
     def __init__(
         self,
         model: Llama3,
-        preprocessor=None,
+        preprocessor: "Preprocessor" = None,
         config: Dict[str, Any] = None,
         is_instruct_model: bool = False,
         model_path: Path = None,
@@ -27,6 +27,7 @@ class LLM:
         is_client: bool = True,
         layers_loaded: Tuple[int, int] = None,
         device: str = "cpu",
+        dtype: torch.dtype = torch.float32
     ) -> None:
         self.model = model
         self.preprocessor = preprocessor
@@ -39,6 +40,7 @@ class LLM:
         self.is_client = is_client
         self.layers_loaded = layers_loaded
         self.device = device
+        self.dtype = dtype
 
     """
     High-level API for loading a Llama 3.2 model and generating text.
@@ -76,12 +78,10 @@ class LLM:
         # Initialize model
         model = Llama3(config, is_client, layers_to_load)
         model.eval()
-        
-        # if device == "cuda":
-        #     model.to(device, dtype=torch.float16)
-        # else:
-        #     model.to(device)
-        model.to(device)
+
+        dtype = get_dtype_from_config(config)
+
+        model.to(device, dtype=dtype)
 
         # Setup preprocessor
         preprocessor = Preprocessor(tokenizer, device=device)
@@ -136,6 +136,7 @@ class LLM:
             is_client=is_client,
             layers_loaded=layers_to_load,
             device=device,
+            dtype=dtype
         )
 
     @torch.no_grad()
@@ -163,11 +164,10 @@ class LLM:
             )
 
         if not self.kv_cache_initialized:
-            device = self.device
             if time_it:
                 start = time.perf_counter()
             # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device, dtype=self.dtype)
             self.kv_cache_initialized = True
             if time_it:
                 elapsed = time.perf_counter() - start
@@ -177,7 +177,7 @@ class LLM:
         elif self.prev_generated_seq_length < max_returned_tokens:
             device = self.model.mask_cache.device
             self.model.clear_kv_cache()
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device)
+            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device, dtype=self.dtype)
 
         self.prev_generated_seq_length = max_returned_tokens
 

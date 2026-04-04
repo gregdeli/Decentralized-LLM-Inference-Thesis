@@ -27,7 +27,7 @@ try:
 
         print(f"\n-----Response-----\n", end="", flush=True)
 
-        token_generator = llm.generate(prompt, max_new_tokens=250, stream=True)
+        token_generator = llm.generate(prompt, max_new_tokens=500, stream=True)
 
         # Iterate over the generator and print each token as it arrives
         try:

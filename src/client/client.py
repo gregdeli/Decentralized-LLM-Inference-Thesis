@@ -88,7 +88,7 @@ class Client:
 
     def print_chain_status(self):
         # self.chain.print_chain_status()
-        print(self.chain.get_chain_info())
+        print(self.chain.get_chain_info()) # Isws pretty print kalutera
 
     def trigger_reallocation(self):
         """

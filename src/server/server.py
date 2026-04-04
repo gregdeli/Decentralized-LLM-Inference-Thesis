@@ -19,6 +19,7 @@ import torch
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
+from core.utils import get_dtype_from_config
 from core.remote.utils import (
     get_bootstrap_peer_address,
     get_ip_address,
@@ -83,7 +84,7 @@ class Server:
         # Determine Load Capacity
         self._update_memory_usage(update_on_dht=False)
         if not num_layers:
-            num_layers = self._mem_to_num_layers(bytes_per_param=4)
+            num_layers = self._mem_to_num_layers()
             logger.info(
                 f"Node with {self.available_memory_mb} MB available can load {num_layers} layers."
             )
@@ -91,7 +92,7 @@ class Server:
             logger.warning(
                 f"Requested {num_layers} layers but memory is insufficient. Adjusting..."
             )
-            num_layers = self._mem_to_num_layers(bytes_per_param=4)
+            num_layers = self._mem_to_num_layers()
 
         # Join the Inference Chain
         server_info = {
@@ -135,7 +136,7 @@ class Server:
         layers_to_load = self.chain.get_layers()
 
         if self.chain.is_backup():
-            # num_layers = self._mem_to_num_layers(bytes_per_param=4)
+            # num_layers = self._mem_to_num_layers()
             # layers_to_load = (0, num_layers - 1)
             # Load only a single layer for fast but still accurate profiling
             layers_to_load = (0, 0)
@@ -183,7 +184,6 @@ class Server:
 
     def _mem_to_num_layers(
         self,
-        bytes_per_param: int,
         avail_mem: float = None,
         avail_vram: float = None,
     ) -> int:
@@ -193,6 +193,8 @@ class Server:
         self._update_memory_usage(update_on_dht=False)
 
         total_layer_params = self.config["total_transformer_layer_params"]
+        param_dtype = get_dtype_from_config(self.config)
+        bytes_per_param = param_dtype.itemsize
         layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
 
         # If avail_mem or avail_vram is given, max_num_layers is requested for a different node that this one
@@ -222,9 +224,7 @@ class Server:
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
-        max_num_layers = self._mem_to_num_layers(
-            bytes_per_param=4, avail_mem=avail_mem, avail_vram=avail_vram
-        )
+        max_num_layers = self._mem_to_num_layers(avail_mem=avail_mem, avail_vram=avail_vram)
         return num_layers <= max_num_layers
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
@@ -280,7 +280,7 @@ class Server:
         # Initialize the kv cache if necessary
         if not self.llm.kv_cache_initialized:
             self.model.set_kv_cache(
-                batch_size=1, max_seq_length=max_returned_tokens, device=self.device
+                batch_size=1, max_seq_length=max_returned_tokens, device=self.device, dtype=self.llm.dtype
             )
             self.llm.kv_cache_initialized = True
             cache_updated = True
@@ -290,7 +290,7 @@ class Server:
             tmp_device = self.model.mask_cache.device
             self.model.clear_kv_cache()
             self.model.set_kv_cache(
-                batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device
+                batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device, dtype=self.llm.dtype
             )
             cache_updated = True
 
@@ -319,7 +319,7 @@ class Server:
         hidden_size = self.config["hidden_size"]
 
         dummy_input = torch.randn(
-            1, dummy_seq_length, hidden_size, device=self.device, dtype=torch.float32
+            1, dummy_seq_length, hidden_size, device=self.device, dtype=self.llm.dtype
         )
         dummy_input_pos = None
 
@@ -347,7 +347,7 @@ class Server:
                 f"Layers/sec: {self.layers_per_second:.2f} "
             )
 
-            dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=torch.float32)
+            dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=self.llm.dtype)
             current_pos = starting_dummy_seq_len + (i + 1)
             dummy_input_pos = torch.tensor([current_pos], device=self.device)
             dummy_seq_length = 1
@@ -501,7 +501,7 @@ class Server:
         logger.info(f"Idead Layer Count: {ideal_layer_count}")
 
         current_num_layers = self.num_local_layers
-        max_extra_num_layers = self._mem_to_num_layers(bytes_per_param=4)
+        max_extra_num_layers = self._mem_to_num_layers()
         max_num_layers = current_num_layers + max_extra_num_layers
 
         logger.info(f"Max Num Layers: {max_num_layers}")

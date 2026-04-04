@@ -255,7 +255,7 @@ class TransformerBlock(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config: Dict[str, Any], block_idx: int) -> None:
+    def __init__(self, config: Dict[str, Any], block_idx: int):
         super().__init__()
         self.hidden_size = config["hidden_size"]
         self.n_head = config["num_attention_heads"]
