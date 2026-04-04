@@ -326,7 +326,7 @@ class Preprocessor:
 
 
 if __name__ == "__main__":
-    model_path = Path(r"/home/greg/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B")
+    model_path = Path("/home/greg/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B")
     llm = LLM.load(model_path)
 
     prompt = "The capital of France is"

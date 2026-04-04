@@ -3,8 +3,8 @@ import json
 
 from core.llm_loader import LLM
 
-# model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-3B-Instruct")
-model_path = Path(r"/home/greg_deli/Desktop/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B-Instruct")
+# model_path = Path("/models/Llama-3.2-3B-Instruct")
+model_path = Path("models/Llama-3.2-1B-Instruct")
 
 with open(f"{model_path}/config.json", "r") as f:
     config = json.load(f)

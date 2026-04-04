@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sys
 import os
 import signal
 import threading
@@ -16,6 +17,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import grpc
 import psutil
 import torch
+
+# Add src/ to python paths or app/ if running in container
+src_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(src_root))
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
