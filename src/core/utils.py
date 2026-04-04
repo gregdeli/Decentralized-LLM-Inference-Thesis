@@ -53,9 +53,8 @@ def is_instruct_model(model_path: Path) -> bool:
 
 # Llama 3.2 1B -> total_transformer_layer_params = 60821504
 # Llama 3.2 3B -> total_transformer_layer_params = 100669440
-def calculate_transformer_params(model_path_str: str) -> int:
+def calculate_transformer_params(model_path: Path) -> int:
     """Calculates the total number of parameters for a single Transformer Layer for Llama 3.2"""
-    model_path = Path(model_path_str)
     config_path = model_path / "config.json"
     with open(config_path, "r") as f:
         config = json.load(f)
@@ -81,3 +80,15 @@ def calculate_transformer_params(model_path_str: str) -> int:
     total_norm_params = 2 * hidden_size  # input_layer_norm and post_attention_layernorm
 
     return total_attention_params + total_mlp_params + total_norm_params
+
+def update_config_layer_param_count(model_path: Path, param_count: int) -> None:
+    with open(f"{model_path}/config.json", "r") as f:
+        config = json.load(f)
+
+    config["total_transformer_layer_params"] = param_count
+
+
+    with open(f"{model_path}/config.json", "w") as f:
+        json.dump(config, f, indent=2)
+
+    logger.info(f"Updated {model_path}/config.json with total_transformer_layer_params: {param_count}")

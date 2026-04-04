@@ -24,7 +24,7 @@ sys.path.insert(0, str(src_root))
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
-from core.utils import get_dtype_from_config
+from core.utils import get_dtype_from_config, calculate_transformer_params, update_config_layer_param_count
 from core.remote.utils import (
     get_bootstrap_peer_address,
     get_ip_address,
@@ -198,7 +198,14 @@ class Server:
         """
         self._update_memory_usage(update_on_dht=False)
 
-        total_layer_params = self.config["total_transformer_layer_params"]
+        total_layer_params = self.config.get("total_transformer_layer_params")
+        if total_layer_params is None:
+            total_layer_params = calculate_transformer_params(self.model_path)
+            update_config_layer_param_count(self.model_path, total_layer_params)
+            # Reload config 
+            with open(self.model_path / "config.json", "r") as f:
+                self.config = json.load(f)
+
         param_dtype = get_dtype_from_config(self.config)
         bytes_per_param = param_dtype.itemsize
         layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
