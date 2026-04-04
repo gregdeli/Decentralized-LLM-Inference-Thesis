@@ -85,8 +85,9 @@ class Server:
         self._update_memory_usage(update_on_dht=False)
         if not num_layers:
             num_layers = self._mem_to_num_layers()
+            available = self.available_vram_mb if self.available_vram_mb else self.available_memory_mb
             logger.info(
-                f"Node with {self.available_memory_mb} MB available can load {num_layers} layers."
+                f"Node with {available} MB available can load {num_layers} layers."
             )
         elif not self._can_load(num_layers=num_layers):
             logger.warning(
@@ -780,7 +781,7 @@ def serve():
         bootstrap_node_addr_str = discover_bootstrap_node_address()
 
     if not bootstrap_node_addr_str:
-        logger.error("Failed to find bootstrap node address.")
+        logger.warning("Failed to find bootstrap node address.")
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
