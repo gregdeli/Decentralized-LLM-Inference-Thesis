@@ -1,4 +1,8 @@
 from huggingface_hub import snapshot_download
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parent.parent
+model_dest = str(project_root / "models/Llama-3.2-1B")
 
 # Den to kanei load me litgpt ->
 # FileNotFoundError: checkpoint_dir 'E:\\GitHub\\Decentralized-LLM-Inference-Thesis\\models\\Llama-3.2-1B' is missing the files:
@@ -6,7 +10,7 @@ from huggingface_hub import snapshot_download
 snapshot_download(
     repo_id="meta-llama/Llama-3.2-1B",
     token="",
-    local_dir="E:\GitHub\Decentralized-LLM-Inference-Thesis\models\Llama-3.2-1B",
+    local_dir=model_dest,
 )
 
 # Download models with litgpt cli tool
