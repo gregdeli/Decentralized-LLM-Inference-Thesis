@@ -53,6 +53,8 @@ class Client:
             options=[
                 ("grpc.max_send_message_length", MAX_MSG_SIZE),
                 ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+                ('grpc.default_compression_algorithm', 2), # 2 = gzip
+                ('grpc.default_compression_level', 2),     # Medium
             ],
         )
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)

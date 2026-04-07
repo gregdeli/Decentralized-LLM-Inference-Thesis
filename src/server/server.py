@@ -440,7 +440,13 @@ class Server:
             # Connect to Client
             try:
                 if not self.client_stub:
-                    channel = grpc.insecure_channel(response_address)
+                    channel = grpc.insecure_channel(
+                        response_address,
+                        options=[
+                            ('grpc.default_compression_algorithm', 2), # 2 = gzip
+                            ('grpc.default_compression_level', 2),     # Medium
+                        ]
+                    )
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
                 client_response = self.client_stub.ReceiveResponse(response)
@@ -470,7 +476,7 @@ class Server:
         request.response_address = response_address
 
         try:
-            response = self.successor_stub.RunLayers(request, timeout=2)
+            response = self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if (
                 e.code() == grpc.StatusCode.UNAVAILABLE
@@ -742,7 +748,13 @@ class Server:
             return
 
         try:
-            channel = grpc.insecure_channel(successor_addr)
+            channel = grpc.insecure_channel(
+                successor_addr,
+                options=[
+                    ('grpc.default_compression_algorithm', 2), # 2 = gzip
+                    ('grpc.default_compression_level', 2),     # Medium
+                ]
+            )
             grpc.channel_ready_future(channel).result(timeout=10)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.successor_stub_addr = successor_addr
