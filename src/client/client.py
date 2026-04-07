@@ -1,5 +1,6 @@
 """Main client application logic"""
 
+from pprint import pprint
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
@@ -13,7 +14,7 @@ import torch
 from client.servicer import ClientServicer
 from core.llm_loader import LLM
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.remote.utils import get_ip_address
+from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import ChainManager
@@ -48,15 +49,7 @@ class Client:
 
         head_server_addr = head_info["address"]
 
-        channel = grpc.insecure_channel(
-            head_server_addr,
-            options=[
-                ("grpc.max_send_message_length", MAX_MSG_SIZE),
-                ("grpc.max_receive_message_length", MAX_MSG_SIZE),
-                ('grpc.default_compression_algorithm', 2), # 2 = gzip
-                ('grpc.default_compression_level', 2),     # Medium
-            ],
-        )
+        channel = create_grpc_channel(head_server_addr)
         self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
         self.inference_response = None
@@ -90,7 +83,8 @@ class Client:
 
     def print_chain_status(self):
         # self.chain.print_chain_status()
-        print(self.chain.get_chain_info()) # Isws pretty print kalutera
+        print("Chain Status:")
+        pprint(self.chain.get_chain_info()) # Isws pretty print kalutera
 
     def trigger_reallocation(self):
         """

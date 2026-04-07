@@ -29,6 +29,7 @@ from core.remote.utils import (
     get_bootstrap_peer_address,
     get_ip_address,
     discover_bootstrap_node_address,
+    create_grpc_channel
 )
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
@@ -440,13 +441,7 @@ class Server:
             # Connect to Client
             try:
                 if not self.client_stub:
-                    channel = grpc.insecure_channel(
-                        response_address,
-                        options=[
-                            ('grpc.default_compression_algorithm', 2), # 2 = gzip
-                            ('grpc.default_compression_level', 2),     # Medium
-                        ]
-                    )
+                    channel = create_grpc_channel(response_address)
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
                 client_response = self.client_stub.ReceiveResponse(response)
@@ -748,13 +743,7 @@ class Server:
             return
 
         try:
-            channel = grpc.insecure_channel(
-                successor_addr,
-                options=[
-                    ('grpc.default_compression_algorithm', 2), # 2 = gzip
-                    ('grpc.default_compression_level', 2),     # Medium
-                ]
-            )
+            channel = create_grpc_channel(successor_addr)
             grpc.channel_ready_future(channel).result(timeout=10)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.successor_stub_addr = successor_addr
