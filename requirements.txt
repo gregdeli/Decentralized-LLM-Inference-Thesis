@@ -9,5 +9,5 @@ grpcio-tools
 debugpy
 psutil
 nicegui
-pywebview # For nicegui native
+# pywebview # For nicegui natives
 python-dotenv

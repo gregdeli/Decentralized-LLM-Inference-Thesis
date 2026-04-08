@@ -42,27 +42,33 @@ message MultiaddrResponse {
 // The request message containing the tensor and metadata.
 message InferenceRequest {
   bytes tensor_data = 1; // The raw bytes of the tensor.
-  repeated int64 tensor_shape = 2; 
+  repeated int32 tensor_shape = 2; 
   string dtype = 3;           
 
   // Metadata for the inference step
   int32 max_returned_tokens = 4;
   optional int32 seq_length = 5;
-  optional int64 input_pos = 6;
+  optional int32 input_pos = 6;
 
   float partial_rate = 7;
   string response_address = 8;
+
+  // For block-wise quantization
+  bytes block_scales = 9;
 }
 
 // The response message containing the resulting tensor.
 message InferenceResponse {
   bytes tensor_data = 1;
-  repeated int64 tensor_shape = 2;
+  repeated int32 tensor_shape = 2;
   string dtype = 3;  
   optional string error_message = 4;
 
   float total_rate = 5;
   float processing_time = 6;
+
+  // For block-wise quantization
+  bytes block_scales = 7;
 }
 
 message ReallocateRequest {
