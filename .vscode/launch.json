@@ -49,6 +49,22 @@
                 }
             ],
             "justMyCode": true
+        },
+        {
+            "name": "Python: Attach to Container 2",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/src",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
         }
     ]
 }
