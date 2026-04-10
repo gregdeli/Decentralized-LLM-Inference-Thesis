@@ -35,7 +35,7 @@
             "justMyCode": false
         },
         {
-            "name": "Python: Attach to Container",
+            "name": "Python: Attach to Container 5678",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -51,7 +51,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container 2",
+            "name": "Python: Attach to Container 5679",
             "type": "debugpy",
             "request": "attach",
             "connect": {

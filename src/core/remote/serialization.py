@@ -91,7 +91,7 @@ def message_to_tensor(message: Union[nodeservice_pb2.InferenceRequest, nodeservi
 
     # Load the block scales
     np_scales = np.frombuffer(message.block_scales, dtype=np_dtype)
-    absmax_tensor = torch.from_numpy(np_scales).view(-1, 1).to(torch_dtype)
+    absmax_tensor = torch.from_numpy(np_scales).view(-1, 1).view(torch_dtype)
 
     # Dequantize
     tensor = dequantize_blockwise(

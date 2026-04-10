@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=8
+      # - NUM_LAYERS=8
       # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -24,8 +24,8 @@ services:
         limits:
           memory: 6G
         #   cpus: '16.0'
-    # ports:
-    #   - "5678:5678"
+    ports:
+      - "5678:5678"
       # - "9999:9999"
 
   intermediate-server:
@@ -116,8 +116,8 @@ services:
     # command: python dht_test.py 
     # command: python distributed_chatbot.py 
     # command: python client_gui.py 
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    command: sleep infinity 
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
+    # command: sleep infinity 
     hostname: client
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
@@ -129,4 +129,4 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      # - "5678:5678"
+      - "5679:5678"
