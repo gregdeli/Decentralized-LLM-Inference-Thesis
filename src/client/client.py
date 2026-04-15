@@ -40,6 +40,7 @@ class Client:
 
         self.llm = LLM.load(model_path, is_client=True, time_it=time_it)
         self.model = self.llm.model
+        self.chat_history = []
 
         head_info = self.chain.get_head_server_info()
         if not head_info:
@@ -120,7 +121,10 @@ class Client:
             return warning
 
         prompt = self.llm.apply_chat_template(prompt)
-        input_ids = self.llm.preprocessor.encode(prompt)
+        self.chat_history.append(prompt)
+
+        full_prompt = "".join(self.chat_history)
+        input_ids = self.llm.preprocessor.encode(full_prompt)
 
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
@@ -289,6 +293,7 @@ class Client:
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
                 token_gen_delay = time.perf_counter() - start_token_gen
                 #logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
+                self.chat_history.append(self.llm.preprocessor.tokenizer.eos_token)
                 break
 
             # Decode and yield the new token
@@ -299,6 +304,7 @@ class Client:
 
             tokens_generated += 1
 
+            self.chat_history.append(decoded_token)
             start = time.perf_counter()
             yield decoded_token
             yield_delay = time.perf_counter() - start

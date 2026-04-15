@@ -42,6 +42,8 @@ class LLM:
         self.device = device
         self.dtype = dtype
 
+        self.chat_history = []
+
     """
     High-level API for loading a Llama 3.2 model and generating text.
     
@@ -152,8 +154,10 @@ class LLM:
     ) -> Union[str, Iterator[str]]:
 
         prompt = self.apply_chat_template(prompt)
+        self.chat_history.append(prompt)
 
-        input_ids = self.preprocessor.encode(prompt)
+        full_prompt = "".join(self.chat_history)
+        input_ids = self.preprocessor.encode(full_prompt)
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
@@ -246,12 +250,14 @@ class LLM:
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
+                self.chat_history.append(self.preprocessor.tokenizer.eos_token)
                 break
 
             # Decode and yield the new token
             decoded_token = self.preprocessor.decode(next_token)
             yield decoded_token
 
+            self.chat_history.append(decoded_token)
             input = next_token
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
