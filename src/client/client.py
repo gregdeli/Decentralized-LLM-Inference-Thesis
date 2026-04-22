@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
+
 class Client:
     def __init__(
         self,
@@ -57,7 +58,15 @@ class Client:
         self.inference_response_event = threading.Event()
         self.final_activations = None
 
+        self.initial_inference_delay = 0.0
+        self.serialization_delay = 0.0
         self.head_communication_latency = 0.0
+        self.deserialization_delay = 0.0
+        self.final_inference_delay = 0.0
+        self.sample_delay = 0.0
+        self.decode_delay = 0.0
+        self.yield_delay = 0.0
+
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
 
@@ -65,7 +74,6 @@ class Client:
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
         grpc_thread.start()
 
-        
     def _run_grpc_server(self, grpc_addr):
         # Start GRPC server
         server = grpc.server(
@@ -78,23 +86,27 @@ class Client:
         nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), server)
         server.add_insecure_port(grpc_addr)
         server.start()
-        
+
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
         server.wait_for_termination()
 
     def print_chain_status(self):
         # self.chain.print_chain_status()
         print("Chain Status:")
-        pprint(self.chain.get_chain_info()) # Isws pretty print kalutera
+        pprint(self.chain.get_chain_info())  # Isws pretty print kalutera
 
     def trigger_reallocation(self):
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
         if self.total_rate > 0:
-            logger.info(f"Triggering reallocation with Total Rate: {self.total_rate:.2f} layers/sec...")
+            logger.info(
+                f"Triggering reallocation with Total Rate: {self.total_rate:.2f} layers/sec..."
+            )
 
-            request = nodeservice_pb2.ReallocateRequest(total_rate=self.total_rate, start_layer_index=0)
+            request = nodeservice_pb2.ReallocateRequest(
+                total_rate=self.total_rate, start_layer_index=0
+            )
 
             try:
                 self.head_server_stub.Reallocate(request)
@@ -116,7 +128,7 @@ class Client:
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         if not all_layers_loaded:
-            warning = "<span style=\"color:red\">Not all model layers have been loaded on the server chain. Cannot initiate the generation task.</span>"
+            warning = '<span style="color:red">Not all model layers have been loaded on the server chain. Cannot initiate the generation task.</span>'
             logger.warning(warning)
             return warning
 
@@ -136,10 +148,26 @@ class Client:
             )
 
         if stream:
-            return self._generate_stream(prompt_length, input_ids, max_new_tokens, max_returned_tokens, temperature, top_p, time_it)
+            return self._generate_stream(
+                prompt_length,
+                input_ids,
+                max_new_tokens,
+                max_returned_tokens,
+                temperature,
+                top_p,
+                time_it,
+            )
 
         # If not streaming the output
-        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, max_returned_tokens, temperature, top_p, time_it)
+        decoded_text = self._generate_fn(
+            prompt_length,
+            input_ids,
+            max_new_tokens,
+            max_returned_tokens,
+            temperature,
+            top_p,
+            time_it,
+        )
         return decoded_text
 
     @torch.no_grad()
@@ -157,21 +185,33 @@ class Client:
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
+
+        start_time = time.perf_counter()
         for _ in range(max_new_tokens):
             # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
 
             # Call the remote server chain
             request = tensor_to_request(
-                x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
+                x,
+                max_returned_tokens=max_returned_tokens,
+                seq_length=seq_length,
+                input_pos=input_pos.item() if input_pos is not None else None,
             )
+            request.response_address = self.grpc_addr
 
-            response = self.head_server_stub.RunLayers(request)
+            ack_response = self.head_server_stub.RunLayers(request)
 
-            if response.HasField("error_message"):
-                logger.error(f"Server-side failure: {response.error_message}")
+            if ack_response.HasField("error_message"):
+                logger.error(f"Server-side failure: {ack_response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
                 return
+
+            is_set = self.inference_response_event.wait(timeout=15)
+            if not is_set:
+                logger.error("Timeout waiting for response from Tail server.")
+
+            response = self.inference_response
 
             # Capture TOTAL RATE
             if response.total_rate > 0:
@@ -187,17 +227,24 @@ class Client:
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
+                self.chat_history.append(self.llm.preprocessor.tokenizer.eos_token)
                 break
 
             generated_ids.append(next_token)
             input_tensor = next_token
-            current_pos = prompt_length + len(generated_ids)
+            current_pos = prompt_length + (len(generated_ids))
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
 
-        all_generated_ids = torch.cat(generated_ids, dim=1)
+        elapsed_time = time.perf_counter() - start_time
+        throughput = len(generated_ids) / elapsed_time if elapsed_time > 0 else 0
 
-        return self.llm.preprocessor.decode(all_generated_ids)
+        all_generated_ids = torch.cat(generated_ids, dim=1)
+        all_generated_tokens = self.llm.preprocessor.decode(all_generated_ids)
+
+        self.last_inference_stats = {"latency": elapsed_time, "throughput": throughput}
+
+        return all_generated_tokens
 
     @torch.no_grad()
     def _generate_stream(
@@ -220,19 +267,19 @@ class Client:
             # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
-            initial_inference_delay = time.perf_counter() - start_token_gen
-
-            # logger.info(f"\nInitial Inference Delay: {initial_inference_delay:.6f}")
+            self.initial_inference_delay = time.perf_counter() - start_token_gen
 
             # Call the remote server chain
             start = time.perf_counter()
             request = tensor_to_request(
-                x, max_returned_tokens=max_returned_tokens, seq_length=seq_length, input_pos=input_pos.item() if input_pos is not None else None
+                x,
+                max_returned_tokens=max_returned_tokens,
+                seq_length=seq_length,
+                input_pos=input_pos.item() if input_pos is not None else None,
             )
             request.response_address = self.grpc_addr
 
-            serialization_delay = time.perf_counter() - start
-            #logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+            self.serialization_delay = time.perf_counter() - start
 
             start = time.perf_counter()
             ack_response = self.head_server_stub.RunLayers(request)
@@ -241,20 +288,22 @@ class Client:
             total_rpc_time = end - start
             # logger.info(f"Total HEAD RPC Delay: {total_rpc_time:.6f}")
             if ack_response.processing_time > 0:
-                    total_rpc_time = end - start
-                    current_network_latency = total_rpc_time - ack_response.processing_time
+                total_rpc_time = end - start
+                current_network_latency = total_rpc_time - ack_response.processing_time
 
-                    if self.head_communication_latency > 0.0:
-                        self.head_communication_latency = (0.7 * self.head_communication_latency) + (0.3 * current_network_latency)
-                    else:
-                        self.head_communication_latency = current_network_latency
-                        
-                    #logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
+                if self.head_communication_latency > 0.0:
+                    self.head_communication_latency = (0.7 * self.head_communication_latency) + (
+                        0.3 * current_network_latency
+                    )
+                else:
+                    self.head_communication_latency = current_network_latency
+
+                # logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
 
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
-                yield f"<br><span style=\"color:red\">Server-side failure: {ack_response.error_message} Aborting generation task. Please try again.</span>"
+                yield f'<br><span style="color:red">Server-side failure: {ack_response.error_message} Aborting generation task. Please try again.</span>'
                 return
 
             # Wait for the Tail to set the response_event
@@ -263,7 +312,7 @@ class Client:
             if not is_set:
                 logger.error("Timeout waiting for response from Tail server.")
                 yield "Error: Timeout"
-            
+
             response = self.inference_response
 
             # Capture the TOTAL PROCESSING RATE
@@ -272,51 +321,40 @@ class Client:
 
             start = time.perf_counter()
             x = message_to_tensor(response)
-            deserialization_delay = time.perf_counter() - start
-            #logger.info(f"Deserialization Delay: {deserialization_delay:.6f}")
+            self.deserialization_delay = time.perf_counter() - start
 
             # Run clients final layers
-            # logits = self.model.forward_client_final(x)
             start = time.perf_counter()
             # logits = self.model.forward_client_final(self.final_activations)
             logits = self.model.forward_client_final(x)
-            final_inference_delay = time.perf_counter() - start
-            #logger.info(f"Final Inference Delay: {final_inference_delay:.6f}")
+            self.final_inference_delay = time.perf_counter() - start
 
             # Sample the next token
             start = time.perf_counter()
             next_token = self.llm.sample_logits(logits, temperature, top_p)
-            sample_delay = time.perf_counter() - start
-            #logger.info(f"Sampling Delay: {sample_delay:.6f}")
+            self.sample_delay = time.perf_counter() - start
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
-                token_gen_delay = time.perf_counter() - start_token_gen
-                #logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
                 self.chat_history.append(self.llm.preprocessor.tokenizer.eos_token)
                 break
 
             # Decode and yield the new token
             start = time.perf_counter()
             decoded_token = self.llm.preprocessor.decode(next_token)
-            decode_delay = time.perf_counter() - start
-            #logger.info(f"Decoding Delay: {decode_delay:.6f}")
+            self.decode_delay = time.perf_counter() - start
 
             tokens_generated += 1
 
             self.chat_history.append(decoded_token)
             start = time.perf_counter()
             yield decoded_token
-            yield_delay = time.perf_counter() - start
-            #logger.info(f"Yield Delay: {yield_delay:.6f}")
+            self.yield_delay = time.perf_counter() - start
 
             input_tensor = next_token
             current_pos = prompt_length + (i + 1)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
-
-            token_gen_delay = time.perf_counter() - start_token_gen
-            #logger.info(f"Token Generation Delay: {token_gen_delay:.6f}")
 
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0

@@ -6,18 +6,31 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
-from nicegui import ui, app
+from nicegui import ui, run, app
 from client.client import Client
-from core.remote.utils import get_bootstrap_peer_address, discover_bootstrap_node_address, get_ip_address
-from core.p2p.chain_manager import HEAD_KEY, TAIL_KEY, TOTAL_LAYERS_KEY, ALL_LAYERS_KEY, BACKUPS_KEY, DIGITS_SHOW
+from core.remote.utils import (
+    get_bootstrap_peer_address,
+    discover_bootstrap_node_address,
+    get_ip_address,
+)
+from core.p2p.chain_manager import (
+    HEAD_KEY,
+    TAIL_KEY,
+    TOTAL_LAYERS_KEY,
+    ALL_LAYERS_KEY,
+    BACKUPS_KEY,
+    DIGITS_SHOW,
+)
 
 logger = logging.getLogger(__name__)
 
+
 class UIReferences:
     def __init__(self):
-        self.global_labels = {}     # Global info labels
-        self.node_labels = {}       # Label references for each node id
-        self.last_topology = None   # Signature of the current chain structure
+        self.global_labels = {}  # Global info labels
+        self.node_labels = {}  # Label references for each node id
+        self.last_topology = None  # Signature of the current chain structure
+
 
 class AppState:
     def __init__(self):
@@ -29,6 +42,7 @@ class AppState:
 state = AppState()
 
 GPRC_PORT = 5001
+
 
 async def initialize_client():
     load_dotenv()
@@ -58,19 +72,26 @@ async def initialize_client():
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
-        grpc_addr = grpc_addr
+        grpc_addr=grpc_addr,
     )
     logger.info("Client initialized.")
+
 
 # ----- UI Components -----
 def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[str, ui.label]:
     """
     Renders a single server node card on the Left Sidebar.
-    Roles: Head, Tail, Intermediate,
+    Roles: Head, Tail, Intermediate, Head_Tail
     """
     labels = {}
 
-    color = "green-100" if role == "Head" else "blue-100" if role == "Tail" else "orange-100" if role == "Intermediate" else "gray-100"
+    color = (
+        "green-100"
+        if role == "Head" or role == "Head_Tail"
+        else (
+            "blue-100" if role == "Tail" else "orange-100" if role == "Intermediate" else "gray-100"
+        )
+    )
 
     with ui.card().classes(f"w-full p-2 bg-{color} gap-2"):
         with ui.row().classes("w-full items-center justify-between"):
@@ -87,47 +108,65 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
             layers = info.get("layers")
             if layers:
                 num_layers = layers[1] - layers[0] + 1
-                labels["layers"] = ui.label(f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}").classes("font-mono text-sm")
+                labels["layers"] = ui.label(
+                    f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
+                ).classes("font-mono text-sm")
 
         layers_loaded = info.get("layers_loaded", False)
-        labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes("font-mono text-sm")
+        labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes(
+            "font-mono text-sm"
+        )
 
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
 
         if "processing_rate" in info:
             processing_rate = info.get("processing_rate", 0.0)
-            labels["processing_rate"] = ui.label(f"Processing Rate: {processing_rate:.6f} layers/sec").classes("font-mono text-sm")
+            labels["processing_rate"] = ui.label(
+                f"Processing Rate: {processing_rate:.6f} layers/sec"
+            ).classes("font-mono text-sm")
 
         if "inference_delay" in info:
             inference_latency = info.get("inference_delay", 0.0)
-            labels["inference_delay"] = ui.label(f"Inference Delay: {inference_latency:.6f}s").classes("font-mono text-sm")
+            labels["inference_delay"] = ui.label(
+                f"Inference Delay: {inference_latency:.6f}s"
+            ).classes("font-mono text-sm")
 
         if "grpc_overhead" in info:
             grpc_overhead = info.get("grpc_overhead", 0.0)
-            labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes("font-mono text-sm")
+            labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes(
+                "font-mono text-sm"
+            )
 
         if "memory_usage" in info and "memory_limit" in info:
             mem_usage = info["memory_usage"]
             mem_limit = info["memory_limit"]
-            labels["memory"] = ui.label(f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB").classes("font-mono text-sm")
+            labels["memory"] = ui.label(
+                f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB"
+            ).classes("font-mono text-sm")
 
         if "available_memory" in info:
             avail_mem = info["available_memory"]
-            labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes("font-mono text-sm")
+            labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes(
+                "font-mono text-sm"
+            )
 
         if "vram_usage" in info and "vram_limit" in info:
             vram_usage = info["vram_usage"]
             vram_limit = info["vram_limit"]
-            labels["vram"] = ui.label(f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB").classes("font-mono text-sm")
+            labels["vram"] = ui.label(
+                f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB"
+            ).classes("font-mono text-sm")
 
         if "available_vram" in info:
             avail_vram = info["available_vram"]
-            labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes("font-mono text-sm")
+            labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes(
+                "font-mono text-sm"
+            )
 
         if "address" in info:
             ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
-    
+
     return labels
 
 
@@ -156,7 +195,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
     # Process Active Chain
     server_list = chain_info.get("servers", [])
     for s in server_list:
-        role = "Head" if s["id"] == chain_info[HEAD_KEY] else "Tail" if s["id"] == chain_info[TAIL_KEY] else "Intemediate"
+        role = (
+            "Head"
+            if s["id"] == chain_info[HEAD_KEY]
+            else "Tail" if s["id"] == chain_info[TAIL_KEY] else "Intemediate"
+        )
         current_topology.append((s["id"], role, len(s)))
 
     # Process Backups
@@ -172,13 +215,17 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
         # Global Keys
         if "total_layers" in state.ui.global_labels:
-            state.ui.global_labels["total_layers"].text = f"Total Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
+            state.ui.global_labels["total_layers"].text = (
+                f"Total Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
+            )
 
         if "all_loaded" in state.ui.global_labels:
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
             state.ui.global_labels["all_loaded"].text = f"All Layers Loaded: {all_loaded}"
-            state.ui.global_labels["all_loaded"].classes(replace="text-green-600" if all_loaded else "text-red-600")
-        
+            state.ui.global_labels["all_loaded"].classes(
+                replace="text-green-600" if all_loaded else "text-red-600"
+            )
+
         # Node Info
         def update_node_labels(nodes_list: List[Dict[str, Any]]):
             for node_info in nodes_list:
@@ -189,31 +236,47 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     # Update Layers
                     if "layers" in labels and "layers" in node_info:
                         l = node_info["layers"]
-                        labels["layers"].text = f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}"
-                    
+                        labels["layers"].text = (
+                            f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}"
+                        )
+
                     # Update Loaded Status
                     if "layers_loaded" in labels:
-                        labels["layers_loaded"].text = f"Layers Loaded: {node_info.get('layers_loaded', False)}"
-                    
+                        labels["layers_loaded"].text = (
+                            f"Layers Loaded: {node_info.get('layers_loaded', False)}"
+                        )
+
                     if "processing_rate" in labels:
-                        labels["processing_rate"].text = f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} layers/sec"
+                        labels["processing_rate"].text = (
+                            f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} layers/sec"
+                        )
 
                     if "inference_delay" in labels:
-                        labels["inference_delay"].text = f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"
+                        labels["inference_delay"].text = (
+                            f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"
+                        )
 
                     if "grpc_overhead" in labels:
-                        labels["grpc_overhead"].text = f"GRPC Overhead: {node_info.get('grpc_overhead', 0.0):.6f}s"
-                    
+                        labels["grpc_overhead"].text = (
+                            f"GRPC Overhead: {node_info.get('grpc_overhead', 0.0):.6f}s"
+                        )
+
                     # Update Memory
-                    if "memory" in labels and "memory_usage" in node_info and "memory_limit" in node_info:
-                        labels["memory"].text = f"Memory Usage: {int(node_info['memory_usage'])}/{int(node_info['memory_limit'])} MB"
-                        
+                    if (
+                        "memory" in labels
+                        and "memory_usage" in node_info
+                        and "memory_limit" in node_info
+                    ):
+                        labels["memory"].text = (
+                            f"Memory Usage: {int(node_info['memory_usage'])}/{int(node_info['memory_limit'])} MB"
+                        )
+
                     # Update VRAM
                     if "vram" in labels and "vram_usage" in node_info and "vram_limit" in node_info:
-                        labels["vram"].text = f"VRAM Usage: {int(node_info['vram_usage'])}/{int(node_info['vram_limit'])} MB"
+                        labels["vram"].text = (
+                            f"VRAM Usage: {int(node_info['vram_usage'])}/{int(node_info['vram_limit'])} MB"
+                        )
 
-                    
-        
         update_node_labels(server_list)
         update_node_labels(backups_list)
 
@@ -228,20 +291,30 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         with chain_container:
             spinner
         await asyncio.sleep(0.005)
-    
+
         with chain_container:
             # Layer Status
             ui.label("Global Keys").classes("font-bold text-lg")
             total_layers = chain_info.get(TOTAL_LAYERS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
             state.ui.global_labels["total_layers"] = ui.label(f"Total Layers: {total_layers}")
-            state.ui.global_labels["all_loaded"] = ui.label(f"All Layers Loaded: {all_loaded}").classes("text-green-600" if all_loaded else "text-red-600")
+            state.ui.global_labels["all_loaded"] = ui.label(
+                f"All Layers Loaded: {all_loaded}"
+            ).classes("text-green-600" if all_loaded else "text-red-600")
 
             # Active Chain Info
             ui.label("Active Chain").classes("font-bold text-lg")
             for server_info in server_list:
                 node_id = server_info["id"]
-                role = "Head" if node_id == chain_info[HEAD_KEY] else "Tail" if node_id == chain_info[TAIL_KEY] else "Intermediate"
+                role = (
+                    "Head_Tail"
+                    if node_id == chain_info[HEAD_KEY] and node_id == chain_info[TAIL_KEY]
+                    else (
+                        "Head"
+                        if node_id == chain_info[HEAD_KEY]
+                        else "Tail" if node_id == chain_info[TAIL_KEY] else "Intermediate"
+                    )
+                )
 
                 labels = render_server_card(node_id, role, server_info)
                 state.ui.node_labels[node_id] = labels
@@ -254,9 +327,9 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
                 labels = render_server_card(node_id, role, backup_info)
                 state.ui.node_labels[node_id] = labels
-            
+
             chain_container.remove(spinner)
-    
+
     state.ui.last_topology = current_topology
 
 
@@ -290,7 +363,9 @@ async def generate(
 
     await asyncio.sleep(0.005)
 
-    token_generator = state.client.generate(prompt, max_new_tokens=500, stream=True)
+    token_generator = await run.io_bound(
+        state.client.generate, prompt, max_new_tokens=500, stream=True
+    )
 
     chat_container.remove(spinner)
 
@@ -309,7 +384,9 @@ async def generate(
                 await asyncio.sleep(0.001)
 
                 # Scroll to bottom
-                ui.run_javascript('var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight')
+                ui.run_javascript(
+                    'var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight'
+                )
     except (RuntimeError, AttributeError, grpc.RpcError) as e:
         state.is_generating = False
         ui.notify(f"Generation Failed: {str(e)}", type="negative")
@@ -338,10 +415,20 @@ async def generate(
         ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
 
         if state.client.total_rate > 0:
-            ui.button("Trigger Reallocation", on_click=lambda: trigger_reallocation(stats_container, chain_container)).classes("w-full")
+            ui.button(
+                "Trigger Reallocation",
+                on_click=lambda: trigger_reallocation(stats_container, chain_container),
+            ).classes("w-full")
 
         ui.separator()
+        ui.label(f"Initial Inference Delay: {state.client.initial_inference_delay:.6f}s")
+        ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
         ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
+        ui.label(f"Deserialization Delay: {state.client.deserialization_delay:.6f}s")
+        ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
+        ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
+        ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
+        ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
 
 
 def stop_generation():
@@ -391,7 +478,11 @@ async def main_page():
 
             await refresh_chain_view(chain_container, full_rebuild=True)
 
-            ui.button("Refresh", icon="refresh", on_click=lambda: refresh_chain_view(chain_container, full_rebuild=True)).classes("w-full")
+            ui.button(
+                "Refresh",
+                icon="refresh",
+                on_click=lambda: refresh_chain_view(chain_container, full_rebuild=True),
+            ).classes("w-full")
 
             # Backgroud auto-refresh
             ui.timer(1.0, lambda: refresh_chain_view(chain_container))
@@ -399,21 +490,51 @@ async def main_page():
         # Center: Chat Area (Flexible Width)
         with ui.column().classes("flex-1 h-full relative p-4"):
             chat_container = (
-                ui.column().classes("w-full mx-auto flex-grow p-2 items-stretch overflow-y-auto overflow-x-hidden").props('id="chat-container"')
+                ui.column()
+                .classes(
+                    "w-full mx-auto flex-grow p-2 items-stretch overflow-y-auto overflow-x-hidden"
+                )
+                .props('id="chat-container"')
             )
 
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
-                msg_input = ui.input(placeholder="Enter prompt...").classes("flex-1").props("outlined rounded")
+                msg_input = (
+                    ui.input(placeholder="Enter prompt...")
+                    .classes("flex-1")
+                    .props("outlined rounded")
+                )
 
                 send_btn = ui.button(
-                    icon="send", on_click=lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn)
+                    icon="send",
+                    on_click=lambda: generate(
+                        msg_input,
+                        chat_container,
+                        stats_container,
+                        chain_container,
+                        send_btn,
+                        stop_btn,
+                    ),
                 ).props("flat round color=primary")
-                stop_btn = ui.button(icon="stop", on_click=stop_generation).props("flat round color=primary").classes("hidden")
+                stop_btn = (
+                    ui.button(icon="stop", on_click=stop_generation)
+                    .props("flat round color=primary")
+                    .classes("hidden")
+                )
                 stop_btn.visible = False
 
                 # Bind Enter key
-                msg_input.on("keydown.enter", lambda: generate(msg_input, chat_container, stats_container, chain_container, send_btn, stop_btn))
+                msg_input.on(
+                    "keydown.enter",
+                    lambda: generate(
+                        msg_input,
+                        chat_container,
+                        stats_container,
+                        chain_container,
+                        send_btn,
+                        stop_btn,
+                    ),
+                )
 
         # Right Sidebar: Stats (Fixed Width)
         with ui.column().classes("w-1/4 h-full border-l border-gray-200 p-4"):

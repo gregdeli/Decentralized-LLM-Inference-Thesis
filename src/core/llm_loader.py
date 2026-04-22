@@ -8,7 +8,12 @@ import gc
 from safetensors.torch import load_file
 
 from core.model import Llama3
-from core.utils import remove_model_prefix, is_instruct_model, get_relevant_safetensor_files, get_dtype_from_config
+from core.utils import (
+    remove_model_prefix,
+    is_instruct_model,
+    get_relevant_safetensor_files,
+    get_dtype_from_config,
+)
 
 from transformers import AutoTokenizer
 
@@ -27,7 +32,7 @@ class LLM:
         is_client: bool = True,
         layers_loaded: Tuple[int, int] = None,
         device: str = "cpu",
-        dtype: torch.dtype = torch.float32
+        dtype: torch.dtype = torch.float32,
     ) -> None:
         self.model = model
         self.preprocessor = preprocessor
@@ -138,7 +143,7 @@ class LLM:
             is_client=is_client,
             layers_loaded=layers_to_load,
             device=device,
-            dtype=dtype
+            dtype=dtype,
         )
 
     @torch.no_grad()
@@ -171,7 +176,12 @@ class LLM:
             if time_it:
                 start = time.perf_counter()
             # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=self.device, dtype=self.dtype)
+            self.model.set_kv_cache(
+                batch_size=1,
+                max_seq_length=max_returned_tokens,
+                device=self.device,
+                dtype=self.dtype,
+            )
             self.kv_cache_initialized = True
             if time_it:
                 elapsed = time.perf_counter() - start
@@ -181,7 +191,9 @@ class LLM:
         elif self.prev_generated_seq_length < max_returned_tokens:
             device = self.model.mask_cache.device
             self.model.clear_kv_cache()
-            self.model.set_kv_cache(batch_size=1, max_seq_length=max_returned_tokens, device=device, dtype=self.dtype)
+            self.model.set_kv_cache(
+                batch_size=1, max_seq_length=max_returned_tokens, device=device, dtype=self.dtype
+            )
 
         self.prev_generated_seq_length = max_returned_tokens
 
@@ -189,7 +201,9 @@ class LLM:
             return self._generate_stream(input_ids, max_new_tokens, temperature, top_p)
 
         # If not streaming the output
-        decoded_text = self._generate_fn(prompt_length, input_ids, max_new_tokens, temperature, top_p, time_it)
+        decoded_text = self._generate_fn(
+            prompt_length, input_ids, max_new_tokens, temperature, top_p, time_it
+        )
 
         return decoded_text
 
@@ -283,6 +297,10 @@ class LLM:
         """Applies temperature and top-p (nucleus) sampling to logits."""
         logits = logits[:, -1, :]
 
+        # Greedy Decoding
+        if temperature <= 0:
+            next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
         if top_p > 0.0:
             # Sort logits and compute probabilities
             sorted_logits, sorted_indices = torch.sort(logits, descending=True)
@@ -295,15 +313,14 @@ class LLM:
             sorted_indices_to_remove[..., 0] = 0
 
             # Create a mask to set the logits of tokens to remove to -inf
-            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            indices_to_remove = sorted_indices_to_remove.scatter(
+                1, sorted_indices, sorted_indices_to_remove
+            )
             logits[indices_to_remove] = -float("Inf")
 
         if temperature > 0.0:
             probs = torch.softmax(logits / temperature, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
-        else:
-            # Greedy decoding
-            next_token = torch.argmax(logits, dim=-1, keepdim=True)
 
         return next_token
 
