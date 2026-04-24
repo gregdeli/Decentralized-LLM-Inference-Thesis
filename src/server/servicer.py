@@ -37,7 +37,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         input_pos_val = request.input_pos if request.HasField("input_pos") else None
         input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
-        partial_rate = request.partial_rate
+        # partial_rate = request.partial_rate
         response_address = request.response_address
 
         # Run the inference logic
@@ -45,14 +45,12 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             input_tensor, 
             max_returned_tokens, 
             seq_length, input_pos, 
-            partial_rate,
             response_address
         )
 
         end = time.perf_counter()
 
         total_grpc_time = end - start
-        # my_total_grpc_time = total_grpc_time - ack_response.processing_time
         self.server_node.grpc_overhead = total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
         
         logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")

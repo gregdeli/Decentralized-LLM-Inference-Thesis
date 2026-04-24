@@ -36,6 +36,7 @@ from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import (
     ChainManager,
+    ChainStatus,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
     EXPIRATION_S,
@@ -44,7 +45,7 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-RESERVED_MEM_MB = 500  # Memory reserved for system overhead
+RESERVED_MEM_MB = 200  # Memory reserved for system overhead
 
 
 class Server:
@@ -377,7 +378,6 @@ class Server:
         max_returned_tokens: int,
         seq_length: int = None,
         input_pos: torch.Tensor = None,
-        incoming_partial_rate: float = 0.0,
         response_address: str = None,
     ) -> nodeservice_pb2.InferenceResponse:
         """
@@ -417,9 +417,6 @@ class Server:
             f"Layers/sec: {self.layers_per_second:.2f} "
         )
 
-        # Calculate partial rate to send forward
-        my_partial_rate = incoming_partial_rate + self.layers_per_second
-
         # Move output tensor back to the cpu for serialization
         h = h.cpu()
 
@@ -436,7 +433,6 @@ class Server:
                 return
 
             response = tensor_to_response(h)
-            response.total_rate = my_partial_rate
 
             # Connect to Client
             try:
@@ -449,9 +445,7 @@ class Server:
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 
-            return nodeservice_pb2.InferenceResponse(
-                processing_time=client_response.processing_time, total_rate=0.0
-            )
+            return nodeservice_pb2.InferenceResponse(processing_time=client_response.processing_time)
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
@@ -467,7 +461,6 @@ class Server:
             input_pos=input_pos.item() if input_pos is not None else None,
         )
 
-        request.partial_rate = my_partial_rate
         request.response_address = response_address
 
         try:
@@ -491,7 +484,6 @@ class Server:
                         error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
                     )
 
-        # return nodeservice_pb2.InferenceResponse(processing_time=response.processing_time)
         return response
 
     def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
@@ -502,7 +494,7 @@ class Server:
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
         )
 
-        num_total_layers = self.config["num_hidden_layers"]
+        num_total_layers = self.config.get("num_hidden_layers")
 
         # Calculate share
         # layers_to_load = num_total_layers * (my_rate / total_rate)
@@ -527,7 +519,7 @@ class Server:
         if self.chain.is_tail():
             # The tail takes whatever is left
             target_layer_count = num_total_layers - start_layer_index
-        elif target_layer_count < 1:
+        if target_layer_count < 1:
             target_layer_count = 1
         elif (start_layer_index + target_layer_count) >= num_total_layers:
             # Dont exceed the available layers
@@ -592,9 +584,8 @@ class Server:
                 return
 
             self.successor_stub = None
-            self.chain.dht.store(
-                ALL_LAYERS_KEY, False, EXPIRATION_S
-            )  # 'all_layers_loaded' -> False
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)  
+            self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             # Repair
             orphaned_layers = dead_successor_data.get("layers")
@@ -659,10 +650,11 @@ class Server:
                 else:
                     logger.info("No backup nodes found. Setting this node as the tail...")
 
-                # Set this node as the TAIL
+                # If no backup node is found or the backup cant load the orphaned layers, set this node as the TAIL
                 self.chain.update_chain_tail(self.chain.node_id)
                 self.chain.update_successor(new_successor_data=None)
                 self.chain.update_all_layers_loaded()
+                self.chain.update_chain_status(ChainStatus.UNREADY)
 
     def opportunistic_takeover(
         self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
@@ -915,6 +907,7 @@ def serve():
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
+    # Load the server's assigned layers
     server_node._load_llm()
 
     # Profile if backup node for the opportunistic takeover feature

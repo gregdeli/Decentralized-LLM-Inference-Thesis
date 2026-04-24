@@ -17,7 +17,7 @@ from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager
+from core.p2p.chain_manager import ChainManager, ChainStatus
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,9 @@ class Client:
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
+        # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation  
+        self.total_rate = self.chain.gather_total_rate()
+
         if self.total_rate > 0:
             logger.info(
                 f"Triggering reallocation with Total Rate: {self.total_rate:.2f} layers/sec..."
@@ -109,7 +112,15 @@ class Client:
             )
 
             try:
+                self.chain.update_chain_status(ChainStatus.REALLOCATING)
+
                 self.head_server_stub.Reallocate(request)
+
+                if self.chain.get_all_layers_loaded():
+                    self.chain.update_chain_status(ChainStatus.READY)
+                else:
+                    self.chain.update_chain_status(ChainStatus.UNREADY)
+                    
                 logger.info("Reallocation triggered successfully...")
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
@@ -214,8 +225,7 @@ class Client:
             response = self.inference_response
 
             # Capture TOTAL RATE
-            if response.total_rate > 0:
-                self.total_rate = response.total_rate
+            self.total_rate = self.chain.gather_total_rate()
 
             x = message_to_tensor(response)
 
@@ -316,8 +326,7 @@ class Client:
             response = self.inference_response
 
             # Capture the TOTAL PROCESSING RATE
-            if response.total_rate > 0:
-                self.total_rate = response.total_rate
+            self.total_rate = self.chain.gather_total_rate()
 
             start = time.perf_counter()
             x = message_to_tensor(response)

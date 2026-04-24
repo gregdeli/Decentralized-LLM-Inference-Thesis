@@ -14,11 +14,13 @@ from core.remote.utils import (
     get_ip_address,
 )
 from core.p2p.chain_manager import (
+    ChainStatus,
     HEAD_KEY,
     TAIL_KEY,
     TOTAL_LAYERS_KEY,
     ALL_LAYERS_KEY,
     BACKUPS_KEY,
+    STATUS_KEY,
     DIGITS_SHOW,
 )
 
@@ -223,8 +225,16 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
             state.ui.global_labels["all_loaded"].text = f"All Layers Loaded: {all_loaded}"
             state.ui.global_labels["all_loaded"].classes(
-                replace="text-green-600" if all_loaded else "text-red-600"
+                replace=f"text-lg {'text-green-600' if all_loaded else 'text-red-600'}"
             )
+
+        if "chain_status" in state.ui.global_labels:
+            current_status = chain_info.get(STATUS_KEY)
+            state.ui.global_labels["chain_status"].text = (
+                f"Chain Status: {current_status.value}"
+            )
+            status_color = "text-green-600" if current_status == ChainStatus.READY else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
+            state.ui.global_labels["chain_status"].classes(replace=f"text-lg {status_color}")
 
         # Node Info
         def update_node_labels(nodes_list: List[Dict[str, Any]]):
@@ -294,16 +304,22 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
         with chain_container:
             # Layer Status
-            ui.label("Global Keys").classes("font-bold text-lg")
+            ui.label("Global Keys").classes("font-bold text-xl")
             total_layers = chain_info.get(TOTAL_LAYERS_KEY)
+            current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
-            state.ui.global_labels["total_layers"] = ui.label(f"Total Layers: {total_layers}")
+
+            state.ui.global_labels["total_layers"] = ui.label(f"Total Layers: {total_layers}").classes("text-lg")
+
             state.ui.global_labels["all_loaded"] = ui.label(
                 f"All Layers Loaded: {all_loaded}"
-            ).classes("text-green-600" if all_loaded else "text-red-600")
+            ).classes(f"text-lg {'text-green-600' if all_loaded else 'text-red-600'}")
+
+            status_color = "text-green-600" if current_status == ChainStatus.READY else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
+            state.ui.global_labels["chain_status"] = ui.label(f"Chain Status: {current_status.value}").classes(f"text-lg {status_color}")
 
             # Active Chain Info
-            ui.label("Active Chain").classes("font-bold text-lg")
+            ui.label("Active Chain").classes("font-bold text-xl")
             for server_info in server_list:
                 node_id = server_info["id"]
                 role = (

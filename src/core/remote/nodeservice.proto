@@ -50,11 +50,10 @@ message InferenceRequest {
   optional int32 seq_length = 5;
   optional int32 input_pos = 6;
 
-  float partial_rate = 7;
-  string response_address = 8;
+  string response_address = 7;
 
   // For block-wise quantization
-  bytes block_scales = 9;
+  bytes block_scales = 8;
 }
 
 // The response message containing the resulting tensor.
@@ -64,11 +63,10 @@ message InferenceResponse {
   string dtype = 3;  
   optional string error_message = 4;
 
-  float total_rate = 5;
-  float processing_time = 6;
+  float processing_time = 5;
 
   // For block-wise quantization
-  bytes block_scales = 7;
+  bytes block_scales = 6;
 }
 
 message ReallocateRequest {
