@@ -494,10 +494,46 @@ class Server:
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
         )
 
+        # If this node's processing rate is much greater than the proceccing rate of its successor 
+        # it should take its layers and make it a backup
+        REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0   
+
+        if not self.chain.is_tail():
+            succ_info = self.chain.get_successor_info()
+            
+            successor_proc_rate = succ_info.get("processing_rate")
+
+            if self.layers_per_second > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
+                succ_layers = succ_info.get("layers")
+                succ_2_data = succ_info.get("successor")
+                succ_was_tail = self.chain.node_is_tail(succ_info.get("id"))
+                logger.info(
+                    f"Attempting to takeover layers: {succ_layers}, Successor^2 Data: {succ_2_data}, Was TAIL: {succ_was_tail}"
+                )
+
+                if self._can_load(layers=succ_layers):
+                    layers_to_load = (self.llm.layers_loaded[0], succ_layers[1])
+                    logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}")
+
+                    self._reload_llm(layers_to_load)
+                    self.chain.repair(layers_to_load, succ_2_data, succ_was_tail)
+                    self.chain.make_node_backup(succ_info.get("id"))
+
+                    # Send GRPC request to the weak node to unload its layers
+                    self.successor_stub.UnloadLayers(nodeservice_pb2.Empty())
+
+                    self._connect_to_successor()
+
+                    total_system_rate -= successor_proc_rate
+                
+                else:
+                    logger.info("Cannot load layers. Continuing with the layer reallocation...")
+
+
+        # ---- Reallocation ----
         num_total_layers = self.config.get("num_hidden_layers")
 
         # Calculate share
-        # layers_to_load = num_total_layers * (my_rate / total_rate)
         if total_system_rate > 0:
             # Epic equation
             ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
@@ -513,7 +549,6 @@ class Server:
         logger.info(f"Max Num Layers: {max_num_layers}")
 
         target_layer_count = min(int(round(ideal_layer_count)), max_num_layers)
-        # target_layer_count = max_num_layers if max_num_layers > ideal_layer_count else ideal_layer_count
 
         # Rounding logic
         if self.chain.is_tail():
@@ -538,15 +573,6 @@ class Server:
             logger.info("Layer assignment unchanged.")
 
         next_start_index = end_layer_index + 1
-        # else:
-        #     # Set this node as a backup
-        #     logger.info(f"Target Layer Count: {target_layer_count}. Setting this node as a backup")
-        #     # self.successor_stub = None
-        #     self.llm = None
-        #     self.num_local_layers = 0
-        #     self.chain.become_backup()
-
-        #     next_start_index = start_layer_index
 
         # Propagate to successor
         if not self.chain.is_tail() and self.successor_stub:
@@ -667,6 +693,7 @@ class Server:
         3. It sends a grpc request to the weak node, to unload its layers.
         """
         self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+        self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
         layers_to_takeover = weak_node_info.get("layers")
         weak_node_id = weak_node_info.get("id")
@@ -713,6 +740,12 @@ class Server:
             logger.info(
                 f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node."
             )
+        
+        # Update chain status
+        if self.chain.get_all_layers_loaded():
+            self.chain.update_chain_status(ChainStatus.READY)
+        else:
+            self.chain.update_chain_status(ChainStatus.UNREADY)
 
     def _connect_to_successor(self):
         """Establishes a gRPC connection to the successor node."""

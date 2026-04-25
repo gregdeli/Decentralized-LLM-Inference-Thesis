@@ -15,10 +15,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 30.0
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 30.0
 
 DIGITS_SHOW = 12
 
@@ -197,6 +197,20 @@ class ChainManager:
         if not self_info:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
+    
+    def get_successor_data(self) -> Optional[Dict[str, Any]]:
+        """Get the successor data for this node from the DHT"""
+        self_info = self._get_self_info()
+        return self_info.get("successor")
+    
+    def get_successor_info(self) -> Optional[Dict[str, Any]]:
+        """Get this nodes' successor info dict from the DHT"""
+        succ_data = self.get_successor_data()
+        succ_info = None
+        if succ_data:
+            succ_info = self.get_server_info(succ_data.get("id"))
+        
+        return succ_info
 
     def get_server_info(self, node_id: str) -> Optional[Dict[str, Any]]:
         return self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
@@ -406,7 +420,7 @@ class ChainManager:
         Apply chain recovery state after takeover/repair.
 
         - Marks the current node as active if it was a backup (opportunistic takeover).
-        - Updates predecessor / successor links in DHT so the chain topology reflects the new active node.
+        - Updates successor links in DHT so the chain topology reflects the new active node.
         - Optionally demotes the replaced node to backup and updates `BACKUPS_KEY`.
         - Updates the replacement node's layer assignment and successor pointer.
         - If the old node was tail, updates `TAIL_KEY`.
@@ -619,7 +633,7 @@ class ChainManager:
                     if layers and layers[1] == total_layers - 1:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
-                        if self.get_chain_status() != ChainStatus.REALLOCATING:
+                        if self.get_chain_status() not in (ChainStatus.REALLOCATING,  ChainStatus.TAKEOVER):
                             self.update_chain_status(ChainStatus.READY)
                     current_node_id = None  # End of chain
 

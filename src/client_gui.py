@@ -470,6 +470,11 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
 
     await refresh_chain_view(chain_container)
 
+def clear_chat():
+    if state.client:
+        state.client.chat_history = []
+        ui.notify("Chat History Cleared...")
+
 
 def run_background_init():
     asyncio.create_task(initialize_client())
@@ -538,6 +543,9 @@ async def main_page():
                     .classes("hidden")
                 )
                 stop_btn.visible = False
+
+                # Clear Chat button
+                ui.button(icon="delete", on_click=lambda: clear_chat()).props("flat round color=negative").tooltip("Clear Chat History")
 
                 # Bind Enter key
                 msg_input.on(
