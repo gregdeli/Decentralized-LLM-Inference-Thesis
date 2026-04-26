@@ -511,6 +511,8 @@ class ChainManager:
 
         Returns: the first weaker nodes' info if one is found along with its predecessors' info, otherwise (None, None)
         """
+        OPPRTUNISTIC_TAKEOVER_MULT_THRESHOLD = 1.5
+
         self_info = self._get_self_info()
         self_proc_rate = self_info.get("processing_rate")
         self_device = self_info.get("device")
@@ -546,7 +548,7 @@ class ChainManager:
                 current_node_id = next_node_id
                 continue
 
-            if (self_proc_rate > target_proc_rate) and (
+            if (self_proc_rate > target_proc_rate * OPPRTUNISTIC_TAKEOVER_MULT_THRESHOLD) and (
                 self_mem_limit and target_mem_limit and self_mem_limit >= target_mem_limit
             ):
                 return server_info, predecessor_info

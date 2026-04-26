@@ -662,11 +662,8 @@ class Server:
                                 )
 
                                 try:
-                                    channel = grpc.insecure_channel(backup_info.get("address"))
-                                    backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                                    backup_stub.LoadLayers(nodeservice_pb2.Empty())
-
                                     self._connect_to_successor()
+                                    self.successor_stub.LoadLayers(nodeservice_pb2.Empty())
                                     return
                                 except grpc.RpcError as e:
                                     logger.error(
@@ -674,7 +671,7 @@ class Server:
                                     )
                             else:
                                 logger.error(
-                                    f"The backup node cannot load the orphaned layers.\nSetting this node as the tail..."
+                                    f"The backup node cannot load the orphaned layers."
                                 )
                 else:
                     logger.info("No backup nodes found. Setting this node as the tail...")
@@ -871,7 +868,7 @@ def serve():
             server_node._update_memory_usage()
             server_node.chain.update_all_layers_loaded()
 
-    def _grpc_heartbeat_task(server_node: Server):
+    def _chain_health_monitor_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
@@ -917,10 +914,10 @@ def serve():
             if data == b"DISCOVER_BOOTSTRAP":
                 sock.sendto(response_b, addr)
 
-    grpc_heartbeat_thread = threading.Thread(
-        target=_grpc_heartbeat_task, args=(server_node,), daemon=True
+    chain_monitor_thread = threading.Thread(
+        target=_chain_health_monitor_task, args=(server_node,), daemon=True
     )
-    grpc_heartbeat_thread.start()
+    chain_monitor_thread.start()
 
     dht_heartbeat_thread = threading.Thread(
         target=_dht_heartbeat_task, args=(server_node,), daemon=True
