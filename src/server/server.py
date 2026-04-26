@@ -388,6 +388,9 @@ class Server:
                 error_message="A node in the chain does not have its layers loaded."
             )
 
+        # Set chain status
+        self.chain.update_chain_status(ChainStatus.RUNNING)
+
         # Ensure inputs are on the same device as the model
         device = self.llm.device
 

@@ -39,6 +39,8 @@ class AppState:
         self.client: Client = None
         self.is_generating = False
         self.ui = UIReferences()
+        self.max_new_tokens = 500
+        self.stream = True
 
 
 state = AppState()
@@ -348,6 +350,38 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
     state.ui.last_topology = current_topology
 
+def refresh_client_stats(client_stats_container: ui.row):
+    client_stats_container.clear()
+    with client_stats_container:
+        ui.label("Client").classes("text-lg font-bold")
+        ui.separator()
+        ui.label(f"Initial Inference Delay: {state.client.initial_inference_delay:.6f}s")
+        ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
+        ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
+        ui.label(f"Deserialization Delay: {state.client.deserialization_delay:.6f}s")
+        ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
+        ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
+        ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
+        ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
+
+
+def get_next_token(generator):
+    try:
+        return next(generator)
+    except StopIteration:
+        return None
+    
+async def update_response_message(response_message: ui.chat_message, text: str):
+    response_message.clear()
+    with response_message:
+        ui.markdown(text)
+    await asyncio.sleep(0.001)
+
+    # Scroll to bottom
+    ui.run_javascript(
+        'var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight'
+    )
+
 
 async def generate(
     input_element: ui.input,
@@ -380,35 +414,38 @@ async def generate(
     await asyncio.sleep(0.005)
 
     token_generator = await run.io_bound(
-        state.client.generate, prompt, max_new_tokens=500, stream=True
+        state.client.generate, prompt, max_new_tokens=int(state.max_new_tokens), stream=state.stream
     )
 
     chat_container.remove(spinner)
 
     full_response = ""
-    token_count = 0
-    try:
-        if token_generator:
-            for token in token_generator:
-                if not state.is_generating:
-                    break
-                full_response += token
-                response_message.clear()
-                with response_message:
-                    ui.markdown(full_response)
-                token_count += 1
-                await asyncio.sleep(0.001)
 
-                # Scroll to bottom
-                ui.run_javascript(
-                    'var el = document.getElementById("chat-container"); if (el) el.scrollTop = el.scrollHeight'
-                )
-    except (RuntimeError, AttributeError, grpc.RpcError) as e:
-        state.is_generating = False
-        ui.notify(f"Generation Failed: {str(e)}", type="negative")
-        send_btn.visible = True
-        stop_btn.visible = False
-        return
+    # If stream = False
+    if isinstance(token_generator, str):
+        full_response = token_generator
+        await update_response_message(response_message, full_response)
+
+    else:
+        try:
+            if token_generator:
+                while True:
+                    if not state.is_generating:
+                        break
+
+                    token = await run.io_bound(get_next_token, token_generator)
+
+                    if token is None:
+                        break
+
+                    full_response += token
+                    await update_response_message(response_message, full_response)
+        except (RuntimeError, AttributeError, grpc.RpcError) as e:
+            state.is_generating = False
+            ui.notify(f"Generation Failed: {str(e)}", type="negative")
+            send_btn.visible = True
+            stop_btn.visible = False
+            return
 
     state.is_generating = False
     send_btn.visible = True
@@ -424,7 +461,7 @@ async def generate(
 
     stats_container.clear()
     with stats_container:
-        ui.label("Performance").classes("text-lg font-bold")
+        ui.label("Generation").classes("text-lg font-bold")
         ui.separator()
         ui.label(f"Generation Time: {latency:.2f}s")
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
@@ -436,15 +473,6 @@ async def generate(
                 on_click=lambda: trigger_reallocation(stats_container, chain_container),
             ).classes("w-full")
 
-        ui.separator()
-        ui.label(f"Initial Inference Delay: {state.client.initial_inference_delay:.6f}s")
-        ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
-        ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
-        ui.label(f"Deserialization Delay: {state.client.deserialization_delay:.6f}s")
-        ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
-        ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
-        ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
-        ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
 
 
 def stop_generation():
@@ -470,10 +498,11 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
 
     await refresh_chain_view(chain_container)
 
-def clear_chat():
+def clear_chat(chat_container: ui.column):
     if state.client:
         state.client.chat_history = []
-        ui.notify("Chat History Cleared...")
+    chat_container.clear()
+    ui.notify("Chat History Cleared...")
 
 
 def run_background_init():
@@ -520,6 +549,19 @@ async def main_page():
 
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
+
+                # Generation Settings Row
+                with ui.column().classes("items-start"):
+                    ui.number('Max Tokens', min=1, max=8192, step=1, format='%d') \
+                        .bind_value(state, 'max_new_tokens') \
+                        .props("dense") \
+                        .classes("w-full")
+                    
+                    ui.checkbox('Stream') \
+                        .bind_value(state, 'stream') \
+                        .props("dense size=sm") \
+                        .classes("text-xs")
+
                 msg_input = (
                     ui.input(placeholder="Enter prompt...")
                     .classes("flex-1")
@@ -531,7 +573,7 @@ async def main_page():
                     on_click=lambda: generate(
                         msg_input,
                         chat_container,
-                        stats_container,
+                        generation_stats_container,
                         chain_container,
                         send_btn,
                         stop_btn,
@@ -545,7 +587,7 @@ async def main_page():
                 stop_btn.visible = False
 
                 # Clear Chat button
-                ui.button(icon="delete", on_click=lambda: clear_chat()).props("flat round color=negative").tooltip("Clear Chat History")
+                ui.button(icon="delete", on_click=lambda: clear_chat(chat_container)).props("flat round color=negative").tooltip("Clear Chat History")
 
                 # Bind Enter key
                 msg_input.on(
@@ -553,7 +595,7 @@ async def main_page():
                     lambda: generate(
                         msg_input,
                         chat_container,
-                        stats_container,
+                        generation_stats_container,
                         chain_container,
                         send_btn,
                         stop_btn,
@@ -563,9 +605,13 @@ async def main_page():
         # Right Sidebar: Stats (Fixed Width)
         with ui.column().classes("w-1/4 h-full border-l border-gray-200 p-4"):
             ui.label("Stats").classes("text-2xl font-bold")
-            stats_container = ui.column().classes("w-full gap-2")
-            with stats_container:
+            generation_stats_container = ui.column().classes("w-full gap-2")
+            with generation_stats_container:
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
+
+            client_stats_container = ui.column().classes("w-full gap-2")
+    
+            ui.timer(1.0, lambda: refresh_client_stats(client_stats_container))
 
 
 ui.run(title="Distributed LLM Client", port=8080, host="0.0.0.0")

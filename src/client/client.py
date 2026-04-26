@@ -253,6 +253,7 @@ class Client:
         all_generated_tokens = self.llm.preprocessor.decode(all_generated_ids)
 
         self.last_inference_stats = {"latency": elapsed_time, "throughput": throughput}
+        self.chain.update_chain_status(ChainStatus.READY)
 
         return all_generated_tokens
 
@@ -369,3 +370,4 @@ class Client:
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
         self.last_inference_stats = {"latency": elapsed_time, "throughput": throughput}
+        self.chain.update_chain_status(ChainStatus.READY)

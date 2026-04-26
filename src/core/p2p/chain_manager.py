@@ -633,7 +633,7 @@ class ChainManager:
                     if layers and layers[1] == total_layers - 1:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
-                        if self.get_chain_status() not in (ChainStatus.REALLOCATING,  ChainStatus.TAKEOVER):
+                        if self.get_chain_status() not in (ChainStatus.REALLOCATING,  ChainStatus.TAKEOVER, ChainStatus.RUNNING):
                             self.update_chain_status(ChainStatus.READY)
                     current_node_id = None  # End of chain
 
