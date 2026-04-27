@@ -476,7 +476,6 @@ class Server:
                 logger.warning(f"Successor failure detected during INFERENCE.")
                 dead_successor_data = self.chain.get_failed_successor_data()
                 if dead_successor_data:
-                    self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                     threading.Thread(target=self.repair_chain, daemon=True).start()
                     return nodeservice_pb2.InferenceResponse(
                         error_message="A node in the chain has failed. The chain is being repaired..."
@@ -632,6 +631,9 @@ class Server:
                 self._reload_llm(layers_to_load)
                 self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
                 self._connect_to_successor()
+
+                if self.chain.get_all_layers_loaded():
+                    self.chain.update_chain_status(ChainStatus.READY)
                 return
 
             # Else, try to find a backup node to take over
@@ -664,6 +666,9 @@ class Server:
                                 try:
                                     self._connect_to_successor()
                                     self.successor_stub.LoadLayers(nodeservice_pb2.Empty())
+
+                                    if self.chain.get_all_layers_loaded():
+                                        self.chain.update_chain_status(ChainStatus.READY)
                                     return
                                 except grpc.RpcError as e:
                                     logger.error(
@@ -883,24 +888,24 @@ def serve():
                 continue
 
             # Perform the health check on the successor
-            try:
-                server_node._connect_to_successor()
-                if server_node.successor_stub is not None:
-                    server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
-                    logger.info(f"Successor is ALIVE.")  # Debugging
-            except grpc.RpcError as e:
-                if (
-                    e.code() == grpc.StatusCode.UNAVAILABLE
-                    or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
-                ):
-                    logger.warning(
-                        f"Successor failure detected during HEARTBEAT CHECK."
-                    )  # Debugging
-                    server_node.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    server_node.repair_chain()
-                else:
-                    logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
-                    server_node.successor_stub = None
+            if server_node.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
+                try:
+                    server_node._connect_to_successor()
+                    if server_node.successor_stub is not None:
+                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                        logger.info(f"Successor is ALIVE.")  # Debugging
+                except grpc.RpcError as e:
+                    if (
+                        e.code() == grpc.StatusCode.UNAVAILABLE
+                        or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+                    ):
+                        logger.warning(
+                            f"Successor failure detected during HEALTH CHECK."
+                        )  # Debugging
+                        server_node.repair_chain()
+                    else:
+                        logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                        server_node.successor_stub = None
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""

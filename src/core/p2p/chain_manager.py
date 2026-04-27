@@ -81,7 +81,7 @@ class ChainManager:
 
         self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
 
-        # self.update_chain_status(ChainStatus.UNREADY)
+        self.update_chain_status(ChainStatus.UNREADY)
 
         self_info["successor"] = None
 
@@ -634,9 +634,12 @@ class ChainManager:
                     total_layers = self._get_num_total_layers()
                     if layers and layers[1] == total_layers - 1:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
-
-                        if self.get_chain_status() not in (ChainStatus.REALLOCATING,  ChainStatus.TAKEOVER, ChainStatus.RUNNING):
+                        
+                        current_chain_status = self.get_chain_status()
+                        if current_chain_status == ChainStatus.UNREADY:
                             self.update_chain_status(ChainStatus.READY)
+                        else:
+                            self.update_chain_status(current_chain_status)
                     current_node_id = None  # End of chain
 
             else:

@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=3
+      - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -38,7 +38,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=10
+      - NUM_LAYERS=6
       # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -68,8 +68,8 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=3
-      - ADDED_DELAY=0.08
+      - NUM_LAYERS=5
+      # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
     volumes:

@@ -17,7 +17,7 @@ from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager, ChainStatus
+from core.p2p.chain_manager import ChainManager, ChainStatus, HEARTBEAT_INTERVAL_S, ALL_LAYERS_KEY, EXPIRATION_S
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +43,9 @@ class Client:
         self.model = self.llm.model
         self.chat_history = []
 
-        head_info = self.chain.get_head_server_info()
-        if not head_info:
-            raise RuntimeError("Client could not find the head server.")
-
-        logger.info(f"Client successfully found head server. Address: {head_info['address']}")
-
-        head_server_addr = head_info["address"]
-
-        channel = create_grpc_channel(head_server_addr)
-        self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+        self.head_server_stub = None
+        self.head_server_stub_addr = None
+        self._connect_to_head()
 
         self.inference_response = None
         self.inference_response_event = threading.Event()
@@ -89,11 +82,68 @@ class Client:
 
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
         server.wait_for_termination()
+    
+    def _head_health_monitor_task(self):
+        while(True):
+            time.sleep(HEARTBEAT_INTERVAL_S)
+
+            try:
+                self._connect_to_head()
+                if self.head_server_stub is not None:
+                    self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    logger.info(f"HEAD is ALIVE.")
+            except grpc.Error as e:
+                if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    logger.warning(f"HEAD failure detected during health check")
+                    self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                    self.replace_head_server()
+                else:
+                    logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                    self.head_server_stub = None
+
+
+    def _connect_to_head(self):
+        head_info = self.chain.get_head_server_info()
+        head_server_addr = head_info.get("address")
+
+        if self.head_server_stub is not None and self.head_server_stub_addr == head_server_addr:
+            return
+
+        if not head_server_addr:
+            logger.warning("Head Server address not found.")
+            self.head_server_stub = None
+            return
+        
+        logger.info(f"Client successfully found head server. Address: {head_info['address']}")
+        
+        try:
+            channel = create_grpc_channel(head_server_addr)
+            grpc.channel_ready_future(channel).result(timeout=10)
+            self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+            self.head_server_stub_addr = head_server_addr
+            logger.info(f"Connection to head: {head_server_addr} established.")
+        except grpc.FutureTimeoutError:
+            logger.error(f"Connection to {head_server_addr} timed out.")
+            self.head_server_stub = None
+        except grpc.RpcError as e:
+            logger.error(
+                f"A gRPC error occurred while connecting to {head_server_addr}: {e.code().name}"
+            )
+            self.head_server_stub = None
 
     def print_chain_status(self):
-        # self.chain.print_chain_status()
         print("Chain Status:")
-        pprint(self.chain.get_chain_info())  # Isws pretty print kalutera
+        pprint(self.chain.get_chain_info())  
+    
+    def replace_head_server(self):
+        dead_head_info = self.chain.get_head_server_info()
+
+        if not dead_head_info:
+            logger.error("Could not retrieve HEAD data from DHT! Chain is broken.")
+            return
+
+        self.head_server_stub = None
+        # self.chain.
 
     def trigger_reallocation(self):
         """
