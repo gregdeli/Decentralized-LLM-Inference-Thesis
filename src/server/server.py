@@ -675,8 +675,8 @@ class Server:
                                         f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
                                     )
                             else:
-                                logger.error(
-                                    f"The backup node cannot load the orphaned layers."
+                                logger.info(
+                                    f"Backup Node {backup_id} cannot load the orphaned layers."
                                 )
                 else:
                     logger.info("No backup nodes found. Setting this node as the tail...")

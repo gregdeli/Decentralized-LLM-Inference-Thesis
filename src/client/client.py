@@ -1,6 +1,7 @@
 """Main client application logic"""
 
 from pprint import pprint
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Iterator
@@ -13,11 +14,12 @@ import torch
 
 from client.servicer import ClientServicer
 from core.llm_loader import LLM
+from core.utils import can_load
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager, ChainStatus, HEARTBEAT_INTERVAL_S, ALL_LAYERS_KEY, EXPIRATION_S
+from core.p2p.chain_manager import ChainManager, ChainStatus, HEARTBEAT_INTERVAL_S, ALL_LAYERS_KEY, EXPIRATION_S, DIGITS_SHOW
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,12 @@ class Client:
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht)
+
+        # Load Config
+        config_path = model_path / "config.json"
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        self.config = config
 
         self.llm = LLM.load(model_path, is_client=True, time_it=time_it)
         self.model = self.llm.model
@@ -79,27 +87,29 @@ class Client:
         nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), server)
         server.add_insecure_port(grpc_addr)
         server.start()
-
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
+
+        head_monitor_thread = threading.Thread(target=self._head_health_monitor_task, daemon=True)
+        head_monitor_thread.start()
+
         server.wait_for_termination()
     
     def _head_health_monitor_task(self):
         while(True):
             time.sleep(HEARTBEAT_INTERVAL_S)
-
-            try:
-                self._connect_to_head()
-                if self.head_server_stub is not None:
-                    self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
-                    logger.info(f"HEAD is ALIVE.")
-            except grpc.Error as e:
-                if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                    logger.warning(f"HEAD failure detected during health check")
-                    self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                    self.replace_head_server()
-                else:
-                    logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
-                    self.head_server_stub = None
+            if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
+                try:
+                    self._connect_to_head()
+                    if self.head_server_stub is not None:
+                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                        logger.info(f"HEAD is ALIVE.")
+                except grpc.RpcError as e:
+                    if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                        logger.warning(f"HEAD failure detected during HEALTH CHECK.")
+                        self.replace_head_server()
+                    else:
+                        logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                        self.head_server_stub = None
 
 
     def _connect_to_head(self):
@@ -143,7 +153,51 @@ class Client:
             return
 
         self.head_server_stub = None
-        # self.chain.
+        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) 
+        self.chain.update_chain_status(ChainStatus.REPAIRING)
+
+        orphaned_layers = dead_head_info.get("layers")
+        head_succ_data = dead_head_info.get("successor")
+        head_was_tail = self.chain.node_is_tail(dead_head_info.get('id'))
+        logger.info(
+            f"Attempting to replace HEAD. Orphaned layers: {orphaned_layers}, Successor^2 Data: {head_succ_data}, Was TAIL: {head_was_tail}"
+        )
+
+        # Find backup node replacement
+        logger.info("Searching for a backup node...")
+        backup_nodes = self.chain.get_backup_nodes()
+        if backup_nodes:
+            # Find backup node with enough memory
+            for backup_id in backup_nodes:
+                backup_info = self.chain.get_server_info(backup_id)
+                if backup_info:
+                    avail_mem = backup_info.get("available_memory")
+                    avail_vram = backup_info.get("available_vram")
+                    logger.info(
+                        f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
+                    )
+
+                    if can_load(config=self.config, layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
+                        self.chain.repair(orphaned_layers, head_succ_data, head_was_tail, replacee_was_head=True, replacement_node_id=backup_id)
+
+                        try:
+                            self._connect_to_head()
+                            self.head_server_stub.LoadLayers(nodeservice_pb2.Empty())
+
+                            if self.chain.get_all_layers_loaded():
+                                self.chain.update_chain_status(ChainStatus.READY)
+                            return 
+                        except grpc.RpcError as e:
+                            logger.error(
+                                f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
+                            )
+                    else:
+                        logger.info(f"Backup Node {backup_id} cannot load the orphaned layers.")
+        else:
+            logger.info("No backup nodes found.")
+
+        self.chain.update_chain_status(ChainStatus.UNREADY)
+
 
     def trigger_reallocation(self):
         """

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
 import logging
 from pathlib import Path
 import json
@@ -92,3 +92,36 @@ def update_config_layer_param_count(model_path: Path, param_count: int) -> None:
         json.dump(config, f, indent=2)
 
     logger.info(f"Updated {model_path}/config.json with total_transformer_layer_params: {param_count}")
+
+
+def can_load(
+    config: Dict[str, Any],
+    num_layers: Optional[int] = None,
+    layers: Optional[Tuple[int, int]] = None,
+    avail_mem: float = None,
+    avail_vram: float = None,
+) -> bool:
+        """Checks if a node can load a certain number of transformer layers based on avail_mem or avail_vram"""
+        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
+        max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram)
+        return num_layers <= max_num_layers
+
+def mem_to_num_layers(
+    config: Dict[str, Any],
+    avail_mem: Optional[float],
+    avail_vram: Optional[float],
+) -> int:
+    """Calculates how many transformer layers fit in the given available Memory/VRAM"""
+    total_layer_params = config.get("total_transformer_layer_params")
+    param_dtype = get_dtype_from_config(config)
+    bytes_per_param = param_dtype.itemsize
+    layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
+
+    if avail_vram:
+        available = avail_vram
+    else:
+        available = avail_mem
+    
+    max_num_layers = int(available // layer_memory_size_mb)
+    return min(max_num_layers, config.get("num_hidden_layers"))
+

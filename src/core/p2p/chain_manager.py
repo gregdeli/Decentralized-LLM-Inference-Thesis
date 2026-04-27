@@ -412,6 +412,7 @@ class ChainManager:
         layers: Tuple[int, int],
         replacee_succ_data: Optional[Dict[str, Any]],
         replacee_was_tail: Optional[bool],
+        replacee_was_head: Optional[bool] = False,
         replacee_node_id: Optional[str] = None,
         replacee_predecessor_info: Optional[Dict[str, Any]] = None,
         replacement_node_id: Optional[str] = None,
@@ -436,10 +437,14 @@ class ChainManager:
         """
         logger.info(f"Repairing chain on DHT...")
 
-        self_info = self._get_self_info()
+        self_is_client = replacee_was_head
+
+        # If the client replaces the head there is to self_info
+        if not self_is_client:
+            self_info = self._get_self_info()
 
         # If the node that instigated the repair was a backup (Opportunistic Takeover)
-        if self_info.get("is_backup"):
+        if not self_is_client and self_info.get("is_backup"):
             # Make it an active node
             logger.info(
                 f"[Opportunistic Takeover]: This node was a backup and is taking the place of a weak node..."
@@ -470,12 +475,17 @@ class ChainManager:
             backup_nodes.remove(replacement_node_id)
             self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
-            # Also update this nodes successor to be the replacement
-            new_successor_data = {
-                "id": replacement_node_id,
-                "address": replacement_info.get("address"),
-            }
-            self.update_successor(new_successor_data)
+            # Update this nodes successor to be the replacement
+            if not replacee_was_head:
+                new_successor_data = {
+                    "id": replacement_node_id,
+                    "address": replacement_info.get("address"),
+                }
+                self.update_successor(new_successor_data)
+            
+            # The Client instigated the repair and the replacement node is the new HEAD
+            else:
+                self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
 
         # If this node is the replacement
         else:
@@ -500,7 +510,8 @@ class ChainManager:
         self.update_all_layers_loaded()
 
         # Rebublish keys since the tail node could have died and heartbeat task would fail
-        self.republish_keys()
+        if not self_is_client:
+            self.republish_keys()
 
     def evaluate_takeover_eligibility(
         self,
