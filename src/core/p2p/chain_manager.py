@@ -15,10 +15,11 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 30.0
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 30.0
+# HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
 
@@ -189,7 +190,7 @@ class ChainManager:
             logger.error(f"Found head ID {head_id} but could not retrieve its info.")
             return None
 
-        logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
+        # logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
 
         return head_info
 
@@ -673,7 +674,10 @@ class ChainManager:
 
             else:
                 self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-                self.update_chain_status(ChainStatus.UNREADY)
+
+                # When repairing it is expected for some layers to not be loaded
+                if not self.get_chain_status() == ChainStatus.REPAIRING:
+                    self.update_chain_status(ChainStatus.UNREADY)
                 break
 
     # ---- Server info subkey update methods ----

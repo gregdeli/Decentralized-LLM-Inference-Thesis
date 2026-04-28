@@ -135,11 +135,6 @@ class Server:
         # Client Stub
         self.client_stub = None
 
-        # If all layers are loaded then this node acts as a backup and doesn't load any layers
-        # if self.chain.is_backup():
-        #     self._update_memory_usage()
-        #     return
-
     def _load_llm(
         self,
         time_it: bool = False,
@@ -393,13 +388,13 @@ class Server:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
+        # Set chain status
+        self.chain.update_chain_status(ChainStatus.RUNNING)
+
         if not self.llm:
             return nodeservice_pb2.InferenceResponse(
                 error_message="A node in the chain does not have its layers loaded."
             )
-
-        # Set chain status
-        self.chain.update_chain_status(ChainStatus.RUNNING)
 
         # Ensure inputs are on the same device as the model
         device = self.llm.device

@@ -58,6 +58,8 @@ class Client:
         self.model = self.llm.model
         self.chat_history = []
 
+        self._repair_lock = threading.Lock()
+
         self.head_server_stub = None
         self.head_server_stub_addr = None
         self._connect_to_head()
@@ -157,68 +159,83 @@ class Client:
         pprint(self.chain.get_chain_info())
 
     def replace_head_server(self):
-        dead_head_info = self.chain.get_head_server_info()
+        with self._repair_lock:
+            # Re-validate the failure. Another thread could have already repaired the chain
+            if self.head_server_stub is not None:
+                try:
+                    self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    logger.info(f"HEAD is ALIVE. Aborting unnecessary repair...")
+                    return
+                except grpc.RpcError as e:
+                    logger.warning(f"HEAD confirmed DEAD. Proceeding with the repair...")
 
-        if not dead_head_info:
-            logger.error("Could not retrieve HEAD data from DHT! Chain is broken.")
-            return
+            # ---- HEAD Replacement ----
 
-        self.head_server_stub = None
-        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-        self.chain.update_chain_status(ChainStatus.REPAIRING)
+            dead_head_info = self.chain.get_head_server_info()
 
-        orphaned_layers = dead_head_info.get("layers")
-        head_succ_data = dead_head_info.get("successor")
-        head_was_tail = self.chain.node_is_tail(dead_head_info.get("id"))
-        logger.info(
-            f"Attempting to replace HEAD. Orphaned layers: {orphaned_layers}, Successor^2 Data: {head_succ_data}, Was TAIL: {head_was_tail}"
-        )
+            if not dead_head_info:
+                logger.error("Could not retrieve HEAD data from DHT! Chain is broken.")
+                return
 
-        # Find backup node replacement
-        logger.info("Searching for a backup node...")
-        backup_nodes = self.chain.get_backup_nodes()
-        if backup_nodes:
-            # Find backup node with enough memory
-            for backup_id in backup_nodes:
-                backup_info = self.chain.get_server_info(backup_id)
-                if backup_info:
-                    avail_mem = backup_info.get("available_memory")
-                    avail_vram = backup_info.get("available_vram")
-                    logger.info(
-                        f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
-                    )
+            self.head_server_stub = None
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self.chain.update_chain_status(ChainStatus.REPAIRING)
 
-                    if can_load(
-                        config=self.config,
-                        layers=orphaned_layers,
-                        avail_mem=avail_mem,
-                        avail_vram=avail_vram,
-                    ):
-                        self.chain.repair(
-                            orphaned_layers,
-                            head_succ_data,
-                            head_was_tail,
-                            replacee_was_head=True,
-                            replacement_node_id=backup_id,
+            orphaned_layers = dead_head_info.get("layers")
+            head_succ_data = dead_head_info.get("successor")
+            head_was_tail = self.chain.node_is_tail(dead_head_info.get("id"))
+            logger.info(
+                f"Attempting to replace HEAD. Orphaned layers: {orphaned_layers}, Successor^2 Data: {head_succ_data}, Was TAIL: {head_was_tail}"
+            )
+
+            # Find backup node replacement
+            logger.info("Searching for a backup node...")
+            backup_nodes = self.chain.get_backup_nodes()
+            if backup_nodes:
+                # Find backup node with enough memory
+                for backup_id in backup_nodes:
+                    backup_info = self.chain.get_server_info(backup_id)
+                    if backup_info:
+                        avail_mem = backup_info.get("available_memory")
+                        avail_vram = backup_info.get("available_vram")
+                        logger.info(
+                            f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
                         )
 
-                        try:
-                            self._connect_to_head()
-                            self.head_server_stub.LoadLayers(nodeservice_pb2.Empty())
-
-                            if self.chain.get_all_layers_loaded():
-                                self.chain.update_chain_status(ChainStatus.READY)
-                            return
-                        except grpc.RpcError as e:
-                            logger.error(
-                                f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
+                        if can_load(
+                            config=self.config,
+                            layers=orphaned_layers,
+                            avail_mem=avail_mem,
+                            avail_vram=avail_vram,
+                        ):
+                            self.chain.repair(
+                                orphaned_layers,
+                                head_succ_data,
+                                head_was_tail,
+                                replacee_was_head=True,
+                                replacement_node_id=backup_id,
                             )
-                    else:
-                        logger.info(f"Backup Node {backup_id} cannot load the orphaned layers.")
-        else:
-            logger.info("No backup nodes found.")
 
-        self.chain.update_chain_status(ChainStatus.UNREADY)
+                            try:
+                                self._connect_to_head()
+                                self.head_server_stub.LoadLayers(nodeservice_pb2.Empty())
+
+                                if self.chain.get_all_layers_loaded():
+                                    self.chain.update_chain_status(ChainStatus.READY)
+                                    return
+                            except grpc.RpcError as e:
+                                logger.error(
+                                    f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
+                                )
+                        else:
+                            logger.info(f"Backup Node {backup_id} cannot load the orphaned layers.")
+            else:
+                logger.info("No backup nodes found.")
+
+            if self.chain.get_all_layers_loaded():
+                self.chain.update_chain_status(ChainStatus.READY)
+            else:
+                self.chain.update_chain_status(ChainStatus.UNREADY)
 
     def trigger_reallocation(self):
         """
@@ -241,10 +258,11 @@ class Client:
 
                 self.head_server_stub.Reallocate(request)
 
-                if self.chain.get_all_layers_loaded():
+                (
                     self.chain.update_chain_status(ChainStatus.READY)
-                else:
-                    self.chain.update_chain_status(ChainStatus.UNREADY)
+                    if self.chain.get_all_layers_loaded()
+                    else self.chain.update_chain_status(ChainStatus.UNREADY)
+                )
 
                 logger.info("Reallocation triggered successfully...")
             except grpc.RpcError as e:
@@ -418,7 +436,19 @@ class Client:
             self.serialization_delay = time.perf_counter() - start
 
             start = time.perf_counter()
-            ack_response = self.head_server_stub.RunLayers(request)
+            try:
+                ack_response = self.head_server_stub.RunLayers(request)
+            except grpc.RpcError as e:
+                if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                    logger.warning(f"HEAD failure detected duting INFERENCE")
+                    threading.Thread(target=self.replace_head_server, daemon=True).start()
+                else:
+                    logger.warning(f"A gRPC error occurred during inference: {e.code().name}")
+                    self.head_server_stub = None
+
+                yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
+                return
+
             end = time.perf_counter()
 
             total_rpc_time = end - start
@@ -439,6 +469,10 @@ class Client:
             if ack_response.HasField("error_message"):
                 logger.error(f"Server-side failure: {ack_response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
+
+                # if self.chain.get_all_layers_loaded():
+                #     self.chain.update_chain_status(ChainStatus.READY)
+
                 yield f'<br><span style="color:red">Server-side failure: {ack_response.error_message} Aborting generation task. Please try again.</span>'
                 return
 
