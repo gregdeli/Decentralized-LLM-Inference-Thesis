@@ -24,12 +24,16 @@ sys.path.insert(0, str(src_root))
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
-from core.utils import get_dtype_from_config, calculate_transformer_params, update_config_layer_param_count
+from core.utils import (
+    get_dtype_from_config,
+    calculate_transformer_params,
+    update_config_layer_param_count,
+)
 from core.remote.utils import (
     get_bootstrap_peer_address,
     get_ip_address,
     discover_bootstrap_node_address,
-    create_grpc_channel
+    create_grpc_channel,
 )
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
@@ -92,10 +96,10 @@ class Server:
         self._update_memory_usage(update_on_dht=False)
         if not num_layers:
             num_layers = self._mem_to_num_layers()
-            available = self.available_vram_mb if self.available_vram_mb else self.available_memory_mb
-            logger.info(
-                f"Node with {available} MB available can load {num_layers} layers."
+            available = (
+                self.available_vram_mb if self.available_vram_mb else self.available_memory_mb
             )
+            logger.info(f"Node with {available} MB available can load {num_layers} layers.")
         elif not self._can_load(num_layers=num_layers):
             logger.warning(
                 f"Requested {num_layers} layers but memory is insufficient. Adjusting..."
@@ -204,7 +208,7 @@ class Server:
         if total_layer_params is None:
             total_layer_params = calculate_transformer_params(self.model_path)
             update_config_layer_param_count(self.model_path, total_layer_params)
-            # Reload config 
+            # Reload config
             with open(self.model_path / "config.json", "r") as f:
                 self.config = json.load(f)
 
@@ -295,7 +299,10 @@ class Server:
         # Initialize the kv cache if necessary
         if not self.llm.kv_cache_initialized:
             self.model.set_kv_cache(
-                batch_size=1, max_seq_length=max_returned_tokens, device=self.device, dtype=self.llm.dtype
+                batch_size=1,
+                max_seq_length=max_returned_tokens,
+                device=self.device,
+                dtype=self.llm.dtype,
             )
             self.llm.kv_cache_initialized = True
             cache_updated = True
@@ -305,7 +312,10 @@ class Server:
             tmp_device = self.model.mask_cache.device
             self.model.clear_kv_cache()
             self.model.set_kv_cache(
-                batch_size=1, max_seq_length=max_returned_tokens, device=tmp_device, dtype=self.llm.dtype
+                batch_size=1,
+                max_seq_length=max_returned_tokens,
+                device=tmp_device,
+                dtype=self.llm.dtype,
             )
             cache_updated = True
 
@@ -448,7 +458,9 @@ class Server:
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 
-            return nodeservice_pb2.InferenceResponse(processing_time=client_response.processing_time)
+            return nodeservice_pb2.InferenceResponse(
+                processing_time=client_response.processing_time
+            )
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
@@ -496,13 +508,13 @@ class Server:
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
         )
 
-        # If this node's processing rate is much greater than the proceccing rate of its successor 
+        # If this node's processing rate is much greater than the proceccing rate of its successor
         # it should take its layers and make it a backup
-        REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0   
+        REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0
 
         if not self.chain.is_tail():
             succ_info = self.chain.get_successor_info()
-            
+
             successor_proc_rate = succ_info.get("processing_rate")
 
             if self.layers_per_second > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
@@ -527,10 +539,9 @@ class Server:
                     self._connect_to_successor()
 
                     total_system_rate -= successor_proc_rate
-                
+
                 else:
                     logger.info("Cannot load layers. Continuing with the layer reallocation...")
-
 
         # ---- Reallocation ----
         num_total_layers = self.config.get("num_hidden_layers")
@@ -612,7 +623,7 @@ class Server:
                 return
 
             self.successor_stub = None
-            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)  
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
             self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             # Repair
@@ -704,6 +715,7 @@ class Server:
         weak_node_id = weak_node_info.get("id")
         weak_node_succ_data = weak_node_info.get("successor")
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
+        weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(
             f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
         )
@@ -714,6 +726,7 @@ class Server:
                 layers_to_takeover,
                 weak_node_succ_data,
                 weak_node_was_tail,
+                replacee_was_head=weak_node_was_head,
                 replacee_node_id=weak_node_id,
                 replacee_predecessor_info=predecessor_info,
             )
@@ -745,7 +758,7 @@ class Server:
             logger.info(
                 f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node."
             )
-        
+
         # Update chain status
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
@@ -904,7 +917,9 @@ def serve():
                         )  # Debugging
                         server_node.repair_chain()
                     else:
-                        logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                        logger.warning(
+                            f"A gRPC error occurred during health check: {e.code().name}"
+                        )
                         server_node.successor_stub = None
 
     def _udp_discovery_server():

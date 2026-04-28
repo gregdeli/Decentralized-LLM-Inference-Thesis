@@ -232,10 +232,12 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
         if "chain_status" in state.ui.global_labels:
             current_status = chain_info.get(STATUS_KEY)
-            state.ui.global_labels["chain_status"].text = (
-                f"Chain Status: {current_status.value}"
+            state.ui.global_labels["chain_status"].text = f"Chain Status: {current_status.value}"
+            status_color = (
+                "text-green-600"
+                if current_status == ChainStatus.READY
+                else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
             )
-            status_color = "text-green-600" if current_status == ChainStatus.READY else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
             state.ui.global_labels["chain_status"].classes(replace=f"text-lg {status_color}")
 
         # Node Info
@@ -311,14 +313,22 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
 
-            state.ui.global_labels["total_layers"] = ui.label(f"Total Layers: {total_layers}").classes("text-lg")
+            state.ui.global_labels["total_layers"] = ui.label(
+                f"Total Layers: {total_layers}"
+            ).classes("text-lg")
 
             state.ui.global_labels["all_loaded"] = ui.label(
                 f"All Layers Loaded: {all_loaded}"
             ).classes(f"text-lg {'text-green-600' if all_loaded else 'text-red-600'}")
 
-            status_color = "text-green-600" if current_status == ChainStatus.READY else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
-            state.ui.global_labels["chain_status"] = ui.label(f"Chain Status: {current_status.value}").classes(f"text-lg {status_color}")
+            status_color = (
+                "text-green-600"
+                if current_status == ChainStatus.READY
+                else "text-red-600" if current_status == ChainStatus.UNREADY else "text-orange-600"
+            )
+            state.ui.global_labels["chain_status"] = ui.label(
+                f"Chain Status: {current_status.value}"
+            ).classes(f"text-lg {status_color}")
 
             # Active Chain Info
             ui.label("Active Chain").classes("font-bold text-xl")
@@ -350,6 +360,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
     state.ui.last_topology = current_topology
 
+
 def refresh_client_stats(client_stats_container: ui.row):
     client_stats_container.clear()
     with client_stats_container:
@@ -370,7 +381,8 @@ def get_next_token(generator):
         return next(generator)
     except StopIteration:
         return None
-    
+
+
 async def update_response_message(response_message: ui.chat_message, text: str):
     response_message.clear()
     with response_message:
@@ -431,6 +443,7 @@ async def generate(
             if token_generator:
                 while True:
                     if not state.is_generating:
+                        state.client.chain.update_chain_status(ChainStatus.READY)
                         break
 
                     token = await run.io_bound(get_next_token, token_generator)
@@ -474,7 +487,6 @@ async def generate(
             ).classes("w-full")
 
 
-
 def stop_generation():
     """Signals the generation loop to stop."""
     if state.is_generating:
@@ -497,6 +509,7 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
     stats_container.remove(spinner)
 
     await refresh_chain_view(chain_container)
+
 
 def clear_chat(chat_container: ui.column):
     if state.client:
@@ -552,15 +565,13 @@ async def main_page():
 
                 # Generation Settings Row
                 with ui.column().classes("items-start"):
-                    ui.number('Max Tokens', min=1, max=8192, step=1, format='%d') \
-                        .bind_value(state, 'max_new_tokens') \
-                        .props("dense") \
-                        .classes("w-full")
-                    
-                    ui.checkbox('Stream') \
-                        .bind_value(state, 'stream') \
-                        .props("dense size=sm") \
-                        .classes("text-xs")
+                    ui.number("Max Tokens", min=1, max=8192, step=1, format="%d").bind_value(
+                        state, "max_new_tokens"
+                    ).props("dense").classes("w-full")
+
+                    ui.checkbox("Stream").bind_value(state, "stream").props(
+                        "dense size=sm"
+                    ).classes("text-xs")
 
                 msg_input = (
                     ui.input(placeholder="Enter prompt...")
@@ -587,7 +598,9 @@ async def main_page():
                 stop_btn.visible = False
 
                 # Clear Chat button
-                ui.button(icon="delete", on_click=lambda: clear_chat(chat_container)).props("flat round color=negative").tooltip("Clear Chat History")
+                ui.button(icon="delete", on_click=lambda: clear_chat(chat_container)).props(
+                    "flat round color=negative"
+                ).tooltip("Clear Chat History")
 
                 # Bind Enter key
                 msg_input.on(
@@ -610,7 +623,7 @@ async def main_page():
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
 
             client_stats_container = ui.column().classes("w-full gap-2")
-    
+
             ui.timer(1.0, lambda: refresh_client_stats(client_stats_container))
 
 

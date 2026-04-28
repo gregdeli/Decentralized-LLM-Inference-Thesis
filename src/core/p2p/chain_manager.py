@@ -15,18 +15,20 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 30.0
+# EXPIRATION_S = 30.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 30.0
 
 DIGITS_SHOW = 12
 
 STATUS_KEY = "chain_status"
+
+
 class ChainStatus(str, Enum):
-    READY = "READY" # all layers loaded is true
-    UNREADY = "UNREADY" # not all layers loaded
-    RUNNING = "RUNNING" # while inference is running 
+    READY = "READY"  # all layers loaded is true
+    UNREADY = "UNREADY"  # not all layers loaded
+    RUNNING = "RUNNING"  # while inference is running
     # LOADING = "LOADING"
     REPAIRING = "REPAIRING"
     REALLOCATING = "REALLOCATING"
@@ -36,9 +38,10 @@ class ChainStatus(str, Enum):
 class ChainManager:
     """Manages the creation and discovery of the server inference chain on the DHT."""
 
-    def __init__(self, dht_manager: DHTManager):
+    def __init__(self, dht_manager: DHTManager, is_client=False):
         self.dht = dht_manager
         self.node_id = dht_manager.get_id()
+        self.is_client = is_client
 
     def join_chain(
         self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
@@ -165,7 +168,6 @@ class ChainManager:
                 return None
         return None
 
-
     def get_head_server_info(self) -> Optional[Dict[str, Any]]:
         """
         Client-side function to find the head of the chain and get its connection info.
@@ -197,19 +199,19 @@ class ChainManager:
         if not self_info:
             raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
-    
+
     def get_successor_data(self) -> Optional[Dict[str, Any]]:
         """Get the successor data for this node from the DHT"""
         self_info = self._get_self_info()
         return self_info.get("successor")
-    
+
     def get_successor_info(self) -> Optional[Dict[str, Any]]:
         """Get this nodes' successor info dict from the DHT"""
         succ_data = self.get_successor_data()
         succ_info = None
         if succ_data:
             succ_info = self.get_server_info(succ_data.get("id"))
-        
+
         return succ_info
 
     def get_server_info(self, node_id: str) -> Optional[Dict[str, Any]]:
@@ -278,7 +280,7 @@ class ChainManager:
             TAIL_KEY: tail_id,
             TOTAL_LAYERS_KEY: total_layers,
             ALL_LAYERS_KEY: all_loaded,
-            STATUS_KEY: current_status
+            STATUS_KEY: current_status,
         }
 
         # Traverse chain and print server info
@@ -314,18 +316,18 @@ class ChainManager:
 
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
-    
+
     def gather_total_rate(self) -> float:
         """Add the partial processing rates of all server nodes"""
         head_id = self.dht.get(HEAD_KEY)
-        
+
         total_rate = 0.0
         current_node_id = head_id
         while current_node_id:
             server_info = self.get_server_info(current_node_id)
             if not server_info:
                 break
-            
+
             partial_rate = server_info.get("processing_rate")
             total_rate += partial_rate
 
@@ -334,7 +336,7 @@ class ChainManager:
                 current_node_id = successor_data.get("id")
             else:
                 current_node_id = None  # End of chain
-        
+
         return total_rate
 
     def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
@@ -402,6 +404,17 @@ class ChainManager:
 
         return False
 
+    def node_is_head(self, node_id: str) -> bool:
+        """Checks if a specific node is the head"""
+        head_id = self.dht.get(HEAD_KEY)
+        if not head_id:
+            raise RuntimeError("Head server not found")
+
+        if head_id == node_id:
+            return True
+
+        return False
+
     def is_backup(self) -> bool:
         """Checks if this node is a backup node"""
         self_info = self._get_self_info()
@@ -437,14 +450,12 @@ class ChainManager:
         """
         logger.info(f"Repairing chain on DHT...")
 
-        self_is_client = replacee_was_head
-
         # If the client replaces the head there is to self_info
-        if not self_is_client:
+        if not self.is_client:
             self_info = self._get_self_info()
 
         # If the node that instigated the repair was a backup (Opportunistic Takeover)
-        if not self_is_client and self_info.get("is_backup"):
+        if not self.is_client and self_info.get("is_backup"):
             # Make it an active node
             logger.info(
                 f"[Opportunistic Takeover]: This node was a backup and is taking the place of a weak node..."
@@ -455,11 +466,14 @@ class ChainManager:
             self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
             # Update the replacee nodes' predecessor's successor to be the replacement backup node
-            replacee_predecessor_info["successor"] = {
-                "id": self.node_id,
-                "address": self_info.get("address"),
-            }
-            self._update_server_info(replacee_predecessor_info.get("id"), replacee_predecessor_info)
+            if not replacee_was_head:
+                replacee_predecessor_info["successor"] = {
+                    "id": self.node_id,
+                    "address": self_info.get("address"),
+                }
+                self._update_server_info(
+                    replacee_predecessor_info.get("id"), replacee_predecessor_info
+                )
 
             # The replacee becomes a backup
             self.make_node_backup(replacee_node_id)
@@ -482,7 +496,7 @@ class ChainManager:
                     "address": replacement_info.get("address"),
                 }
                 self.update_successor(new_successor_data)
-            
+
             # The Client instigated the repair and the replacement node is the new HEAD
             else:
                 self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
@@ -505,12 +519,16 @@ class ChainManager:
             replacement_info["successor"] = None
             self.dht.store(TAIL_KEY, replacement_node_id, EXPIRATION_S)
 
+        # If the replacee was the head, set this node as the head
+        if replacee_was_head:
+            self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
+
         self._update_server_info(replacement_node_id, replacement_info)
 
         self.update_all_layers_loaded()
 
         # Rebublish keys since the tail node could have died and heartbeat task would fail
-        if not self_is_client:
+        if not self.is_client:
             self.republish_keys()
 
     def evaluate_takeover_eligibility(
@@ -645,7 +663,7 @@ class ChainManager:
                     total_layers = self._get_num_total_layers()
                     if layers and layers[1] == total_layers - 1:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
-                        
+
                         current_chain_status = self.get_chain_status()
                         if current_chain_status == ChainStatus.UNREADY:
                             self.update_chain_status(ChainStatus.READY)

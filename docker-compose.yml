@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=5
+      - NUM_LAYERS=16
       # - ADDED_DELAY=0.08
       - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -25,7 +25,7 @@ services:
           memory: 6G
         #   cpus: '16.0'
     ports:
-      - "5678:5678"
+      - "5671:5678"
       # - "9999:9999"
 
   intermediate-server:
@@ -46,16 +46,16 @@ services:
       - ./models:/models:ro 
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 3G
           # cpus: '1.0'
-    # ports:
-    #   - "5678:5678"  
+    ports:
+      - "5672:5678"  
       # - 9999:9999 
 
   tail-server:
@@ -82,8 +82,8 @@ services:
     depends_on:
       - head-server
       - intermediate-server
-    # ports:
-    #   - "5678:5678"
+    ports:
+      - "5673:5678"
       # - 9999:9999 
 
   server:
@@ -113,8 +113,8 @@ services:
     depends_on:
       - head-server
       - intermediate-server
-    # ports:
-    #   - "5678:5678"
+    ports:
+      - "5674:5678"
 
   client:
     image: decentralized-llm-thesis:latest 
@@ -134,7 +134,7 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8080:8080" # NiceGUI
-      - "5679:5678"
+      - "5675:5678"
 
   client-A:
     image: decentralized-llm-thesis:latest 

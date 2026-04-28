@@ -19,7 +19,14 @@ from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
-from core.p2p.chain_manager import ChainManager, ChainStatus, HEARTBEAT_INTERVAL_S, ALL_LAYERS_KEY, EXPIRATION_S, DIGITS_SHOW
+from core.p2p.chain_manager import (
+    ChainManager,
+    ChainStatus,
+    HEARTBEAT_INTERVAL_S,
+    ALL_LAYERS_KEY,
+    EXPIRATION_S,
+    DIGITS_SHOW,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +46,7 @@ class Client:
 
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
-        self.chain = ChainManager(self.dht)
+        self.chain = ChainManager(self.dht, is_client=True)
 
         # Load Config
         config_path = model_path / "config.json"
@@ -93,9 +100,9 @@ class Client:
         head_monitor_thread.start()
 
         server.wait_for_termination()
-    
+
     def _head_health_monitor_task(self):
-        while(True):
+        while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
                 try:
@@ -104,13 +111,17 @@ class Client:
                         self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
                         logger.info(f"HEAD is ALIVE.")
                 except grpc.RpcError as e:
-                    if e.code() == grpc.StatusCode.UNAVAILABLE or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    if (
+                        e.code() == grpc.StatusCode.UNAVAILABLE
+                        or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+                    ):
                         logger.warning(f"HEAD failure detected during HEALTH CHECK.")
                         self.replace_head_server()
                     else:
-                        logger.warning(f"A gRPC error occurred during health check: {e.code().name}")
+                        logger.warning(
+                            f"A gRPC error occurred during health check: {e.code().name}"
+                        )
                         self.head_server_stub = None
-
 
     def _connect_to_head(self):
         head_info = self.chain.get_head_server_info()
@@ -123,9 +134,9 @@ class Client:
             logger.warning("Head Server address not found.")
             self.head_server_stub = None
             return
-        
+
         logger.info(f"Client successfully found head server. Address: {head_info['address']}")
-        
+
         try:
             channel = create_grpc_channel(head_server_addr)
             grpc.channel_ready_future(channel).result(timeout=10)
@@ -143,8 +154,8 @@ class Client:
 
     def print_chain_status(self):
         print("Chain Status:")
-        pprint(self.chain.get_chain_info())  
-    
+        pprint(self.chain.get_chain_info())
+
     def replace_head_server(self):
         dead_head_info = self.chain.get_head_server_info()
 
@@ -153,12 +164,12 @@ class Client:
             return
 
         self.head_server_stub = None
-        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S) 
+        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
         self.chain.update_chain_status(ChainStatus.REPAIRING)
 
         orphaned_layers = dead_head_info.get("layers")
         head_succ_data = dead_head_info.get("successor")
-        head_was_tail = self.chain.node_is_tail(dead_head_info.get('id'))
+        head_was_tail = self.chain.node_is_tail(dead_head_info.get("id"))
         logger.info(
             f"Attempting to replace HEAD. Orphaned layers: {orphaned_layers}, Successor^2 Data: {head_succ_data}, Was TAIL: {head_was_tail}"
         )
@@ -177,8 +188,19 @@ class Client:
                         f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
                     )
 
-                    if can_load(config=self.config, layers=orphaned_layers, avail_mem=avail_mem, avail_vram=avail_vram):
-                        self.chain.repair(orphaned_layers, head_succ_data, head_was_tail, replacee_was_head=True, replacement_node_id=backup_id)
+                    if can_load(
+                        config=self.config,
+                        layers=orphaned_layers,
+                        avail_mem=avail_mem,
+                        avail_vram=avail_vram,
+                    ):
+                        self.chain.repair(
+                            orphaned_layers,
+                            head_succ_data,
+                            head_was_tail,
+                            replacee_was_head=True,
+                            replacement_node_id=backup_id,
+                        )
 
                         try:
                             self._connect_to_head()
@@ -186,7 +208,7 @@ class Client:
 
                             if self.chain.get_all_layers_loaded():
                                 self.chain.update_chain_status(ChainStatus.READY)
-                            return 
+                            return
                         except grpc.RpcError as e:
                             logger.error(
                                 f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
@@ -198,12 +220,11 @@ class Client:
 
         self.chain.update_chain_status(ChainStatus.UNREADY)
 
-
     def trigger_reallocation(self):
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
-        # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation  
+        # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation
         self.total_rate = self.chain.gather_total_rate()
 
         if self.total_rate > 0:
@@ -224,7 +245,7 @@ class Client:
                     self.chain.update_chain_status(ChainStatus.READY)
                 else:
                     self.chain.update_chain_status(ChainStatus.UNREADY)
-                    
+
                 logger.info("Reallocation triggered successfully...")
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
