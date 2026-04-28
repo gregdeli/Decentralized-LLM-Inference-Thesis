@@ -61,7 +61,7 @@ async def initialize_client():
     bootstrap_addr = os.getenv("BOOTSTRAP_NODE_ADDR")
 
     if not bootstrap_addr:
-        bootstrap_addr = discover_bootstrap_node_address()
+        bootstrap_addr = discover_bootstrap_node_address(is_client=True)
 
     if not bootstrap_addr:
         logger.error("Failed to find bootstrap node.")

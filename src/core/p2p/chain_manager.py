@@ -394,6 +394,11 @@ class ChainManager:
 
         return False
 
+    def is_backup(self) -> bool:
+        """Checks if this node is a backup node"""
+        self_info = self._get_self_info()
+        return bool(self_info.get("is_backup", False))
+
     def node_is_tail(self, node_id: str) -> bool:
         """Checks if a specific node is the tail"""
         tail_id = self.dht.get(TAIL_KEY)
@@ -416,10 +421,10 @@ class ChainManager:
 
         return False
 
-    def is_backup(self) -> bool:
-        """Checks if this node is a backup node"""
-        self_info = self._get_self_info()
-        return bool(self_info.get("is_backup", False))
+    def node_is_backup(self, node_id: str) -> bool:
+        """Checks if a specific node is a backup"""
+        server_info = self.get_server_info(node_id)
+        return bool(server_info.get("is_backup", False))
 
     def repair(
         self,
@@ -480,15 +485,18 @@ class ChainManager:
             self.make_node_backup(replacee_node_id)
 
         # If a backup node replacement is used during repair
+        # Or the the dead head's successor is used as a replacement by the client
         if replacement_node_id:
-            logger.info(f"With replacement Backup Node: {replacement_node_id}")
             replacement_info = self.get_server_info(replacement_node_id)
-            replacement_info["is_backup"] = False
 
-            # Remove the replacement node from the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(replacement_node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            if self.node_is_backup(replacement_node_id):
+                logger.info(f"With replacement Backup Node: {replacement_node_id}")
+                replacement_info["is_backup"] = False
+
+                # Remove the replacement node from the backup_nodes list
+                backup_nodes = self.get_backup_nodes()
+                backup_nodes.remove(replacement_node_id)
+                self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
             # Update this nodes successor to be the replacement
             if not replacee_was_head:
@@ -755,3 +763,6 @@ class ChainManager:
         backups_list = self.get_backup_nodes()
         backups_list.append(node_id)
         self.dht.store(BACKUPS_KEY, backups_list, EXPIRATION_S)
+
+    def make_node_head(self, node_id: str):
+        self.dht.store(HEAD_KEY, node_id, EXPIRATION_S)
