@@ -9,9 +9,9 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=5
+      - NUM_LAYERS=2
       # - ADDED_DELAY=0.08
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
     deploy:
@@ -38,9 +38,9 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=6
+      - NUM_LAYERS=3
       # - ADDED_DELAY=0.08
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
     volumes:
       - ./models:/models:ro 
@@ -70,12 +70,17 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
     volumes:
       - ./models:/models:ro
     deploy:
       resources:
+        reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
         limits:
           memory: 3G
           # cpus: '1.0'
@@ -89,15 +94,15 @@ services:
   server:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    command: sleep infinity
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    # command: sleep infinity
     hostname: server-1
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=4
+      - NUM_LAYERS=6
       # - ADDED_DELAY=0.08
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=tail-server:5001
     volumes:
       - ./models:/models:ro
@@ -127,7 +132,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001 
     volumes:
       - ./models:/models:ro
@@ -147,8 +152,8 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-      - BOOTSTRAP_NODE_ADDR=head-server:5001 
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
+      # - BOOTSTRAP_NODE_ADDR=head-server:5001 
     volumes:
       - ./models:/models:ro
       - ./src:/app # To make live changes to the client gui code

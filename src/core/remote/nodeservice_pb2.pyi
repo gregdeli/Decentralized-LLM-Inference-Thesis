@@ -53,9 +53,11 @@ class InferenceResponse(_message.Message):
     def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., error_message: _Optional[str] = ..., processing_time: _Optional[float] = ..., block_scales: _Optional[bytes] = ...) -> None: ...
 
 class ReallocateRequest(_message.Message):
-    __slots__ = ("total_rate", "start_layer_index")
+    __slots__ = ("total_rate", "start_layer_index", "predecessor_info")
     TOTAL_RATE_FIELD_NUMBER: _ClassVar[int]
     START_LAYER_INDEX_FIELD_NUMBER: _ClassVar[int]
+    PREDECESSOR_INFO_FIELD_NUMBER: _ClassVar[int]
     total_rate: float
     start_layer_index: int
-    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ...) -> None: ...
+    predecessor_info: bytes
+    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...

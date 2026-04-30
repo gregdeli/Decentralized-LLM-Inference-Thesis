@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 import grpc
 import torch
 import time
+import json
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import message_to_tensor
@@ -42,17 +43,16 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
         # Run the inference logic
         ack_response = self.server_node.run_local_layers(
-            input_tensor, 
-            max_returned_tokens, 
-            seq_length, input_pos, 
-            response_address
+            input_tensor, max_returned_tokens, seq_length, input_pos, response_address
         )
 
         end = time.perf_counter()
 
         total_grpc_time = end - start
-        self.server_node.grpc_overhead = total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
-        
+        self.server_node.grpc_overhead = (
+            total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
+        )
+
         logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")
 
         ack_response.processing_time = total_grpc_time
@@ -62,28 +62,32 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         self.server_node.chain.update_inference_delay(self.server_node.inference_delay)
         self.server_node.chain.update_grpc_overhead(self.server_node.grpc_overhead)
 
-
         return ack_response
 
     def Check(self, request, context):
         """If the server is running it will return an Empty response"""
         return nodeservice_pb2.Empty()
-    
+
     def Reallocate(self, request, context):
         total_rate = request.total_rate
         start_layer_index = request.start_layer_index
+        predecessor_info = (
+            json.loads(request.predecessor_info.decode("utf-8"))
+            if request.predecessor_info
+            else None
+        )
 
-        self.server_node.reallocate_layers(total_rate, start_layer_index)
+        self.server_node.reallocate_layers(total_rate, start_layer_index, predecessor_info)
         return nodeservice_pb2.Empty()
-    
+
     def UpdateSuccessor(self, request, context):
         self.server_node._connect_to_successor()
         return nodeservice_pb2.Empty()
-    
+
     def LoadLayers(self, request, context):
         self.server_node._load_llm()
-        return nodeservice_pb2.Empty() 
-    
+        return nodeservice_pb2.Empty()
+
     def UnloadLayers(self, request, context):
         self.server_node._unload_llm()
-        return nodeservice_pb2.Empty() 
+        return nodeservice_pb2.Empty()

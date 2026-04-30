@@ -430,6 +430,7 @@ class Server:
 
         # To prevent nonesense output when a node fails during inference
         if not self.chain.get_all_layers_loaded():
+            self.chain.update_chain_status(ChainStatus.UNREADY)
             return nodeservice_pb2.InferenceResponse(
                 error_message="Inference requested without all the layers being loaded..."
             )
@@ -495,29 +496,62 @@ class Server:
 
         return response
 
-    def reallocate_layers(self, total_system_rate: float, start_layer_index: int):
+    def reallocate_layers(
+        self,
+        total_system_rate: float,
+        start_layer_index: int,
+        predecessor_info: Optional[Dict[str, Any]],
+    ):
         """
         Executes the AR-MDI logic
         """
         logger.info(
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
         )
-
-        # If this node's processing rate is much greater than the proceccing rate of its successor
-        # it should take its layers and make it a backup
         REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0
+        succ_info = self.chain.get_successor_info()
 
-        if not self.chain.is_tail():
-            succ_info = self.chain.get_successor_info()
-
+        if succ_info:
             successor_proc_rate = succ_info.get("processing_rate")
+            succ_layers = succ_info.get("layers")
 
-            if self.layers_per_second > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-                succ_layers = succ_info.get("layers")
-                succ_2_data = succ_info.get("successor")
-                succ_was_tail = self.chain.node_is_tail(succ_info.get("id"))
+            # If this node's processing rate is much smaller then its successor's
+            # the successor should take this node's layers
+            if successor_proc_rate > self.layers_per_second * REALLOC_TAKEOVER_MULT_THRESHOLD:
+                new_layers = (self.llm.layers_loaded[0], succ_layers[1])
+
+                self._unload_llm()
+
+                self.chain.repair(
+                    new_layers,
+                    replacement_info=succ_info,
+                    replacee_info=self.chain.get_self_info(),
+                    make_replacee_backup=True,
+                    replacee_was_head=self.chain.is_head(),
+                    replacee_pred_info=predecessor_info,
+                )
+
+                total_system_rate -= self.layers_per_second
+
+                # Forward reallocation request
+                serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
+
+                request = nodeservice_pb2.ReallocateRequest(
+                    total_rate=total_system_rate,
+                    start_layer_index=start_layer_index,
+                    predecessor_info=serialized_pred_info,
+                )
+                try:
+                    self.successor_stub.Reallocate(request)
+                    return
+                except grpc.RpcError as e:
+                    logger.error(f"Failed to propagate Reallocation to successor: {e}")
+
+            # If this node's processing rate is much greater than the proceccing rate of its successor
+            # it should take its layers and make it a backup
+            elif self.layers_per_second > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
                 logger.info(
-                    f"Attempting to takeover layers: {succ_layers}, Successor^2 Data: {succ_2_data}, Was TAIL: {succ_was_tail}"
+                    f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
                 )
 
                 if self._can_load(layers=succ_layers):
@@ -525,8 +559,14 @@ class Server:
                     logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}")
 
                     self._reload_llm(layers_to_load)
-                    self.chain.repair(layers_to_load, succ_2_data, succ_was_tail)
-                    self.chain.make_node_backup(succ_info.get("id"))
+
+                    self.chain.repair(
+                        new_layers=layers_to_load,
+                        replacement_info=self.chain.get_self_info(),
+                        replacee_info=succ_info,
+                        make_replacee_backup=True,
+                        replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
+                    )
 
                     # Send GRPC request to the weak node to unload its layers
                     self.successor_stub.UnloadLayers(nodeservice_pb2.Empty())
@@ -584,9 +624,12 @@ class Server:
 
         # Propagate to successor
         if not self.chain.is_tail() and self.successor_stub:
-            # next_start_index = end_layer_index + 1
+            serialized_pred_info = json.dumps(self.chain.get_self_info()).encode("utf-8")
+
             request = nodeservice_pb2.ReallocateRequest(
-                total_rate=total_system_rate, start_layer_index=next_start_index
+                total_rate=total_system_rate,
+                start_layer_index=next_start_index,
+                predecessor_info=serialized_pred_info,
             )
             try:
                 self.successor_stub.Reallocate(request)
