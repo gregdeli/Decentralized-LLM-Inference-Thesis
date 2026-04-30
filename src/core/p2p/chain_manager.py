@@ -340,6 +340,7 @@ class ChainManager:
 
         return total_rate
 
+    # DELETE THIS
     def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
         """
         Gets the data of this node's successor from the DHT.
@@ -492,120 +493,6 @@ class ChainManager:
         if not self.is_client:
             self.republish_keys()
 
-    def old_repair(
-        self,
-        layers: Tuple[int, int],
-        replacee_succ_data: Optional[Dict[str, Any]],
-        replacee_was_tail: Optional[bool],
-        replacee_was_head: Optional[bool] = False,
-        replacee_node_id: Optional[str] = None,
-        replacee_predecessor_info: Optional[Dict[str, Any]] = None,
-        replacement_node_id: Optional[str] = None,
-    ):
-        """
-        Apply chain recovery state after takeover/repair.
-
-        - Marks the current node as active if it was a backup (opportunistic takeover).
-        - Updates successor links in DHT so the chain topology reflects the new active node.
-        - Optionally demotes the replaced node to backup and updates `BACKUPS_KEY`.
-        - Updates the replacement node's layer assignment and successor pointer.
-        - If the old node was tail, updates `TAIL_KEY`.
-        - Refreshes `ALL_LAYERS_KEY` and republishes chain keys.
-
-        Args:
-            layers: new layer range being served by the replacement node.
-            replacee_succ_data: the failed node's successor pointer (or None if it was tail).
-            replacee_was_tail: whether replaced node was tail.
-            replacee_node_id: id of node being replaced.
-            replacee_predecessor_info: predecessor info of replaced node needed to wire successor.
-            replacement_node_id: id of node taking over (defaults to self.node_id).
-        """
-        logger.info(f"Repairing chain on DHT...")
-
-        # If the client replaces the head there is no self_info
-        if not self.is_client:
-            self_info = self.get_self_info()
-
-        # If the node that instigated the repair was a backup (Opportunistic Takeover)
-        if not self.is_client and self_info.get("is_backup"):
-            # Make it an active node
-            logger.info(
-                f"[Opportunistic Takeover]: This node was a backup and is taking the place of a weak node..."
-            )
-            self_info["is_backup"] = False
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(self.node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
-
-            # Update the replacee nodes' predecessor's successor to be the replacement backup node
-            if not replacee_was_head:
-                replacee_predecessor_info["successor"] = {
-                    "id": self.node_id,
-                    "address": self_info.get("address"),
-                }
-                self._update_server_info(
-                    replacee_predecessor_info.get("id"), replacee_predecessor_info
-                )
-
-            # The replacee becomes a backup
-            self.make_node_backup(replacee_node_id)
-
-        # If a backup node replacement is used during repair
-        # Or the the dead head's successor is used as a replacement by the client
-        if replacement_node_id:
-            replacement_info = self.get_server_info(replacement_node_id)
-
-            if self.node_is_backup(replacement_node_id):
-                logger.info(f"With replacement Backup Node: {replacement_node_id}")
-                replacement_info["is_backup"] = False
-
-                # Remove the replacement node from the backup_nodes list
-                backup_nodes = self.get_backup_nodes()
-                backup_nodes.remove(replacement_node_id)
-                self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
-
-            # Update this nodes successor to be the replacement
-            if not replacee_was_head:
-                new_successor_data = {
-                    "id": replacement_node_id,
-                    "address": replacement_info.get("address"),
-                }
-                self.update_successor(new_successor_data)
-
-            # The Client instigated the repair and the replacement node is the new HEAD
-            else:
-                self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
-
-        # If this node is the replacement
-        else:
-            replacement_node_id = self.node_id
-            replacement_info = self_info
-
-        # Update the replacement node's info
-        logger.info(
-            f"Replacement Node {replacement_node_id[:DIGITS_SHOW]} taking on layers: {layers} and successor: {replacee_succ_data}..."
-        )
-        replacement_info["layers"] = layers
-        if replacee_succ_data:
-            replacement_info["successor"] = replacee_succ_data
-
-        # If the replacee node was the tail, set this node as the tail
-        elif replacee_was_tail:
-            replacement_info["successor"] = None
-            self.dht.store(TAIL_KEY, replacement_node_id, EXPIRATION_S)
-
-        # If the replacee was the head, set this node as the head
-        if replacee_was_head:
-            self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
-
-        self._update_server_info(replacement_node_id, replacement_info)
-
-        self.update_all_layers_loaded()
-
-        # Rebublish keys since the tail node could have died and heartbeat task would fail
-        if not self.is_client:
-            self.republish_keys()
-
     def evaluate_takeover_eligibility(
         self,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
@@ -685,14 +572,14 @@ class ChainManager:
 
             self.update_all_layers_loaded()
 
+            # Republish chain_status
+            current_status = self.get_chain_status()
+            if current_status:
+                self.update_chain_status(current_status)
+
             backup_nodes = self.get_backup_nodes()
             if backup_nodes is not None:
                 self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
-
-            # Chain Status get republished in update_all_layers_loaded
-            # current_status = self.get_chain_status()
-            # if current_status:
-            #     self.update_chain_status(current_status)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
@@ -740,18 +627,12 @@ class ChainManager:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
                         current_chain_status = self.get_chain_status()
-                        if current_chain_status == ChainStatus.UNREADY:
+                        if current_chain_status in (ChainStatus.UNREADY, ChainStatus.RUNNING):
                             self.update_chain_status(ChainStatus.READY)
-                        else:
-                            self.update_chain_status(current_chain_status)
                     current_node_id = None  # End of chain
 
             else:
                 self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-
-                # When repairing it is expected for some layers to not be loaded
-                if not self.get_chain_status() == ChainStatus.REPAIRING:
-                    self.update_chain_status(ChainStatus.UNREADY)
                 break
 
     # ---- Server info subkey update methods ----

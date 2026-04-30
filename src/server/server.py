@@ -482,17 +482,10 @@ class Server:
                 or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
             ):
                 logger.warning(f"Successor failure detected during INFERENCE.")
-                dead_successor_data = self.chain.get_failed_successor_data()
-                if dead_successor_data:
-                    threading.Thread(target=self.repair_chain, daemon=True).start()
-                    return nodeservice_pb2.InferenceResponse(
-                        error_message="A node in the chain has failed. The chain is being repaired..."
-                    )
-                else:
-                    logger.error(f"Could not retrieve successor data from DHT! Chain is broken.")
-                    return nodeservice_pb2.InferenceResponse(
-                        error_message="A node in the chain failed and its data could not be retrieved. Chain is broken."
-                    )
+                threading.Thread(target=self.repair_chain, daemon=True).start()
+                return nodeservice_pb2.InferenceResponse(
+                    error_message="A node in the chain has failed. The chain is being repaired..."
+                )
 
         return response
 
@@ -654,23 +647,22 @@ class Server:
                 except grpc.RpcError as e:
                     logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
 
-            dead_successor_data = self.chain.get_failed_successor_data()
+            self_info = self.chain.get_self_info()
+            dead_successor_info = self.chain.get_successor_info()
 
-            if not dead_successor_data:
+            if not dead_successor_info:
                 logger.error("Could not retrieve successor data from DHT! Chain is broken.")
                 return
+
+            dead_succ_was_tail = self.chain.node_is_tail(dead_successor_info.get("id"))
 
             self.successor_stub = None
             self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
             self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             # Repair
-            orphaned_layers = dead_successor_data.get("layers")
-            successor_2_data = dead_successor_data.get("successor")
-            succ_was_tail = dead_successor_data.get("was_tail")
-            logger.info(
-                f"Attempting to repair chain. Orphaned layers: {orphaned_layers}, Successor^2 Data: {successor_2_data}, Was TAIL: {succ_was_tail}"
-            )
+            orphaned_layers = dead_successor_info.get("layers")
+            logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}...")
 
             # Check if this node has enough memory to load the orphaned layers
             if self._can_load(layers=orphaned_layers):
@@ -678,7 +670,12 @@ class Server:
                 logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}")
 
                 self._reload_llm(layers_to_load)
-                self.chain.repair(layers_to_load, successor_2_data, succ_was_tail)
+                self.chain.repair(
+                    layers_to_load,
+                    replacement_info=self_info,
+                    replacee_info=dead_successor_info,
+                    replacee_was_tail=dead_succ_was_tail,
+                )
                 self._connect_to_successor()
 
                 if self.chain.get_all_layers_loaded():
@@ -707,9 +704,10 @@ class Server:
                             ):
                                 self.chain.repair(
                                     orphaned_layers,
-                                    successor_2_data,
-                                    succ_was_tail,
-                                    replacement_node_id=backup_id,
+                                    replacement_info=backup_info,
+                                    replacee_info=dead_successor_info,
+                                    replacee_was_tail=dead_succ_was_tail,
+                                    replacee_pred_info=self_info,
                                 )
 
                                 try:
@@ -750,8 +748,8 @@ class Server:
         self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
         layers_to_takeover = weak_node_info.get("layers")
-        weak_node_id = weak_node_info.get("id")
-        weak_node_succ_data = weak_node_info.get("successor")
+        # weak_node_id = weak_node_info.get("id")
+        # weak_node_succ_data = weak_node_info.get("successor")
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
         weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(
@@ -762,11 +760,12 @@ class Server:
             self._reload_llm(layers_to_takeover)
             self.chain.repair(
                 layers_to_takeover,
-                weak_node_succ_data,
-                weak_node_was_tail,
+                replacement_info=self.chain.get_self_info(),
+                replacee_info=weak_node_info,
+                make_replacee_backup=True,
                 replacee_was_head=weak_node_was_head,
-                replacee_node_id=weak_node_id,
-                replacee_predecessor_info=predecessor_info,
+                replacee_was_tail=weak_node_was_tail,
+                replacee_pred_info=predecessor_info,
             )
 
             # Update the predecessor's successor_stub to point to this node
@@ -932,7 +931,7 @@ def serve():
                 # Opportunistic Takeover
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
-                if weak_node_info:
+                if weak_node_info and server_node.chain.get_chain_status() == ChainStatus.READY:
                     server_node.opportunistic_takeover(weak_node_info, predecessor_info)
 
             elif server_node.chain.is_tail():
@@ -944,15 +943,13 @@ def serve():
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:
                         server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
-                        logger.info(f"Successor is ALIVE.")  # Debugging
+                        logger.info(f"Successor is ALIVE.")
                 except grpc.RpcError as e:
                     if (
                         e.code() == grpc.StatusCode.UNAVAILABLE
                         or e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
                     ):
-                        logger.warning(
-                            f"Successor failure detected during HEALTH CHECK."
-                        )  # Debugging
+                        logger.warning(f"Successor failure detected during HEALTH CHECK.")
                         server_node.repair_chain()
                     else:
                         logger.warning(

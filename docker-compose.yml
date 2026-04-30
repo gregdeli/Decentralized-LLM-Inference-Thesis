@@ -9,18 +9,18 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=2
+      - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
     deploy:
       resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         limits:
           memory: 6G
         #   cpus: '16.0'
@@ -38,7 +38,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=3
+      - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -52,7 +52,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 3G
+          memory: 1.5G
           # cpus: '1.0'
     ports:
       - "5672:5678"  
@@ -68,19 +68,19 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=5
-      # - ADDED_DELAY=0.08
+      - NUM_LAYERS=6
+      - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
     volumes:
       - ./models:/models:ro
     deploy:
       resources:
-        reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+        # reservations:
+        #     devices:
+        #       - driver: nvidia
+        #         count: 1
+        #         capabilities: [gpu]
         limits:
           memory: 3G
           # cpus: '1.0'
