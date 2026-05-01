@@ -17,7 +17,7 @@ service NodeService {
   rpc Reallocate(ReallocateRequest) returns (Empty) {}
 
   // Runs server_node._connect_to_successor()
-  rpc UpdateSuccessor(Empty) returns (Empty) {}
+  rpc UpdateSuccessorStub(Empty) returns (Empty) {}
 
   // Triggers assigned layers loading on a backup node
   rpc LoadLayers(Empty) returns (Empty) {}

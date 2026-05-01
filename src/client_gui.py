@@ -182,10 +182,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         return
 
     # Fetch chain info
-    try:
-        chain_info = await asyncio.to_thread(state.client.chain.get_chain_info)
-    except Exception as e:
-        logger.error(f"Error fetching chain info: {e}")
+    # try:
+    # chain_info = await asyncio.to_thread(state.client.chain.get_chain_info)
+    chain_info = await run.io_bound(state.client.chain.get_chain_info)
+    # except Exception as e:
+    #     logger.error(f"Error fetching chain info: {e}")
 
     if not chain_info:
         chain_container.clear()
@@ -348,7 +349,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                 state.ui.node_labels[node_id] = labels
 
             # Backup Nodes Info
-            ui.label("Backup Nodes").classes("font-bold text-lg")
+            ui.label("Backup Nodes").classes("font-bold text-xl")
             for backup_info in backups_list:
                 node_id = backup_info["id"]
                 role = "Backup"

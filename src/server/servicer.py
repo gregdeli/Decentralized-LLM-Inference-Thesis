@@ -80,7 +80,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         self.server_node.reallocate_layers(total_rate, start_layer_index, predecessor_info)
         return nodeservice_pb2.Empty()
 
-    def UpdateSuccessor(self, request, context):
+    def UpdateSuccessorStub(self, request, context):
         self.server_node._connect_to_successor()
         return nodeservice_pb2.Empty()
 

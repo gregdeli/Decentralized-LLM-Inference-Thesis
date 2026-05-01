@@ -49,7 +49,7 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-RESERVED_MEM_MB = 200  # Memory reserved for system overhead
+RESERVED_MEM_MB = 100  # Memory reserved for system overhead
 
 
 class Server:
@@ -734,6 +734,33 @@ class Server:
                 self.chain.update_all_layers_loaded()
                 self.chain.update_chain_status(ChainStatus.UNREADY)
 
+                # Also make every node that succeeded the dead node a backup
+                succ_data = dead_successor_info.get("successor")
+                if succ_data:
+                    logger.info("Making every node that succeeded the dead node a backup...")
+                    current_node_id = succ_data.get("id")
+                    while current_node_id:
+                        current_node_info = self.chain.get_server_info(current_node_id)
+                        current_node_succ_data = current_node_info.get("successor")
+                        if current_node_succ_data:
+                            next_node_id = current_node_succ_data.get("id")
+                        else:
+                            next_node_id = None
+                        
+                        self.chain.make_node_backup(current_node_id)
+                        
+                        try:
+                            channel = grpc.insecure_channel(current_node_info.get("address"))
+                            curr_node_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                            curr_node_stub.UnloadLayers(nodeservice_pb2.Empty())
+                        except grpc.RpcError as e:
+                            logger.error(
+                                f"A gRPC error occurred while connecting to {current_node_info.get('address')}: {e.code().name}"
+                            )
+                        
+                        current_node_id = next_node_id
+                
+
     def opportunistic_takeover(
         self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
     ):
@@ -773,7 +800,7 @@ class Server:
                 try:
                     channel = grpc.insecure_channel(predecessor_info.get("address"))
                     predecessor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                    predecessor_stub.UpdateSuccessor(nodeservice_pb2.Empty())
+                    predecessor_stub.UpdateSuccessorStub(nodeservice_pb2.Empty())
                 except grpc.RpcError as e:
                     logger.error(
                         f"A gRPC error occurred while connecting to {predecessor_info.get('address')}: {e.code().name}"
@@ -934,14 +961,16 @@ def serve():
                     and server_node.chain.get_chain_status() == ChainStatus.UNREADY
                 ):
                     num_total_layers = server_node.config.get("num_hidden_layers")
+                    max_num_layers = server_node._mem_to_num_layers()
 
-                    # join chain
-                    server_node.chain.join_chain(
-                        self_info=server_node.chain.get_self_info(),
-                        max_num_layers=server_node._mem_to_num_layers(),
-                        num_total_layers=num_total_layers,
-                    )
-                    server_node._load_llm()
+                    if max_num_layers > 0:
+                        # Join chain
+                        server_node.chain.join_chain(
+                            self_info=server_node.chain.get_self_info(),
+                            max_num_layers=server_node._mem_to_num_layers(),
+                            num_total_layers=num_total_layers,
+                        )
+                        server_node._load_llm()
 
                 # Opportunistic Takeover
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()

@@ -15,10 +15,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 30.0
+# EXPIRATION_S = 30.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 30.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -83,7 +83,8 @@ class ChainManager:
 
         self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
 
-        self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
+        if not self.get_backup_nodes():
+            self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
 
         self.update_chain_status(ChainStatus.UNREADY)
 
@@ -96,7 +97,17 @@ class ChainManager:
 
         self_info["layers"] = (0, end_idx)
 
+        # This node could have been a backup
+        if self_info.get("is_backup"):
+            self_info["is_backup"] = False
+
+            # Remove the node from the backup_nodes list
+            backup_nodes = self.get_backup_nodes()
+            backup_nodes.remove(self.node_id)
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+
         self._update_server_info(self.node_id, self_info)
+
         self.update_all_layers_loaded()
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
@@ -134,10 +145,6 @@ class ChainManager:
 
         self_layers = (start_idx, end_idx)
 
-        # This node could be trying to join the tail after becoming a backup
-        self.make_node_active(self.node_id)
-        self_info["is_backup"] = False
-
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
         self._update_server_info(tail_id, tail_info)
@@ -148,7 +155,18 @@ class ChainManager:
         # Store self info and update the chain_tail value
         self_info["successor"] = None
         self_info["layers"] = self_layers
+
+        # This node could be trying to join at the tail after being a backup
+        if self_info.get("is_backup"):
+            self_info["is_backup"] = False
+
+            # Remove the node from the backup_nodes list
+            backup_nodes = self.get_backup_nodes()
+            backup_nodes.remove(self.node_id)
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+
         self._update_server_info(self.node_id, self_info)
+
         self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} has joined as the new tail.")
 
@@ -274,8 +292,8 @@ class ChainManager:
         backup_nodes = self.dht.get(BACKUPS_KEY)
         current_status = self.get_chain_status()
 
-        if not head_id:
-            return None
+        # if not head_id:
+        #     return None
 
         chain_info = {
             HEAD_KEY: head_id,
@@ -341,18 +359,18 @@ class ChainManager:
 
         return total_rate
 
-    def is_head(self) -> bool:
+    def is_head(self) -> Optional[bool]:
         """Check if this node is the head of the server chain"""
         head_id = self.dht.get(HEAD_KEY)
         if not head_id:
-            return False
+            return None
         return head_id == self.node_id
 
-    def is_tail(self) -> bool:
+    def is_tail(self) -> Optional[bool]:
         """Checks if this node is the TAIL"""
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
-            raise RuntimeError("Tail server not found")
+            return None
 
         if tail_id == self.node_id:
             return True
@@ -519,26 +537,27 @@ class ChainManager:
         # Republish this servers' info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
+        # Republish the num_total_layers key
+        num_total_layers = self._get_num_total_layers()
+        if num_total_layers:
+            self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
+
+        self.update_all_layers_loaded()
+
+        # Republish chain_status
+        current_status = self.get_chain_status()
+        if current_status:
+            self.update_chain_status(current_status)
+
+        # Republish backup nodes list
+        backup_nodes = self.get_backup_nodes()
+        if backup_nodes is not None:
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+
         # If this node is the head
         if self.is_head():
             # Republish the head key
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
-
-            # Republish the num_total_layers key
-            num_total_layers = self._get_num_total_layers()
-            if num_total_layers:
-                self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
-
-            self.update_all_layers_loaded()
-
-            # Republish chain_status
-            current_status = self.get_chain_status()
-            if current_status:
-                self.update_chain_status(current_status)
-
-            backup_nodes = self.get_backup_nodes()
-            if backup_nodes is not None:
-                self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
@@ -555,6 +574,9 @@ class ChainManager:
     def update_chain_tail(self, node_id: str):
         """Updates the chain_tail key with the given node id"""
         self.dht.store(TAIL_KEY, node_id, EXPIRATION_S)
+    
+    def update_chain_head(self, node_id: str):
+        self.dht.store(HEAD_KEY, node_id, EXPIRATION_S)
 
     def update_all_layers_loaded(self):
         """Checks the layers_loaded subkey in all the server nodes in the chain"""
@@ -695,7 +717,7 @@ class ChainManager:
             backup_info["is_backup"] = False
             self._update_server_info(backup_node_id, backup_info)
 
-            # Remove the replacement node from the backup_nodes list
+            # Remove the node from the backup_nodes list
             backup_nodes = self.get_backup_nodes()
             backup_nodes.remove(backup_node_id)
             self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
@@ -703,5 +725,4 @@ class ChainManager:
 
         logger.info(f"Node: {backup_node_id[:DIGITS_SHOW]} was not a backup")
 
-    def make_node_head(self, node_id: str):
-        self.dht.store(HEAD_KEY, node_id, EXPIRATION_S)
+    

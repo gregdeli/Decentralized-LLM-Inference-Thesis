@@ -22,6 +22,7 @@ from core.p2p.dht_manager import DHTManager
 from core.p2p.chain_manager import (
     ChainManager,
     ChainStatus,
+    HEAD_KEY,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
     EXPIRATION_S,
@@ -291,11 +292,16 @@ class Client:
                     f"Making the dead HEAD's successor the new head and reallocating layers..."
                 )
 
-                self.chain.make_node_head(head_succ_info.get("id"))
+                self.chain.update_chain_head(head_succ_info.get("id"))
                 self._connect_to_head()
 
                 # Reallocate among the remaining nodes
                 self.trigger_reallocation()
+            else:
+                # Its over make the HEAD None and a backup will take its place
+                # or a new node will join
+                self.chain.dht.store(HEAD_KEY, None, EXPIRATION_S) 
+                self.chain.update_chain_status(ChainStatus.UNREADY)
 
     def trigger_reallocation(self):
         """

@@ -55,8 +55,8 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
-        self.UpdateSuccessor = channel.unary_unary(
-                '/nodeservice.NodeService/UpdateSuccessor',
+        self.UpdateSuccessorStub = channel.unary_unary(
+                '/nodeservice.NodeService/UpdateSuccessorStub',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
@@ -104,7 +104,7 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def UpdateSuccessor(self, request, context):
+    def UpdateSuccessorStub(self, request, context):
         """Runs server_node._connect_to_successor()
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -148,8 +148,8 @@ def add_NodeServiceServicer_to_server(servicer, server):
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
-            'UpdateSuccessor': grpc.unary_unary_rpc_method_handler(
-                    servicer.UpdateSuccessor,
+            'UpdateSuccessorStub': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateSuccessorStub,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
@@ -284,7 +284,7 @@ class NodeService(object):
             _registered_method=True)
 
     @staticmethod
-    def UpdateSuccessor(request,
+    def UpdateSuccessorStub(request,
             target,
             options=(),
             channel_credentials=None,
@@ -297,7 +297,7 @@ class NodeService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/nodeservice.NodeService/UpdateSuccessor',
+            '/nodeservice.NodeService/UpdateSuccessorStub',
             core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
