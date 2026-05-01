@@ -119,27 +119,24 @@ class ChainManager:
         # Get the previous tails layers to determine this nodes layer range
         start_idx = tail_info["layers"][1] + 1
 
-        # Backup Node, if all layers loaded
+        # Make it a Backup Node, if all layers loaded
         if start_idx >= num_total_layers:
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
 
-            self_info["is_backup"] = True
-            self_server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
-            self.dht.store(self_server_key, self_info, EXPIRATION_S)
-
-            # Update the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.append(self.node_id)
-            logger.info(f"backup_nodes list updated: {backup_nodes}")
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            self.make_node_backup(server_info=self_info)
             return
 
+        # Otherwise, continue with the join
         end_idx = start_idx + max_num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
 
         self_layers = (start_idx, end_idx)
+
+        # This node could be trying to join the tail after becoming a backup
+        self.make_node_active(self.node_id)
+        self_info["is_backup"] = False
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
@@ -158,6 +155,12 @@ class ChainManager:
         logger.info(f"Previous Tail Info: {tail_info}")
 
     # ---- Getters ----
+
+    def get_head_id(self) -> str:
+        return self.dht.get(TAIL_KEY)
+
+    def get_tail_id(self) -> str:
+        return self.dht.get(TAIL_KEY)
 
     def get_chain_status(self) -> Optional[ChainStatus]:
         status_value = self.dht.get(STATUS_KEY)
@@ -197,8 +200,6 @@ class ChainManager:
     def get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
         self_info = self.dht.get(f"{SERVER_INFO_PREFIX}{self.node_id}")
-        if not self_info:
-            raise RuntimeError(f"Could not retrieve info for node {self.node_id}.")
         return self_info
 
     def get_successor_data(self) -> Optional[Dict[str, Any]]:
@@ -340,43 +341,6 @@ class ChainManager:
 
         return total_rate
 
-    # DELETE THIS
-    def get_failed_successor_data(self) -> Optional[Dict[str, Any]]:
-        """
-        Gets the data of this node's successor from the DHT.
-        This is called by the node when it actively detects its successor is dead.
-        """
-        self_info = self.get_self_info()
-        successor_data = self_info.get("successor")
-        if not successor_data:
-            logger.warning(f"Node {self.node_id[:DIGITS_SHOW]} has no successor data.")
-            return None
-
-        # Get the failed successor's layers
-        successor_key = f"{SERVER_INFO_PREFIX}{successor_data.get('id')}"
-        successor_info = self.dht.get(successor_key)
-        if not successor_info:
-            logger.warning(
-                f"Could not fetch info for successor {successor_data.get('id')[:DIGITS_SHOW]} from DHT. It may have just expired."
-            )
-            return None
-
-        successor_data["layers"] = successor_info.get("layers")
-
-        # Check if the successor is the TAIL
-        if self.node_is_tail(successor_data.get("id")):
-            successor_data["was_tail"] = True
-            return successor_data
-
-        # Get the successor's successor data
-        successor_2_data = successor_info.get("successor")
-        if not successor_2_data:
-            logger.warning(f"Node {successor_data.get('id')[:DIGITS_SHOW]} has no successor data.")
-            return None
-
-        successor_data["successor"] = successor_2_data
-        return successor_data
-
     def is_head(self) -> bool:
         """Check if this node is the head of the server chain"""
         head_id = self.dht.get(HEAD_KEY)
@@ -463,12 +427,7 @@ class ChainManager:
         # If the replacement node was a backup make it active
         if replacement_info.get("is_backup"):
             logger.info(f"With replacement Backup Node: {replacement_node_id}")
-            replacement_info["is_backup"] = False
-
-            # Remove the replacement node from the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(replacement_node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            self.make_node_active(replacement_info.get("id"))
 
         # Make the replacee a backup (Opportunistic Takeover and Reallocation Takeover)
         if make_replacee_backup:
@@ -629,8 +588,12 @@ class ChainManager:
                         current_chain_status = self.get_chain_status()
                         if current_chain_status in (ChainStatus.UNREADY, ChainStatus.RUNNING):
                             self.update_chain_status(ChainStatus.READY)
-                    current_node_id = None  # End of chain
+                        break
 
+                    # If the tail doesn't have the final layer loaded
+                    self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                    self.update_chain_status(ChainStatus.UNREADY)
+                    break  # current_node_id = None  # End of chain
             else:
                 self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                 break
@@ -697,9 +660,15 @@ class ChainManager:
         self_info["grpc_overhead"] = grpc_overhead
         self._update_server_info(self.node_id, self_info)
 
-    def make_node_backup(self, node_id: str):
+    def make_node_backup(
+        self, node_id: Optional[str] = None, server_info: Optional[Dict[str, Any]] = None
+    ):
         """Turn an active server node into a backup."""
-        server_info = self.get_server_info(node_id)
+        if node_id:
+            server_info = self.get_server_info(node_id)
+            node_id = server_info.get("id")
+        else:
+            node_id = server_info.get("id")
         server_info["is_backup"] = True
         server_info["successor"] = None
         server_info["layers"] = None
@@ -714,6 +683,25 @@ class ChainManager:
         logger.info(
             f"Node: {node_id[:DIGITS_SHOW]} was removed from the active chain and became a backup."
         )
+
+    def make_node_active(self, backup_node_id: str):
+        """If node_id was a backup, make it ative"""
+        backup_info = self.get_server_info(backup_node_id)
+        if not backup_info:
+            return
+
+        logger.info(f"Making Node {backup_node_id[:DIGITS_SHOW]} active...")
+        if self.node_is_backup(backup_node_id):
+            backup_info["is_backup"] = False
+            self._update_server_info(backup_node_id, backup_info)
+
+            # Remove the replacement node from the backup_nodes list
+            backup_nodes = self.get_backup_nodes()
+            backup_nodes.remove(backup_node_id)
+            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            return
+
+        logger.info(f"Node: {backup_node_id[:DIGITS_SHOW]} was not a backup")
 
     def make_node_head(self, node_id: str):
         self.dht.store(HEAD_KEY, node_id, EXPIRATION_S)

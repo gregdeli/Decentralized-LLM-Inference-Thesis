@@ -82,7 +82,7 @@ services:
         #         count: 1
         #         capabilities: [gpu]
         limits:
-          memory: 3G
+          memory: 1.7G
           # cpus: '1.0'
     depends_on:
       - head-server
@@ -114,7 +114,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 3G
+          memory: 1.5G
     depends_on:
       - head-server
       - intermediate-server

@@ -230,12 +230,11 @@ class Client:
                             f"A gRPC error occurred while connecting to {backup_info.get('address')}: {e.code().name}"
                         )
 
-                else:
                     logger.info(
                         f"The dead HEAD's successor {head_succ_data.get('id')[:DIGITS_SHOW]} cannot load the orphaned layers."
                     )
 
-            # If the head didnt have a successor or it couldnt load the orphaned layers
+            # If the head's successor couldn't load the orphaned layers or the head didn't have a successor
             # Find a backup node replacement
             logger.info("Searching for a backup node...")
             backup_nodes = self.chain.get_backup_nodes()
@@ -280,12 +279,23 @@ class Client:
                         else:
                             logger.info(f"Backup Node {backup_id} cannot load the orphaned layers.")
 
-            else:
-                # Neither a backup nor the head's successor can replace the dead HEAD
+            # Neither a backup nor the head's successor can replace the dead HEAD
+            logger.error(
+                f"Neither a backup nor the dead head's successor can replace the dead HEAD."
+            )
+
+            # Make the dead head's successor the new HEAD and reallocate the layers among the remaining nodes
+            # The chain will have to wait for a new node to come in
+            if head_succ_info:
                 logger.error(
-                    f"Neither a backup nor the dead head's successor can replace the dead HEAD."
+                    f"Making the dead HEAD's successor the new head and reallocating layers..."
                 )
-                self.chain.update_chain_status(ChainStatus.UNREADY)
+
+                self.chain.make_node_head(head_succ_info.get("id"))
+                self._connect_to_head()
+
+                # Reallocate among the remaining nodes
+                self.trigger_reallocation()
 
     def trigger_reallocation(self):
         """
@@ -308,6 +318,7 @@ class Client:
 
                 self.head_server_stub.Reallocate(request)
 
+                self.chain.update_all_layers_loaded()
                 if self.chain.get_all_layers_loaded():
                     self.chain.update_chain_status(ChainStatus.READY)
                 else:

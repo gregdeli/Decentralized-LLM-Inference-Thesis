@@ -592,9 +592,9 @@ class Server:
         target_layer_count = min(int(round(ideal_layer_count)), max_num_layers)
 
         # Rounding logic
-        if self.chain.is_tail():
-            # The tail takes whatever is left
-            target_layer_count = num_total_layers - start_layer_index
+        # if self.chain.is_tail():
+        # The tail takes whatever is left
+        # target_layer_count = num_total_layers - start_layer_index
         if target_layer_count < 1:
             target_layer_count = 1
         elif (start_layer_index + target_layer_count) >= num_total_layers:
@@ -928,6 +928,21 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
+                # if the TAIL doesn't have the final layer loaded the backup node can join the chain
+                if (
+                    not server_node.chain.get_all_layers_loaded()
+                    and server_node.chain.get_chain_status() == ChainStatus.UNREADY
+                ):
+                    num_total_layers = server_node.config.get("num_hidden_layers")
+
+                    # join chain
+                    server_node.chain.join_chain(
+                        self_info=server_node.chain.get_self_info(),
+                        max_num_layers=server_node._mem_to_num_layers(),
+                        num_total_layers=num_total_layers,
+                    )
+                    server_node._load_llm()
+
                 # Opportunistic Takeover
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
