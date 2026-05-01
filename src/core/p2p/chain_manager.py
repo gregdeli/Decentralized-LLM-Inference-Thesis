@@ -15,10 +15,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 30.0
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 30.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -445,7 +445,8 @@ class ChainManager:
         # If the replacement node was a backup make it active
         if replacement_info.get("is_backup"):
             logger.info(f"With replacement Backup Node: {replacement_node_id}")
-            self.make_node_active(replacement_info.get("id"))
+            replacement_info["is_backup"] = False
+            self.remove_node_from_backups(replacement_info.get("id"))
 
         # Make the replacee a backup (Opportunistic Takeover and Reallocation Takeover)
         if make_replacee_backup:
@@ -706,16 +707,16 @@ class ChainManager:
             f"Node: {node_id[:DIGITS_SHOW]} was removed from the active chain and became a backup."
         )
 
-    def make_node_active(self, backup_node_id: str):
-        """If node_id was a backup, make it ative"""
+    def remove_node_from_backups(self, backup_node_id: str):
+        """If node_id was a backup, remove it from the DHT backups list"""
         backup_info = self.get_server_info(backup_node_id)
         if not backup_info:
             return
 
         logger.info(f"Making Node {backup_node_id[:DIGITS_SHOW]} active...")
         if self.node_is_backup(backup_node_id):
-            backup_info["is_backup"] = False
-            self._update_server_info(backup_node_id, backup_info)
+            # backup_info["is_backup"] = False
+            # self._update_server_info(backup_node_id, backup_info)
 
             # Remove the node from the backup_nodes list
             backup_nodes = self.get_backup_nodes()

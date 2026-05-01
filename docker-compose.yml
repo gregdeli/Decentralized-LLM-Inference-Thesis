@@ -82,7 +82,7 @@ services:
                 count: 1
                 capabilities: [gpu]
         limits:
-          memory: 1.7G
+          memory: 1.5G
           # cpus: '1.0'
     depends_on:
       - head-server
@@ -100,7 +100,7 @@ services:
     environment:
       - MODEL_PATH=/models/Llama-3.2-1B-Instruct
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - NUM_LAYERS=4
+      # - NUM_LAYERS=4
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=tail-server:5001
@@ -114,7 +114,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 1.5G
+          memory: 4G
     depends_on:
       - head-server
       - intermediate-server

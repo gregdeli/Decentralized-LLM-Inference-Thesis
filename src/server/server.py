@@ -775,8 +775,6 @@ class Server:
         self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
         layers_to_takeover = weak_node_info.get("layers")
-        # weak_node_id = weak_node_info.get("id")
-        # weak_node_succ_data = weak_node_info.get("successor")
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
         weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(

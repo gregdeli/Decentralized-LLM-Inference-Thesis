@@ -82,13 +82,18 @@ class LLM:
         # tokenizer = Tokenizer(checkpoint_dir)
         tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-        # Initialize model
-        model = Llama3(config, is_client, layers_to_load)
-        model.eval()
-
         dtype = get_dtype_from_config(config)
 
-        model.to(device, dtype=dtype)
+        # Initialize model
+        with torch.device(device):
+            torch.set_default_dtype(dtype)
+            model = Llama3(config, is_client, layers_to_load)
+        
+        model.eval()
+
+        # dtype = get_dtype_from_config(config)
+
+        # model.to(device, dtype=dtype)
 
         # Setup preprocessor
         preprocessor = Preprocessor(tokenizer, device=device)
