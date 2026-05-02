@@ -286,10 +286,20 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Memory Usage: {int(node_info['memory_usage'])}/{int(node_info['memory_limit'])} MB"
                         )
 
+                    if "available_memory" in labels and "available_memory" in node_info:
+                        labels["available_memory"].text = (
+                            f"Available Memory: {int(node_info['available_memory'])} MB"
+                        )
+
                     # Update VRAM
                     if "vram" in labels and "vram_usage" in node_info and "vram_limit" in node_info:
                         labels["vram"].text = (
                             f"VRAM Usage: {int(node_info['vram_usage'])}/{int(node_info['vram_limit'])} MB"
+                        )
+
+                    if "available_vram" in labels and "available_vram" in node_info:
+                        labels["available_vram"].text = (
+                            f"Available VRAM: {int(node_info['available_vram'])} MB"
                         )
 
         update_node_labels(server_list)

@@ -300,7 +300,7 @@ class Client:
             else:
                 # Its over make the HEAD None and a backup will take its place
                 # or a new node will join
-                self.chain.dht.store(HEAD_KEY, None, EXPIRATION_S) 
+                self.chain.dht.store(HEAD_KEY, None, EXPIRATION_S)
                 self.chain.update_chain_status(ChainStatus.UNREADY)
 
     def trigger_reallocation(self):
@@ -352,6 +352,9 @@ class Client:
             warning = '<span style="color:red">Not all model layers have been loaded or the chain is not READY. Cannot initiate the generation task.</span>'
             logger.warning(warning)
             return warning
+
+        # Connect to head again. Successor stub could be stale after an Opportunistic Takeover
+        self._connect_to_head()
 
         prompt = self.llm.apply_chat_template(prompt)
         self.chat_history.append(prompt)

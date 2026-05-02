@@ -85,6 +85,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         return nodeservice_pb2.Empty()
 
     def LoadLayers(self, request, context):
+        self.server_node._unload_llm()
         self.server_node._load_llm()
         self.server_node._connect_to_successor()
         return nodeservice_pb2.Empty()

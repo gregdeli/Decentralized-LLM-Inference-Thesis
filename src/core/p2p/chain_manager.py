@@ -15,10 +15,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 30.0
+# EXPIRATION_S = 30.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -575,7 +575,7 @@ class ChainManager:
     def update_chain_tail(self, node_id: str):
         """Updates the chain_tail key with the given node id"""
         self.dht.store(TAIL_KEY, node_id, EXPIRATION_S)
-    
+
     def update_chain_head(self, node_id: str):
         self.dht.store(HEAD_KEY, node_id, EXPIRATION_S)
 
@@ -725,5 +725,3 @@ class ChainManager:
             return
 
         logger.info(f"Node: {backup_node_id[:DIGITS_SHOW]} was not a backup")
-
-    

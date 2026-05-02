@@ -7,8 +7,8 @@ services:
     hostname: head-server
     # network_mode: "host"
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - NUM_LAYERS=3
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -36,8 +36,8 @@ services:
     # network_mode: "host"
     hostname: intermediate-server
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -46,11 +46,11 @@ services:
       - ./models:/models:ro 
     deploy:
       resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         limits:
           memory: 3G
           # cpus: '1.0'
@@ -66,8 +66,8 @@ services:
     # network_mode: "host"
     hostname: tail-server
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - NUM_LAYERS=4
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -76,11 +76,11 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+        # reservations:
+        #     devices:
+        #       - driver: nvidia
+        #         count: 1
+        #         capabilities: [gpu]
         limits:
           memory: 1.5G
           # cpus: '1.0'
@@ -98,8 +98,8 @@ services:
     # command: sleep infinity
     hostname: server-1
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - NUM_LAYERS=4
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -130,8 +130,8 @@ services:
     command: sleep infinity 
     hostname: client
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001 
     volumes:

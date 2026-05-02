@@ -79,16 +79,13 @@ class LLM:
         # Check is the model is instruction tuned
         is_instruct = is_instruct_model(model_path=model_path)
 
-        # tokenizer = Tokenizer(checkpoint_dir)
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-
         dtype = get_dtype_from_config(config)
 
         # Initialize model
         with torch.device(device):
             torch.set_default_dtype(dtype)
             model = Llama3(config, is_client, layers_to_load)
-        
+
         model.eval()
 
         # dtype = get_dtype_from_config(config)
@@ -96,7 +93,10 @@ class LLM:
         # model.to(device, dtype=dtype)
 
         # Setup preprocessor
-        preprocessor = Preprocessor(tokenizer, device=device)
+        preprocessor = None
+        if is_client:
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            preprocessor = Preprocessor(tokenizer, device=device)
 
         # Load weigths from the safetensors file or files
         index_path = model_path / "model.safetensors.index.json"
