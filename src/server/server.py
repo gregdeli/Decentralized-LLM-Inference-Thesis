@@ -49,7 +49,7 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-RESERVED_MEM_MB = 100  # Memory reserved for system overhead
+RESERVED_MEM_MB = 200  # Memory reserved for system overhead
 
 
 class Server:

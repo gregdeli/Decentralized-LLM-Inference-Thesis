@@ -58,6 +58,10 @@ def calculate_transformer_params(model_path: Path) -> int:
     config_path = model_path / "config.json"
     with open(config_path, "r") as f:
         config = json.load(f)
+        
+    # Dynamically calculate and set head_dim if its missing
+    if "head_dim" not in config:
+            config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
 
     hidden_size = config["hidden_size"]
     intermediate_size = config["intermediate_size"]

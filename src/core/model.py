@@ -20,6 +20,10 @@ class Llama3(nn.Module):
                        will be loaded.
             num_layers: Defines the number of transformer to be loading in this node.
         """
+        # Dynamically calculate and set head_dim if its missing
+        if "head_dim" not in config:
+            config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
+
         super().__init__()
         self.config = config
         self.is_client = is_client
