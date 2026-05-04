@@ -29,8 +29,9 @@ class LLM:
         is_instruct_model: bool = False,
         model_path: Path = None,
         kv_cache_initialized: bool = False,
-        is_client: bool = True,
+        initial_layer_loaded: bool = True,
         layers_loaded: Tuple[int, int] = None,
+        output_layer_loaded: bool = True,
         device: str = "cpu",
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -42,8 +43,9 @@ class LLM:
         self.kv_cache_initialized = kv_cache_initialized
         self.prev_generated_seq_length = 0
 
-        self.is_client = is_client
+        self.initial_layer_loaded = initial_layer_loaded
         self.layers_loaded = layers_loaded
+        self.output_layer_loaded = output_layer_loaded
         self.device = device
         self.dtype = dtype
 
@@ -61,8 +63,9 @@ class LLM:
     def load(
         cls,
         model_path: Path,
-        is_client: bool = True,
+        load_initial_layer: bool = True,
         layers_to_load: Tuple[int, int] = None,
+        load_output_layer: bool = True,
         time_it: bool = False,
     ) -> "LLM":
         if time_it:
@@ -84,17 +87,16 @@ class LLM:
         # Initialize model
         with torch.device(device):
             torch.set_default_dtype(dtype)
-            model = Llama3(config, is_client, layers_to_load)
+            model = Llama3(config, load_initial_layer, layers_to_load, load_output_layer)
 
         model.eval()
 
         # dtype = get_dtype_from_config(config)
-
         # model.to(device, dtype=dtype)
 
         # Setup preprocessor
         preprocessor = None
-        if is_client:
+        if load_initial_layer:
             tokenizer = AutoTokenizer.from_pretrained(model_path)
             preprocessor = Preprocessor(tokenizer, device=device)
 
@@ -125,6 +127,10 @@ class LLM:
             file_path = model_path / filename
             state_dict = load_file(file_path)
             state_dict = remove_model_prefix(state_dict)
+
+            if load_output_layer and "lm_head.weight" not in state_dict and "embed_tokens.weight" in state_dict:
+                state_dict["lm_head.weight"] = state_dict["embed_tokens.weight"]
+
             model.load_state_dict(state_dict, strict=False)
 
             # Explicitly free memory
@@ -145,8 +151,9 @@ class LLM:
             is_instruct_model=is_instruct,
             model_path=model_path,
             kv_cache_initialized=False,
-            is_client=is_client,
+            initial_layer_loaded=load_initial_layer,
             layers_loaded=layers_to_load,
+            output_layer_loaded=load_output_layer,
             device=device,
             dtype=dtype,
         )
@@ -298,7 +305,7 @@ class LLM:
         else:
             return prompt
 
-    def sample_logits(self, logits: torch.Tensor, temperature: float, top_p: float) -> torch.Tensor:
+    def sample_logits(self, logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.9) -> torch.Tensor:
         """Applies temperature and top-p (nucleus) sampling to logits."""
         logits = logits[:, -1, :]
 
@@ -353,26 +360,3 @@ class Preprocessor:
         return decoded_texts[0]
 
 
-if __name__ == "__main__":
-    model_path = Path("/home/greg/Decentralized-LLM-Inference-Thesis/models/Llama-3.2-1B")
-    llm = LLM.load(model_path)
-
-    prompt = "The capital of France is"
-    text = llm.generate(prompt, max_new_tokens=2)
-    print(prompt + text)
-
-    # prompt = "The meaning of life is"
-    # text = llm.generate(prompt, max_new_tokens=6)
-    # print(prompt + text)
-
-    # prompt = "The tallest mountain in the world is"
-    # text = llm.generate(prompt, max_new_tokens=2)
-    # print(prompt + text)
-
-    # Streaming
-    # prompt = "The Computer Enginnering and Informatics Department at the University of Patras is"
-    # generator = llm.generate(prompt, max_new_tokens=100, temperature=0.0, stream=True)
-
-    # print(prompt, end="", flush=True)
-    # for e in generator:
-    #     print(e, end="", flush=True)

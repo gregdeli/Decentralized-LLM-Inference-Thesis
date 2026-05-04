@@ -66,7 +66,7 @@ message InferenceResponse {
   float processing_time = 5;
 
   // For block-wise quantization
-  bytes block_scales = 6;
+  // bytes block_scales = 6;
 }
 
 message ReallocateRequest {

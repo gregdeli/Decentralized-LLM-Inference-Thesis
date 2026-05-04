@@ -55,7 +55,7 @@ class Client:
             config = json.load(f)
         self.config = config
 
-        self.llm = LLM.load(model_path, is_client=True, time_it=time_it)
+        self.llm = LLM.load(model_path, load_initial_layer=True, load_output_layer=False, time_it=time_it)
         self.model = self.llm.model
         self.chat_history = []
 
@@ -563,19 +563,8 @@ class Client:
             self.total_rate = self.chain.gather_total_rate()
 
             start = time.perf_counter()
-            x = message_to_tensor(response)
+            next_token = response_to_tensor(response)
             self.deserialization_delay = time.perf_counter() - start
-
-            # Run clients final layers
-            start = time.perf_counter()
-            # logits = self.model.forward_client_final(self.final_activations)
-            logits = self.model.forward_client_final(x)
-            self.final_inference_delay = time.perf_counter() - start
-
-            # Sample the next token
-            start = time.perf_counter()
-            next_token = self.llm.sample_logits(logits, temperature, top_p)
-            self.sample_delay = time.perf_counter() - start
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:

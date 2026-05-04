@@ -18,6 +18,7 @@ from core.p2p.chain_manager import (
     HEAD_KEY,
     TAIL_KEY,
     TOTAL_LAYERS_KEY,
+    TOTAL_PARAMS_KEY,
     ALL_LAYERS_KEY,
     BACKUPS_KEY,
     STATUS_KEY,
@@ -121,13 +122,18 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
             "font-mono text-sm"
         )
 
+        output_layer_loaded = info.get("output_layer_loaded", False)
+        labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
+            "font-mono text-sm"
+        )
+
         if "device" in info:
             ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
 
         if "processing_rate" in info:
             processing_rate = info.get("processing_rate", 0.0)
             labels["processing_rate"] = ui.label(
-                f"Processing Rate: {processing_rate:.6f} layers/sec"
+                f"Processing Rate: {processing_rate:.6f} params/sec"
             ).classes("font-mono text-sm")
 
         if "inference_delay" in info:
@@ -219,9 +225,14 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         # --- Update in place ---
 
         # Global Keys
+        if "total_params" in state.ui.global_labels:
+            state.ui.global_labels["total_params"].text = (
+                f"Total Params: {chain_info.get(TOTAL_PARAMS_KEY)}"
+            )
+
         if "total_layers" in state.ui.global_labels:
             state.ui.global_labels["total_layers"].text = (
-                f"Total Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
+                f"Total Transformer Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
             )
 
         if "all_loaded" in state.ui.global_labels:
@@ -261,9 +272,14 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Layers Loaded: {node_info.get('layers_loaded', False)}"
                         )
 
+                    if "output_layer_loaded" in labels:
+                        labels["output_layer_loaded"].text = (
+                            f"Output Layer Loaded: {node_info.get('output_layer_loaded', False)}"
+                        )
+
                     if "processing_rate" in labels:
                         labels["processing_rate"].text = (
-                            f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} layers/sec"
+                            f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} params/sec"
                         )
 
                     if "inference_delay" in labels:
@@ -321,11 +337,16 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             # Layer Status
             ui.label("Global Keys").classes("font-bold text-xl")
             total_layers = chain_info.get(TOTAL_LAYERS_KEY)
+            total_params = chain_info.get(TOTAL_PARAMS_KEY)
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
 
+            state.ui.global_labels["total_params"] = ui.label(
+                f"Total Params: {total_params}"
+            ).classes("text-lg")
+
             state.ui.global_labels["total_layers"] = ui.label(
-                f"Total Layers: {total_layers}"
+                f"Total Transformer Layers: {total_layers}"
             ).classes("text-lg")
 
             state.ui.global_labels["all_loaded"] = ui.label(

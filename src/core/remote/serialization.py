@@ -46,42 +46,43 @@ def tensor_to_request(
 
 
 def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceResponse:
-    quantized_blocks, absmax = quantize_blockwise(tensor)
-    tensor_data = quantized_blocks.numpy().tobytes()
+    # quantized_blocks, absmax = quantize_blockwise(tensor)
+    # tensor_data = quantized_blocks.numpy().tobytes()
     tensor_shape = list(tensor.shape)
     dtype = DTYPE_MAP[tensor.dtype]
 
-    view_dtype = torch.int16 if absmax.element_size() == 2 else absmax.dtype
-    block_scales = absmax.view(view_dtype).numpy().tobytes()
+    # view_dtype = torch.int16 if absmax.element_size() == 2 else absmax.dtype
+    # block_scales = absmax.view(view_dtype).numpy().tobytes()
+
+    view_dtype = torch.int16 if tensor.element_size() == 2 else tensor.dtype
+    tensor_data = tensor.view(view_dtype).numpy().tobytes()
 
     response = {
         "tensor_data": tensor_data,
         "tensor_shape": tensor_shape,
         "dtype": dtype,
-        "block_scales": block_scales,
+        # "block_scales": block_scales,
     }
 
     return nodeservice_pb2.InferenceResponse(**response)
 
 
-def message_to_tensor(
-    message: Union[nodeservice_pb2.InferenceRequest, nodeservice_pb2.InferenceResponse],
-) -> torch.Tensor:
-    """Deserializes an InferenceRequest or an InferenceResponse into a tensor."""
-    shape = tuple(message.tensor_shape)
+def request_to_tensor(request: nodeservice_pb2.InferenceRequest) -> torch.Tensor:
+    """Deserializes an InferenceRequest into a tensor"""
+    shape = tuple(request.tensor_shape)
 
-    dtype_str = message.dtype
+    dtype_str = request.dtype
     torch_dtype = INV_DTYPE_MAP[dtype_str]
 
     is_2byte = torch_dtype.itemsize == 2
     np_dtype = np.int16 if is_2byte else getattr(np, dtype_str)
 
     # Load the quantized int8 data
-    np_quantized = np.frombuffer(message.tensor_data, dtype=np.int8)
+    np_quantized = np.frombuffer(request.tensor_data, dtype=np.int8)
     quantized_tensor = torch.from_numpy(np_quantized).view(-1, BLOCK_SIZE)
 
     # Load the block scales
-    np_scales = np.frombuffer(message.block_scales, dtype=np_dtype)
+    np_scales = np.frombuffer(request.block_scales, dtype=np_dtype)
     absmax_tensor = torch.from_numpy(np_scales).view(-1, 1).view(torch_dtype)
 
     # Dequantize
@@ -93,6 +94,21 @@ def message_to_tensor(
     )
 
     return tensor
+
+def response_to_tensor(response: nodeservice_pb2.InferenceResponse) -> torch.Tensor:
+    """Deserializes an InferenceResponse into a tensor"""
+    tensor_data = response.tensor_data
+
+    shape = tuple(response.tensor_shape)
+
+    dtype_str = response.dtype
+    torch_dtype = INV_DTYPE_MAP[dtype_str]
+
+    tensor = torch.frombuffer(tensor_data, dtype=torch_dtype)
+    tensor = tensor.reshape(shape)
+
+    return tensor
+
 
 
 def quantize_blockwise(

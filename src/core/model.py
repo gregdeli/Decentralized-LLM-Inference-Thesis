@@ -9,8 +9,9 @@ class Llama3(nn.Module):
     def __init__(
         self,
         config: Dict[str, Any],
-        is_client: bool,
-        layers_to_load: Tuple[int, int]
+        load_initial_layer: bool,
+        layers_to_load: Tuple[int, int],
+        load_output_layer: bool,
     ) -> None:
         """
         Args:
@@ -26,20 +27,20 @@ class Llama3(nn.Module):
 
         super().__init__()
         self.config = config
-        self.is_client = is_client
+        self.output_layer_loaded = load_output_layer
 
         if layers_to_load is None:
             self.num_layers = 0
         else:
             self.num_layers = layers_to_load[1] - layers_to_load[0] + 1
 
-        if is_client:
+        if load_initial_layer:
             self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
         if self.num_layers > 0:
             self.layers = nn.ModuleDict(
                 {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_to_load[0], layers_to_load[1] + 1)}
             )
-        if is_client:
+        if load_output_layer:
             self.norm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])
             self.lm_head = nn.Linear(config["hidden_size"], config["vocab_size"], bias=False)
 
@@ -173,7 +174,11 @@ class Llama3(nn.Module):
         if self.num_layers > 0:
             for block in self.layers.values():
                 h = block(h, cos, sin, mask, input_pos)
-
+        
+        if self.output_layer_loaded:
+            x = self.norm(h)
+            h = self.lm_head(x)
+        
         return h
 
     def build_rope_cache(self, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -214,9 +219,11 @@ class Llama3(nn.Module):
                 block.self_attn.kv_cache = None
 
     def post_init(self):
-        # Tie the weights between the input embeddings and the ouput embeddings.
-        if self.config.get("tie_word_embeddings", True) and self.is_client:
-            self.lm_head.weight = self.embed_tokens.weight
+        # Tie the weights between the input embeddings and the output embeddings
+        # only if both layers are loaded on this specific node.
+        if self.config.get("tie_word_embeddings", True):
+            if hasattr(self, "embed_tokens") and hasattr(self, "lm_head"):
+                self.lm_head.weight = self.embed_tokens.weight
 
 
 class TransformerBlock(nn.Module):

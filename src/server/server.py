@@ -27,7 +27,10 @@ from core.llm_loader import LLM
 from core.utils import (
     get_dtype_from_config,
     calculate_transformer_params,
+    calculate_final_output_params,
     update_config_layer_param_count,
+    update_config_final_output_param_count,
+    update_config_total_param_count
 )
 from core.remote.utils import (
     get_bootstrap_peer_address,
@@ -92,7 +95,10 @@ class Server:
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
-        # Determine Load Capacity
+        # Determine Model Parameter Load Capacity
+        max_num_params = self._mem_to_num_params()
+
+        # Determine Layer Load Capacity
         self._update_memory_usage(update_on_dht=False)
         if not num_layers:
             num_layers = self._mem_to_num_layers()
@@ -106,6 +112,7 @@ class Server:
             )
             num_layers = self._mem_to_num_layers()
 
+
         # Join the Inference Chain
         server_info = {
             "id": self.chain.node_id,
@@ -117,7 +124,12 @@ class Server:
         self.chain.join_chain(
             server_info,
             max_num_layers=num_layers,
-            num_total_layers=config["num_hidden_layers"],
+            max_num_params=max_num_params,
+            num_total_layers=self.config.get("num_hidden_layers"),
+            num_total_params=self.config.get("num_total_params"),
+            transformer_layer_params=self.config.get("transformer_layer_params"),
+            final_output_params=self.config.get("final_output_params")
+
         )
 
         # Initialize State
@@ -125,10 +137,11 @@ class Server:
         self.model = None
         self.successor_stub = None
         self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
-        self.num_local_layers = 0
+        # self.num_local_layers = 0
+        self.num_local_params = 0
 
         self.inference_delay = 0.0
-        self.layers_per_second = 0.0
+        self.processing_rate = 0.0
         self.grpc_overhead = 0.0
         # self.succ_network_latency = 0.0
 
@@ -141,6 +154,7 @@ class Server:
     ):
         """Loads the layers assigned by the ChainManager."""
         layers_to_load = self.chain.get_layers()
+        load_output_layer = self.chain.get_load_output_layer()
 
         if self.chain.is_backup():
             # num_layers = self._mem_to_num_layers()
@@ -149,28 +163,36 @@ class Server:
             layers_to_load = (0, 0)
 
         logger.info(f"Loading layers: {layers_to_load}...")
+        if load_output_layer:
+            logger.info("Loading Final Output Layer...") 
 
         self.llm = LLM.load(
             self.model_path,
-            is_client=False,
+            load_initial_layer=False,
             layers_to_load=layers_to_load,
+            load_output_layer=load_output_layer,
             time_it=time_it,
         )
         self.model = self.llm.model
-        self.num_local_layers = self.llm.model.num_layers
+        # self.num_local_layers = self.llm.model.num_layers
+        layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
+        output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        self.num_local_params = layer_params + output_params
 
         # Update DHT and Chain Status
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
         if not self.chain.is_backup():
             self.chain.update_layers_loaded(True)
+            self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
             self.chain.update_all_layers_loaded()
 
     def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
         self.model = None
         self.llm = None
-        self.num_local_layers = 0
+        # self.num_local_layers = 0
+        self.num_local_params = 0
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -183,11 +205,61 @@ class Server:
 
         self._unload_llm()
 
-        self.llm = LLM.load(self.model_path, is_client=False, layers_to_load=layers)
+        self.llm = LLM.load(self.model_path, load_initial_layer=False, layers_to_load=layers)
         self.model = self.llm.model
-        self.num_local_layers = self.llm.model.num_layers
+        # self.num_local_layers = self.llm.model.num_layers
+        layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
+        output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        self.num_local_params = layer_params + output_params
+
         self._update_memory_usage()
         self.chain.update_layers_loaded(True)
+
+    def _reload_config(self):
+        with open(self.model_path / "config.json", "r") as f:
+            self.config = json.load(f)
+
+    def _mem_to_num_params(self) -> int:
+        """
+        Calculates how many model parameters fit in the available Memory/VRAM
+        """
+        self._update_memory_usage(update_on_dht=False)
+
+        # Get the number of total model parameters from the model config 
+        # or add it if it doesnt exist
+        total_params = self.config.get("num_total_params")
+        if total_params is None:
+            layer_params = self.config.get("transformer_layer_params")
+            if layer_params is None:
+                layer_params = calculate_transformer_params(self.model_path)
+                update_config_layer_param_count(self.model_path, layer_params)
+                self._reload_config()
+            
+            final_output_params = self.config.get("final_output_params")
+            if final_output_params is None:
+                final_output_params = calculate_final_output_params(self.model_path)
+                update_config_final_output_param_count(self.model_path, final_output_params)
+                self._reload_config()
+            
+            total_params = self.config.get("num_hidden_layers") * layer_params + final_output_params
+            update_config_total_param_count(self.model_path, total_params)
+            self._reload_config()
+
+
+        if self.device == "cuda":
+            available = self.available_vram_mb - RESERVED_MEM_MB
+        else:
+            available = self.available_memory_mb - RESERVED_MEM_MB
+
+        if available <= 0:
+            return 0
+        
+        param_dtype = get_dtype_from_config(self.config)
+        bytes_per_param = param_dtype.itemsize
+
+        max_num_params = available / (bytes_per_param / (1024 * 1024)) 
+        return min(max_num_params, total_params)
+
 
     def _mem_to_num_layers(
         self,
@@ -199,17 +271,11 @@ class Server:
         """
         self._update_memory_usage(update_on_dht=False)
 
-        total_layer_params = self.config.get("total_transformer_layer_params")
-        if total_layer_params is None:
-            total_layer_params = calculate_transformer_params(self.model_path)
-            update_config_layer_param_count(self.model_path, total_layer_params)
-            # Reload config
-            with open(self.model_path / "config.json", "r") as f:
-                self.config = json.load(f)
+        layer_params = self.config.get("transformer_layer_params")
 
         param_dtype = get_dtype_from_config(self.config)
         bytes_per_param = param_dtype.itemsize
-        layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
+        layer_memory_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
 
         # If avail_mem or avail_vram is given, max_num_layers is requested for a different node that this one
         if avail_mem or avail_vram:
@@ -321,14 +387,14 @@ class Server:
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
-        if delay > 0 and self.num_local_layers > 0:
-            current_rate = self.num_local_layers / delay
+        if delay > 0 and self.num_local_params > 0:
+            current_rate = self.num_local_params / delay
 
             # Moving average to avoid jitter
-            if self.layers_per_second == 0:
-                self.layers_per_second = current_rate
+            if self.processing_rate == 0:
+                self.processing_rate = current_rate
             else:
-                self.layers_per_second = (0.7 * self.layers_per_second) + (0.3 * current_rate)
+                self.processing_rate = (0.7 * self.processing_rate) + (0.3 * current_rate)
 
     @torch.no_grad()
     def _profile_backup_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
@@ -364,7 +430,7 @@ class Server:
             logger.info(
                 f"Backup profiling: Layers {self.llm.layers_loaded}: "
                 f"Delay: {self.inference_delay:.4f}s "
-                f"Layers/sec: {self.layers_per_second:.2f} "
+                f"Layers/sec: {self.processing_rate:.2f} "
             )
 
             dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=self.llm.dtype)
@@ -373,7 +439,7 @@ class Server:
             dummy_seq_length = 1
 
         logger.info(f"Backup Node Profiling Complete")
-        self.chain.update_processing_rate(self.layers_per_second)
+        self.chain.update_processing_rate(self.processing_rate)
         self._unload_llm()
 
     @torch.no_grad()
@@ -422,7 +488,7 @@ class Server:
         logger.info(
             f"Layers {self.llm.layers_loaded}: "
             f"Delay: {self.inference_delay:.4f}s "
-            f"Layers/sec: {self.layers_per_second:.2f} "
+            f"Layers/sec: {self.processing_rate:.2f} "
         )
 
         # Move output tensor back to the cpu for serialization
@@ -436,12 +502,15 @@ class Server:
             )
 
         # If TAIL Node -> Send response to Client
-        if self.chain.is_tail():
+        if self.chain.is_tail() and self.chain.get_output_layer_loaded():
+            logits = h
+            next_token = self.llm.sample_logits(logits)
+
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
                 return
 
-            response = tensor_to_response(h)
+            response = tensor_to_response(next_token)
 
             # Connect to Client
             try:
@@ -499,7 +568,7 @@ class Server:
         Executes the AR-MDI logic
         """
         logger.info(
-            f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.layers_per_second:.2f} | Start Index: {start_layer_index}"
+            f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.processing_rate:.2f} | Start Index: {start_layer_index}"
         )
         REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0
         succ_info = self.chain.get_successor_info()
@@ -510,7 +579,7 @@ class Server:
 
             # If this node's processing rate is much smaller then its successor's
             # the successor should take this node's layers
-            if successor_proc_rate > self.layers_per_second * REALLOC_TAKEOVER_MULT_THRESHOLD:
+            if successor_proc_rate > self.processing_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
                 new_layers = (self.llm.layers_loaded[0], succ_layers[1])
 
                 self._unload_llm()
@@ -524,7 +593,7 @@ class Server:
                     replacee_pred_info=predecessor_info,
                 )
 
-                total_system_rate -= self.layers_per_second
+                total_system_rate -= self.processing_rate
 
                 # Forward reallocation request
                 serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
@@ -542,7 +611,7 @@ class Server:
 
             # If this node's processing rate is much greater than the proceccing rate of its successor
             # it should take its layers and make it a backup
-            elif self.layers_per_second > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
+            elif self.processing_rate > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
                 logger.info(
                     f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
                 )
@@ -577,7 +646,7 @@ class Server:
         # Calculate share
         if total_system_rate > 0:
             # Epic equation
-            ideal_layer_count = num_total_layers * (self.layers_per_second / total_system_rate)
+            ideal_layer_count = num_total_layers * (self.processing_rate / total_system_rate)
         else:
             ideal_layer_count = 0
 

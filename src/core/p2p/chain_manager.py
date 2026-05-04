@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 HEAD_KEY = "chain_head"
 TAIL_KEY = "chain_tail"
 TOTAL_LAYERS_KEY = "num_total_layers"
+TOTAL_PARAMS_KEY = "num_total_params"
 ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
@@ -45,7 +46,14 @@ class ChainManager:
         self.is_client = is_client
 
     def join_chain(
-        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+        self, 
+        self_info: Dict[str, Any], 
+        max_num_layers: int, 
+        max_num_params: int,
+        num_total_layers: int, 
+        num_total_params: int,
+        transformer_layer_params: int,
+        final_output_params: int,
     ) -> None:
         """
         Main entry point for a server node to join or form the inference chain.
@@ -62,17 +70,39 @@ class ChainManager:
 
         if head_id is None:
             logger.info("No existing chain found. Forming a new one...")
-            self._form_initial_chain(self_info, max_num_layers, num_total_layers)
+            self._form_initial_chain(
+                self_info, 
+                max_num_layers, 
+                max_num_params, 
+                num_total_layers, 
+                num_total_params,
+                transformer_layer_params,
+                final_output_params
+            )
         else:
             logger.info(
                 f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail..."
             )
-            self._join_existing_chain(self_info, max_num_layers, num_total_layers)
+            self._join_existing_chain(
+                self_info, 
+                max_num_layers, 
+                max_num_params,
+                num_total_layers,
+                transformer_layer_params,
+                final_output_params
+            )
 
         logger.info(f"Self Info: {self.get_self_info()}")
 
     def _form_initial_chain(
-        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+        self, 
+        self_info: Dict[str, Any], 
+        max_num_layers: int, 
+        max_num_params: int,
+        num_total_layers: int, 
+        num_total_params: int,
+        transformer_layer_params: int,
+        final_output_params: int,
     ):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
@@ -82,6 +112,8 @@ class ChainManager:
         self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
 
         self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
+
+        self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
 
         if not self.get_backup_nodes():
             self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
@@ -97,6 +129,15 @@ class ChainManager:
 
         self_info["layers"] = (0, end_idx)
 
+        # If all the transformer layers fit on this node
+        if end_idx == num_total_layers - 1:
+            max_num_params -= max_num_layers * transformer_layer_params
+
+            # Check if the final output layer can be loaded as well
+            if max_num_params >= final_output_params:
+                self_info["load_output_layer"] = True
+
+
         # This node could have been a backup
         if self_info.get("is_backup"):
             self_info["is_backup"] = False
@@ -108,11 +149,16 @@ class ChainManager:
 
         self._update_server_info(self.node_id, self_info)
 
-        self.update_all_layers_loaded()
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the head and tail of the chain.")
 
     def _join_existing_chain(
-        self, self_info: Dict[str, Any], max_num_layers: int, num_total_layers: int
+        self, 
+        self_info: Dict[str, Any], 
+        max_num_layers: int, 
+        max_num_params: int,
+        num_total_layers: int, 
+        transformer_layer_params: int,
+        final_output_params: int,
     ):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
@@ -131,7 +177,8 @@ class ChainManager:
         start_idx = tail_info["layers"][1] + 1
 
         # Make it a Backup Node, if all layers loaded
-        if start_idx >= num_total_layers:
+        # if start_idx >= num_total_layers:
+        if tail_info.get("output_layer_loaded"):
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
 
@@ -139,11 +186,22 @@ class ChainManager:
             return
 
         # Otherwise, continue with the join
-        end_idx = start_idx + max_num_layers - 1
-        if end_idx >= num_total_layers:
-            end_idx = num_total_layers - 1
+        self_layers = None
+        end_idx = num_total_layers - 1
 
-        self_layers = (start_idx, end_idx)
+        # If transformer layers are left unloaded
+        if start_idx < num_total_layers:
+            end_idx = start_idx + max_num_layers - 1
+            if end_idx >= num_total_layers:
+                end_idx = num_total_layers - 1
+
+            max_num_params -= max_num_layers * transformer_layer_params
+            self_layers = (start_idx, end_idx)
+
+        # Check if the final output layer can be loaded 
+        if (end_idx == num_total_layers - 1) and (max_num_params >= final_output_params):
+            self_info["load_output_layer"] = True
+
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
@@ -242,11 +300,25 @@ class ChainManager:
         if not num_total_layers:
             raise RuntimeError(f"Could not retrieve the total number of transformer layers.")
         return num_total_layers
+    
+    def _get_num_total_params(self) -> int:
+        num_total_params = self.dht.get(TOTAL_PARAMS_KEY)
+        if not num_total_params:
+            raise RuntimeError(f"Could not retrieve the total number of parameters.")
+        return num_total_params
 
     def get_layers(self) -> Optional[Tuple[int, int]]:
         """Get the layers tuple for this node from the DHT"""
         self_info = self.get_self_info()
         return self_info.get("layers")
+
+    def get_load_output_layer(self) -> bool:
+        self_info = self.get_self_info()
+        return self_info.get("load_output_layer", False)
+
+    def get_output_layer_loaded(self) -> bool:
+        self_info = self.get_self_info()
+        return self_info.get("output_layer_loaded", False)
 
     def get_all_layers_loaded(self) -> Optional[bool]:
         return self.dht.get(ALL_LAYERS_KEY)
@@ -288,6 +360,7 @@ class ChainManager:
         head_id = self.dht.get(HEAD_KEY)
         tail_id = self.dht.get(TAIL_KEY)
         total_layers = self.dht.get(TOTAL_LAYERS_KEY)
+        total_params = self.dht.get(TOTAL_PARAMS_KEY)
         all_loaded = self.dht.get(ALL_LAYERS_KEY)
         backup_nodes = self.dht.get(BACKUPS_KEY)
         current_status = self.get_chain_status()
@@ -299,6 +372,7 @@ class ChainManager:
             HEAD_KEY: head_id,
             TAIL_KEY: tail_id,
             TOTAL_LAYERS_KEY: total_layers,
+            TOTAL_PARAMS_KEY: total_params,
             ALL_LAYERS_KEY: all_loaded,
             STATUS_KEY: current_status,
         }
@@ -542,6 +616,11 @@ class ChainManager:
         num_total_layers = self._get_num_total_layers()
         if num_total_layers:
             self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
+        
+        # Republish the num_total_params key
+        num_total_params = self._get_num_total_params()
+        if num_total_params:
+            self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
 
         self.update_all_layers_loaded()
 
@@ -596,16 +675,18 @@ class ChainManager:
                 break
 
             layers_loaded = server_info.get("layers_loaded", False)
+            output_layer_loaded = server_info.get("output_layer_loaded", False)
 
             if layers_loaded:
                 successor_data = server_info.get("successor")
 
                 if successor_data:
                     current_node_id = successor_data.get("id")
+                
                 elif self.node_is_tail(current_node_id):
                     layers = server_info.get("layers")
                     total_layers = self._get_num_total_layers()
-                    if layers and layers[1] == total_layers - 1:
+                    if (layers and layers[1] == total_layers - 1) or output_layer_loaded:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
                         current_chain_status = self.get_chain_status()
@@ -639,9 +720,14 @@ class ChainManager:
         self_info["layers_loaded"] = layers_loaded
         self._update_server_info(self.node_id, self_info)
 
-    def update_layers(self, layers: Tuple[int, int]):
+    def update_load_output_layer(self, load_output_layer: bool):
         self_info = self.get_self_info()
-        self_info["layers"] = layers
+        self_info["load_output_layer"] = load_output_layer
+        self._update_server_info(self.node_id, self_info)
+
+    def update_output_layer_loaded(self, output_layer_loaded: bool):
+        self_info = self.get_self_info()
+        self_info["output_layer_loaded"] = output_layer_loaded
         self._update_server_info(self.node_id, self_info)
 
     def update_device(self, device: str):

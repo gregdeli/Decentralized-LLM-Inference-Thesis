@@ -7,7 +7,7 @@ import time
 import json
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.remote.serialization import message_to_tensor
+from core.remote.serialization import request_to_tensor
 
 if TYPE_CHECKING:
     from .server import Server
@@ -30,7 +30,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         start = time.perf_counter()
 
         # Deserialize the incoming request to a tensor
-        input_tensor = message_to_tensor(request)
+        input_tensor = request_to_tensor(request)
 
         # Extract metadata
         max_returned_tokens = request.max_returned_tokens
@@ -43,7 +43,11 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
         # Run the inference logic
         ack_response = self.server_node.run_local_layers(
-            input_tensor, max_returned_tokens, seq_length, input_pos, response_address
+            input_tensor, 
+            max_returned_tokens, 
+            seq_length, 
+            input_pos, 
+            response_address
         )
 
         end = time.perf_counter()
@@ -58,7 +62,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         ack_response.processing_time = total_grpc_time
 
         # Update processing rate, inference delay and grpc overhead on the dht
-        self.server_node.chain.update_processing_rate(self.server_node.layers_per_second)
+        self.server_node.chain.update_processing_rate(self.server_node.processing_rate)
         self.server_node.chain.update_inference_delay(self.server_node.inference_delay)
         self.server_node.chain.update_grpc_overhead(self.server_node.grpc_overhead)
 

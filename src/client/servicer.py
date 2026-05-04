@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
-from core.remote.serialization import message_to_tensor
+# from core.remote.serialization import message_to_tensor
 
 if TYPE_CHECKING:
     from .client import Client

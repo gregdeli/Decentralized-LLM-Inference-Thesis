@@ -51,10 +51,11 @@ def is_instruct_model(model_path: Path) -> bool:
         return False
 
 
-# Llama 3.2 1B -> total_transformer_layer_params = 60821504
-# Llama 3.2 3B -> total_transformer_layer_params = 100669440
+# Llama 3.2 1B -> transformer_layer_params = 60821504
+# Llama 3.2 3B -> transformer_layer_params = 100669440
+# Llama 3.1 8B -> transformer_layer_params = 218112000
 def calculate_transformer_params(model_path: Path) -> int:
-    """Calculates the total number of parameters for a single Transformer Layer for Llama 3.2"""
+    """Calculates the total number of parameters for a single Transformer Layer for Llama 3"""
     config_path = model_path / "config.json"
     with open(config_path, "r") as f:
         config = json.load(f)
@@ -85,17 +86,63 @@ def calculate_transformer_params(model_path: Path) -> int:
 
     return total_attention_params + total_mlp_params + total_norm_params
 
+def calculate_final_output_params(model_path: Path) -> int:
+    """Calculates the total number of parameters for the final RMS Norm and Linear Layer"""
+    config_path = model_path / "config.json"
+    with open(config_path, "r") as f:
+        config = json.load(f)
+        
+    # Dynamically calculate and set head_dim if its missing
+    if "head_dim" not in config:
+            config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
+
+    hidden_size = config["hidden_size"]
+    vocab_size = config["vocab_size"]
+
+    # Final RMS Norm Parameters
+    final_norm_params = hidden_size
+
+    # Linear Output Layer (lm head) Parameters
+    lm_head_params = hidden_size * vocab_size
+
+    return final_norm_params + lm_head_params
+
 def update_config_layer_param_count(model_path: Path, param_count: int) -> None:
     with open(f"{model_path}/config.json", "r") as f:
         config = json.load(f)
 
-    config["total_transformer_layer_params"] = param_count
+    config["transformer_layer_params"] = param_count
 
 
     with open(f"{model_path}/config.json", "w") as f:
         json.dump(config, f, indent=2)
 
-    logger.info(f"Updated {model_path}/config.json with total_transformer_layer_params: {param_count}")
+    logger.info(f"Updated {model_path}/config.json with transformer_layer_params: {param_count}")
+
+
+def update_config_final_output_param_count(model_path: Path, param_count: int) -> None:
+    with open(f"{model_path}/config.json", "r") as f:
+        config = json.load(f)
+
+    config["final_output_params"] = param_count
+
+
+    with open(f"{model_path}/config.json", "w") as f:
+        json.dump(config, f, indent=2)
+
+    logger.info(f"Updated {model_path}/config.json with final_output_params: {param_count}")
+
+def update_config_total_param_count(model_path: Path, param_count: int) -> None:
+    with open(f"{model_path}/config.json", "r") as f:
+        config = json.load(f)
+
+    config["num_total_params"] = param_count
+
+
+    with open(f"{model_path}/config.json", "w") as f:
+        json.dump(config, f, indent=2)
+
+    logger.info(f"Updated {model_path}/config.json with num_total_params: {param_count}")
 
 
 def can_load(
@@ -116,7 +163,7 @@ def mem_to_num_layers(
     avail_vram: Optional[float],
 ) -> int:
     """Calculates how many transformer layers fit in the given available Memory/VRAM"""
-    total_layer_params = config.get("total_transformer_layer_params")
+    total_layer_params = config.get("transformer_layer_params")
     param_dtype = get_dtype_from_config(config)
     bytes_per_param = param_dtype.itemsize
     layer_memory_size_mb = (total_layer_params * bytes_per_param) / (1024 * 1024)
