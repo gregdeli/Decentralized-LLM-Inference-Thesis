@@ -194,6 +194,7 @@ class ChainManager:
             end_idx = start_idx + max_num_layers - 1
             if end_idx >= num_total_layers:
                 end_idx = num_total_layers - 1
+                max_num_layers = end_idx - start_idx + 1
 
             max_num_params -= max_num_layers * transformer_layer_params
             self_layers = (start_idx, end_idx)

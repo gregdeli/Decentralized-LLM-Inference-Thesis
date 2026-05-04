@@ -106,12 +106,16 @@ class LLM:
 
         files_to_load = []
 
+        add_lm_head_weight = True
         if index_path.exists():
             # Sharded Checkpoint
             with open(index_path, "r") as f:
                 index_data = json.load(f)
 
             weight_map = index_data.get("weight_map")
+            if "lm_head.weight" in weight_map:
+                add_lm_head_weight = False
+
             files_to_load = get_relevant_safetensor_files(weight_map)
             logger.info(f"Identified {len(files_to_load)} relevant checkpoint shards.")
 
@@ -128,7 +132,7 @@ class LLM:
             state_dict = load_file(file_path)
             state_dict = remove_model_prefix(state_dict)
 
-            if load_output_layer and "lm_head.weight" not in state_dict and "embed_tokens.weight" in state_dict:
+            if load_output_layer and add_lm_head_weight and "embed_tokens.weight" in state_dict:
                 state_dict["lm_head.weight"] = state_dict["embed_tokens.weight"]
 
             model.load_state_dict(state_dict, strict=False)
