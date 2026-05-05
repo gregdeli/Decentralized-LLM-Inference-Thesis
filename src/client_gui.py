@@ -133,7 +133,7 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         if "processing_rate" in info:
             processing_rate = info.get("processing_rate", 0.0)
             labels["processing_rate"] = ui.label(
-                f"Processing Rate: {processing_rate:.6f} params/sec"
+                f"Processing Rate: {processing_rate / 1000000000:.2f}B params/sec"
             ).classes("font-mono text-sm")
 
         if "inference_delay" in info:
@@ -279,7 +279,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
                     if "processing_rate" in labels:
                         labels["processing_rate"].text = (
-                            f"Processing Rate: {node_info.get('processing_rate', 0.0):.6f} params/sec"
+                            f"Processing Rate: {node_info.get('processing_rate', 0) / 1000000000:.2f}B params/sec"
                         )
 
                     if "inference_delay" in labels:
@@ -510,7 +510,7 @@ async def generate(
         ui.separator()
         ui.label(f"Generation Time: {latency:.2f}s")
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
-        ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
+        ui.label(f"Total Rate: {state.client.total_rate / 1000000000:.2f}B params/sec")
 
         if state.client.total_rate > 0:
             ui.button(

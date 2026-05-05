@@ -315,7 +315,7 @@ class Client:
 
         if self.total_rate > 0:
             logger.info(
-                f"Triggering reallocation with Total Rate: {self.total_rate:.2f} layers/sec..."
+                f"Triggering reallocation with Total Rate: {self.total_rate} layers/sec..."
             )
 
             request = nodeservice_pb2.ReallocateRequest(

@@ -141,7 +141,7 @@ class Server:
         self.num_local_params = 0
 
         self.inference_delay = 0.0
-        self.processing_rate = 0.0
+        self.processing_rate = 0
         self.grpc_overhead = 0.0
         # self.succ_network_latency = 0.0
 
@@ -393,13 +393,13 @@ class Server:
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
         if delay > 0 and self.num_local_params > 0:
-            current_rate = self.num_local_params / delay
+            current_rate = int(self.num_local_params / delay)
 
             # Moving average to avoid jitter
             if self.processing_rate == 0:
                 self.processing_rate = current_rate
             else:
-                self.processing_rate = (0.7 * self.processing_rate) + (0.3 * current_rate)
+                self.processing_rate = int((0.7 * self.processing_rate) + (0.3 * current_rate))
 
     @torch.no_grad()
     def _profile_backup_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
@@ -435,7 +435,7 @@ class Server:
             logger.info(
                 f"Backup profiling: Layers {self.llm.layers_loaded}: "
                 f"Delay: {self.inference_delay:.4f}s "
-                f"Layers/sec: {self.processing_rate:.2f} "
+                f"Params/sec: {self.processing_rate} "
             )
 
             dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=self.llm.dtype)
@@ -493,7 +493,7 @@ class Server:
         logger.info(
             f"Layers {self.llm.layers_loaded}: "
             f"Delay: {self.inference_delay:.4f}s "
-            f"Layers/sec: {self.processing_rate:.2f} "
+            f"Params/sec: {self.processing_rate} "
         )
 
         # Move output tensor back to the cpu for serialization
@@ -573,7 +573,7 @@ class Server:
         Executes the AR-MDI logic
         """
         logger.info(
-            f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate:.2f} | My Rate: {self.processing_rate:.2f} | Start Index: {start_layer_index}"
+            f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate} | My Rate: {self.processing_rate} | Start Index: {start_layer_index}"
         )
         REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0
         succ_info = self.chain.get_successor_info()
@@ -646,43 +646,70 @@ class Server:
                     logger.info("Cannot load layers. Continuing with the layer reallocation...")
 
         # ---- Reallocation ----
+        num_total_params = self.config.get("num_total_params")
         num_total_layers = self.config.get("num_hidden_layers")
 
         # Calculate share
         if total_system_rate > 0:
             # Epic equation
-            ideal_layer_count = num_total_layers * (self.processing_rate / total_system_rate)
+            ideal_param_count = num_total_params * (self.processing_rate / total_system_rate)
         else:
-            ideal_layer_count = 0
+            ideal_param_count = 0
 
-        logger.info(f"Idead Layer Count: {ideal_layer_count}")
+        logger.info(f"Idead Parameter Count: {ideal_param_count}")
 
-        current_num_layers = self.num_local_layers
-        max_extra_num_layers = self._mem_to_num_layers()
-        max_num_layers = current_num_layers + max_extra_num_layers
+        # current_num_layers = self.num_local_layers
+        current_num_params = self.num_local_params
+        # max_extra_num_layers = self._mem_to_num_layers()
+        max_extra_num_params = self._mem_to_num_params()
+        # max_num_layers = current_num_layers + max_extra_num_layers
+        max_num_params = current_num_params + max_extra_num_params
 
-        logger.info(f"Max Num Layers: {max_num_layers}")
+        logger.info(f"Max Num Parameters: {max_num_params}")
 
-        target_layer_count = min(int(round(ideal_layer_count)), max_num_layers)
+        target_param_count = min(ideal_param_count, max_num_params)
+        
+        logger.info(f"Target Param Count: {target_param_count}")
+
+        transformer_layer_params = self.config.get("transformer_layer_params")
+        final_output_params = self.config.get("final_output_params")
+
+        # Start with transformer layers
+        target_layer_count = target_param_count / transformer_layer_params
+        
+        end_layer_index = start_layer_index + int(round(target_layer_count)) - 1
+        if end_layer_index >= num_total_layers:
+            end_layer_index = num_total_layers - 1
+            target_layer_count = end_layer_index - start_layer_index + 1 
+
+        # Check if the lm_head should be loaded
+        # remaining_param_count = target_param_count - target_layer_count * transformer_layer_params
+        max_num_params -= target_layer_count * transformer_layer_params
+
+        load_output_layer = False
+        # if remaining_param_count >= final_output_params:
+        if self.chain.is_tail() and max_num_params >= final_output_params:
+            # load_output_layer = remaining_param_count >= final_output_params
+            load_output_layer = True
 
         # Rounding logic
         # if self.chain.is_tail():
         # The tail takes whatever is left
         # target_layer_count = num_total_layers - start_layer_index
-        if target_layer_count < 1:
-            target_layer_count = 1
-        elif (start_layer_index + target_layer_count) >= num_total_layers:
+        # if target_layer_count < 1:
+        #     target_layer_count = 1
+        # elif (start_layer_index + target_layer_count) >= num_total_layers:
             # Dont exceed the available layers
-            target_layer_count = num_total_layers - start_layer_index  # - 1
+            # target_layer_count = num_total_layers - start_layer_index  # - 1
 
         # if target_layer_count > 0:
-        end_layer_index = start_layer_index + target_layer_count - 1
+        
         new_layers = (start_layer_index, end_layer_index)
-        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers}")
+        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
 
         # Load Layers
         if new_layers != self.llm.layers_loaded:
-            self._reload_llm(new_layers)
+            self._reload_llm(new_layers, load_output_layer)
             self.chain.update_layers(new_layers)
         else:
             logger.info("Layer assignment unchanged.")
@@ -1048,15 +1075,17 @@ def serve():
                     not server_node.chain.get_all_layers_loaded()
                     and server_node.chain.get_chain_status() == ChainStatus.UNREADY
                 ):
-                    num_total_layers = server_node.config.get("num_hidden_layers")
                     max_num_layers = server_node._mem_to_num_layers()
-
                     if max_num_layers > 0:
                         # Join chain
                         server_node.chain.join_chain(
                             self_info=server_node.chain.get_self_info(),
                             max_num_layers=server_node._mem_to_num_layers(),
-                            num_total_layers=num_total_layers,
+                            max_num_params=server_node._mem_to_num_params(),
+                            num_total_layers=server_node.config.get("num_hidden_layers"),
+                            num_total_params=server_node.config.get("num_total_params"),
+                            transformer_layer_params=server_node.config.get("transformer_layer_params"),
+                            final_output_params=server_node.config.get("final_output_params")
                         )
                         server_node._load_llm()
 

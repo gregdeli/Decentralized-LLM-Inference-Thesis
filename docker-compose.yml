@@ -7,10 +7,10 @@ services:
     hostname: head-server
     # network_mode: "host"
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
-      - NUM_LAYERS=10
+      # - NUM_LAYERS=10
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -37,10 +37,10 @@ services:
     # network_mode: "host"
     hostname: intermediate-server
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
-      - NUM_LAYERS=6
+      # - NUM_LAYERS=3
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -54,7 +54,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G # 2.2
+          memory: 2G # 2.2
           # cpus: '1.0'
     ports:
       - "5672:5678"  
@@ -68,10 +68,10 @@ services:
     # network_mode: "host"
     hostname: tail-server
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
-      - NUM_LAYERS=6
+      # - NUM_LAYERS=2
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=intermediate-server:5001
@@ -85,7 +85,7 @@ services:
         #         count: 1
         #         capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 2G
           # cpus: '1.0'
     depends_on:
       - head-server
@@ -101,8 +101,8 @@ services:
     # command: sleep infinity
     hostname: server-1
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       # - NUM_LAYERS=4
       # - ADDED_DELAY=0.08
@@ -112,13 +112,13 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 1.5G
     depends_on:
       - head-server
       - intermediate-server
@@ -134,8 +134,8 @@ services:
     command: sleep infinity 
     hostname: client
     environment:
-      - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001 

@@ -202,6 +202,10 @@ class ChainManager:
         if (end_idx == num_total_layers - 1) and (max_num_params >= final_output_params):
             self_info["load_output_layer"] = True
 
+        # If at this point the node is not supposed to load any layers make it a backup
+        if not self_layers and not self_info.get("load_output_layer"):
+            self.make_node_backup(server_info=self_info)
+            return
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
@@ -415,7 +419,7 @@ class ChainManager:
         """Add the partial processing rates of all server nodes"""
         head_id = self.dht.get(HEAD_KEY)
 
-        total_rate = 0.0
+        total_rate = 0
         current_node_id = head_id
         while current_node_id:
             server_info = self.get_server_info(current_node_id)
@@ -757,7 +761,7 @@ class ChainManager:
         self_info["successor"] = new_successor_data
         self._update_server_info(self.node_id, self_info)
 
-    def update_processing_rate(self, processing_rate: float = 0.0):
+    def update_processing_rate(self, processing_rate: int = 0):
         self_info = self.get_self_info()
         self_info["processing_rate"] = processing_rate
         self._update_server_info(self.node_id, self_info)
