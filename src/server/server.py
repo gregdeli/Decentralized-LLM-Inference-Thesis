@@ -30,7 +30,8 @@ from core.utils import (
     calculate_final_output_params,
     update_config_layer_param_count,
     update_config_final_output_param_count,
-    update_config_total_param_count
+    update_config_total_param_count,
+    can_load
 )
 from core.remote.utils import (
     get_bootstrap_peer_address,
@@ -137,7 +138,6 @@ class Server:
         self.model = None
         self.successor_stub = None
         self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
-        # self.num_local_layers = 0
         self.num_local_params = 0
 
         self.inference_delay = 0.0
@@ -183,7 +183,7 @@ class Server:
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
         if not self.chain.is_backup():
-            self.chain.update_layers_loaded(True)
+            self.chain.update_layers_loaded(self.model.num_layers>0)
             self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
             self.chain.update_all_layers_loaded()
 
@@ -191,7 +191,6 @@ class Server:
         """Helper to unload the model with explicit GC"""
         self.model = None
         self.llm = None
-        # self.num_local_layers = 0
         self.num_local_params = 0
         gc.collect()
         if torch.cuda.is_available():
@@ -199,21 +198,27 @@ class Server:
 
         self._update_memory_usage()
 
-    def _reload_llm(self, layers: Tuple[int, int]):
+    def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
         logger.info(f"Reloading model with layers: {layers}")
 
         self._unload_llm()
 
-        self.llm = LLM.load(self.model_path, load_initial_layer=False, layers_to_load=layers)
+        self.llm = LLM.load(
+            self.model_path, 
+            load_initial_layer=False, 
+            layers_to_load=layers, 
+            load_output_layer=load_output_layer
+        )
         self.model = self.llm.model
-        # self.num_local_layers = self.llm.model.num_layers
+        
         layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
         output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
         self.num_local_params = layer_params + output_params
 
         self._update_memory_usage()
-        self.chain.update_layers_loaded(True)
+        self.chain.update_layers_loaded(self.model.num_layers>0)
+        self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
 
     def _reload_config(self):
         with open(self.model_path / "config.json", "r") as f:
@@ -245,7 +250,6 @@ class Server:
             update_config_total_param_count(self.model_path, total_params)
             self._reload_config()
 
-
         if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
@@ -261,11 +265,7 @@ class Server:
         return min(max_num_params, total_params)
 
 
-    def _mem_to_num_layers(
-        self,
-        avail_mem: float = None,
-        avail_vram: float = None,
-    ) -> int:
+    def _mem_to_num_layers(self) -> int:
         """
         Calculates how many layers fit in the available Memory/VRAM
         """
@@ -277,14 +277,7 @@ class Server:
         bytes_per_param = param_dtype.itemsize
         layer_memory_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
 
-        # If avail_mem or avail_vram is given, max_num_layers is requested for a different node that this one
-        if avail_mem or avail_vram:
-            if avail_vram:
-                available = avail_vram
-            else:
-                available = avail_mem
-
-        elif self.device == "cuda":
+        if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
             available = self.available_memory_mb - RESERVED_MEM_MB
@@ -299,13 +292,25 @@ class Server:
         self,
         num_layers: Optional[int] = None,
         layers: Optional[Tuple[int, int]] = None,
-        avail_mem: float = None,
-        avail_vram: float = None,
+        output_layer: Optional[bool] = False,
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
-        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1)
-        max_num_layers = self._mem_to_num_layers(avail_mem=avail_mem, avail_vram=avail_vram)
-        return num_layers <= max_num_layers
+        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
+        max_num_params = self._mem_to_num_params()
+
+        if num_layers > 0:
+            max_num_layers = self._mem_to_num_layers()
+
+            if max_num_layers < num_layers:
+                return False
+            
+            if output_layer:
+                max_num_params -= num_layers * self.config.get("transformer_layer_params")
+                return max_num_params >= self.config.get("final_output_params")
+            
+            return True
+        
+        return max_num_params >= self.config.get("final_output_params")
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -716,7 +721,6 @@ class Server:
                 except grpc.RpcError as e:
                     logger.warning(f"Successor confirmed DEAD. Proceeding with repair...")
 
-            self_info = self.chain.get_self_info()
             dead_successor_info = self.chain.get_successor_info()
 
             if not dead_successor_info:
@@ -724,6 +728,7 @@ class Server:
                 return
 
             dead_succ_was_tail = self.chain.node_is_tail(dead_successor_info.get("id"))
+            dead_succ_output_loaded = dead_successor_info.get("output_layer_loaded", False)
 
             self.successor_stub = None
             self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
@@ -734,14 +739,21 @@ class Server:
             logger.info(f"Attempting to repair chain. Orphaned layers: {orphaned_layers}...")
 
             # Check if this node has enough memory to load the orphaned layers
-            if self._can_load(layers=orphaned_layers):
-                layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
-                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}")
+            if self._can_load(layers=orphaned_layers, output_layer=dead_succ_output_loaded):
+                if orphaned_layers:
+                    layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
+                elif dead_succ_output_loaded:
+                    layers_to_load = self.llm.layers_loaded
+                
+                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}. Load Output Layer: {dead_succ_output_loaded}")
 
-                self._reload_llm(layers_to_load)
+                self._reload_llm(layers_to_load, load_output_layer=dead_succ_output_loaded)
+                
+                self_info = self.chain.get_self_info()
                 self.chain.repair(
                     layers_to_load,
                     replacement_info=self_info,
+                    replacement_load_output_layer=dead_succ_output_loaded,
                     replacee_info=dead_successor_info,
                     replacee_was_tail=dead_succ_was_tail,
                 )
@@ -766,14 +778,18 @@ class Server:
                                 f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
                             )
 
-                            if self._can_load(
-                                layers=orphaned_layers,
+                            if can_load(
+                                config=self.config,
                                 avail_mem=avail_mem,
                                 avail_vram=avail_vram,
+                                layers=orphaned_layers,
+                                output_layer=dead_succ_output_loaded
                             ):
+                                self_info = self.chain.get_self_info()
                                 self.chain.repair(
                                     orphaned_layers,
                                     replacement_info=backup_info,
+                                    replacement_load_output_layer=dead_succ_output_loaded,
                                     replacee_info=dead_successor_info,
                                     replacee_was_tail=dead_succ_was_tail,
                                     replacee_pred_info=self_info,
@@ -844,17 +860,22 @@ class Server:
         self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
         layers_to_takeover = weak_node_info.get("layers")
+        weak_node_output_layer_loaded = weak_node_info.get("output_layer_loaded", False)
+
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
         weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(
             f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
         )
 
-        if self._can_load(layers=layers_to_takeover):
-            self._reload_llm(layers_to_takeover)
+        if self._can_load(layers=layers_to_takeover, output_layer=weak_node_output_layer_loaded):
+            
+            self._reload_llm(layers_to_takeover, load_output_layer=weak_node_output_layer_loaded)
+            
             self.chain.repair(
                 layers_to_takeover,
                 replacement_info=self.chain.get_self_info(),
+                replacement_load_output_layer=weak_node_output_layer_loaded,
                 replacee_info=weak_node_info,
                 make_replacee_backup=True,
                 replacee_was_head=weak_node_was_head,

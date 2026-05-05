@@ -206,6 +206,7 @@ class Client:
                 if can_load(
                     config=self.config,
                     layers=orphaned_layers,
+                    output_layer=dead_head_info.get("output_layer_loaded"),
                     avail_mem=head_succ_avail_mem,
                     avail_vram=head_succ_avail_vram,
                 ):
@@ -213,6 +214,7 @@ class Client:
                     self.chain.repair(
                         new_layers,
                         replacement_info=head_succ_info,
+                        replacement_load_output_layer=head_succ_info.get("output_layer_loaded"),
                         replacee_info=dead_head_info,
                         replacee_was_head=True,
                     )
@@ -252,13 +254,14 @@ class Client:
 
                         if can_load(
                             config=self.config,
-                            layers=orphaned_layers,
                             avail_mem=backup_avail_mem,
                             avail_vram=backup_avail_vram,
+                            layers=orphaned_layers
                         ):
                             self.chain.repair(
                                 orphaned_layers,
                                 replacement_info=backup_info,
+                                replacement_load_output_layer=dead_head_info.get("output_layer_loaded"),
                                 replacee_info=dead_head_info,
                                 replacee_was_head=True,
                                 replacee_was_tail=head_was_tail,

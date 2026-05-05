@@ -173,19 +173,18 @@ class ChainManager:
         if not tail_info:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
 
-        # Get the previous tails layers to determine this nodes layer range
-        start_idx = tail_info["layers"][1] + 1
-
         # Make it a Backup Node, if all layers loaded
         # if start_idx >= num_total_layers:
-        if tail_info.get("output_layer_loaded"):
+        if tail_info.get("output_layer_loaded") or tail_info.get("load_output_layer"):
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
 
             self.make_node_backup(server_info=self_info)
             return
 
-        # Otherwise, continue with the join
+        # Get the previous tails layers to determine this nodes layer range
+        start_idx = tail_info["layers"][1] + 1
+
         self_layers = None
         end_idx = num_total_layers - 1
 
@@ -490,6 +489,7 @@ class ChainManager:
         replacement_info: Dict[str, Any],
         replacee_info: Dict[str, Any],
         make_replacee_backup: Optional[bool] = False,
+        replacement_load_output_layer: Optional[bool] = False,
         replacee_was_head: Optional[bool] = False,
         replacee_was_tail: Optional[bool] = False,
         replacee_pred_info: Optional[Dict[str, Any]] = None,
@@ -500,6 +500,8 @@ class ChainManager:
 
         # Update the replacement node's layers and successor
         replacement_info["layers"] = new_layers
+
+        replacement_info["load_output_layer"] = replacement_load_output_layer
 
         # If the replacee's successor is the replacement node,
         # then the replacement's successor stays the same
@@ -678,7 +680,7 @@ class ChainManager:
             layers_loaded = server_info.get("layers_loaded", False)
             output_layer_loaded = server_info.get("output_layer_loaded", False)
 
-            if layers_loaded:
+            if layers_loaded or output_layer_loaded:
                 successor_data = server_info.get("successor")
 
                 if successor_data:
@@ -686,8 +688,8 @@ class ChainManager:
                 
                 elif self.node_is_tail(current_node_id):
                     layers = server_info.get("layers")
-                    total_layers = self._get_num_total_layers()
-                    if (layers and layers[1] == total_layers - 1) or output_layer_loaded:
+                    # total_layers = self._get_num_total_layers()
+                    if output_layer_loaded:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
 
                         current_chain_status = self.get_chain_status()
@@ -783,6 +785,8 @@ class ChainManager:
         server_info["successor"] = None
         server_info["layers"] = None
         server_info["layers_loaded"] = False
+        server_info["load_output_layer"] = False
+        server_info["output_layer_loaded"] = False
 
         self._update_server_info(node_id, server_info)
 
