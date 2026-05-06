@@ -97,7 +97,7 @@ def request_to_tensor(request: nodeservice_pb2.InferenceRequest) -> torch.Tensor
 
 def response_to_tensor(response: nodeservice_pb2.InferenceResponse) -> torch.Tensor:
     """Deserializes an InferenceResponse into a tensor"""
-    tensor_data = response.tensor_data
+    tensor_data = bytearray(response.tensor_data)
 
     shape = tuple(response.tensor_shape)
 

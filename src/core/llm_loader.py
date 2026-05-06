@@ -63,6 +63,7 @@ class LLM:
     def load(
         cls,
         model_path: Path,
+        device: str = None,
         load_initial_layer: bool = True,
         layers_to_load: Tuple[int, int] = None,
         load_output_layer: bool = True,
@@ -72,8 +73,8 @@ class LLM:
             start_time = time.perf_counter()
 
         # Check for CUDA availability
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        # device = "cpu"
+        if not device:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
 
         config_path = model_path / "config.json"
         with open(config_path, "r") as f:

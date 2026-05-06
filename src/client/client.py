@@ -32,17 +32,29 @@ from core.p2p.chain_manager import (
 logger = logging.getLogger(__name__)
 
 MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
+RESERVED_MEM_MB = 1000
 
 
 class Client:
     def __init__(
         self,
+        grpc_addr: str,
         model_path: Path,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
-        grpc_addr: str = f"{get_ip_address()}:5001",
         time_it: bool = False,
     ) -> None:
+        # Set the device
+        self.device = "cpu"
+        if torch.cuda.is_available():
+            try:
+                free_bytes, _ = torch.cuda.mem_get_info()
+                free_mb = free_bytes / (1024 * 1024)
+                if free_mb >= RESERVED_MEM_MB:
+                    self.device = "cuda"
+            except RuntimeError as e:
+                logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
+
         self.grpc_addr = grpc_addr
 
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
@@ -55,7 +67,7 @@ class Client:
             config = json.load(f)
         self.config = config
 
-        self.llm = LLM.load(model_path, load_initial_layer=True, load_output_layer=False, time_it=time_it)
+        self.llm = LLM.load(model_path, device=self.device, load_initial_layer=True, load_output_layer=False, time_it=time_it)
         self.model = self.llm.model
         self.chat_history = []
 
@@ -84,29 +96,35 @@ class Client:
         # Start GRPC server in a seperate thread
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
         grpc_thread.start()
+        self.grpc_server = None
+        self._stop_health_monitor_event = threading.Event()
 
     def _run_grpc_server(self, grpc_addr):
         # Start GRPC server
-        server = grpc.server(
+        self.grpc_server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=1),
             options=[
                 ("grpc.max_send_message_length", MAX_MSG_SIZE),
                 ("grpc.max_receive_message_length", MAX_MSG_SIZE),
             ],
         )
-        nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), server)
-        server.add_insecure_port(grpc_addr)
-        server.start()
+        nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), self.grpc_server)
+        self.grpc_server.add_insecure_port(grpc_addr)
+        self.grpc_server.start()
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
 
         head_monitor_thread = threading.Thread(target=self._head_health_monitor_task, daemon=True)
         head_monitor_thread.start()
 
-        server.wait_for_termination()
+        self.grpc_server.wait_for_termination()
 
     def _head_health_monitor_task(self):
-        while True:
-            time.sleep(HEARTBEAT_INTERVAL_S)
+        while not self._stop_health_monitor_event.is_set():
+            # time.sleep(HEARTBEAT_INTERVAL_S)
+            is_stopped = self._stop_health_monitor_event.wait(timeout=HEARTBEAT_INTERVAL_S)
+            if is_stopped:
+                break
+
             if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
                 try:
                     self._connect_to_head()
@@ -415,8 +433,9 @@ class Client:
 
         start_time = time.perf_counter()
         for _ in range(max_new_tokens):
-            # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
+
+            x = x.cpu()
 
             # Call the remote server chain
             request = tensor_to_request(
@@ -437,19 +456,19 @@ class Client:
             is_set = self.inference_response_event.wait(timeout=15)
             if not is_set:
                 logger.error("Timeout waiting for response from Tail server.")
+                if self.chain.get_all_layers_loaded():
+                    self.chain.update_chain_status(ChainStatus.READY)
+                return
 
             response = self.inference_response
 
             # Capture TOTAL RATE
             self.total_rate = self.chain.gather_total_rate()
 
-            x = message_to_tensor(response)
+            next_token = response_to_tensor(response)
 
-            # Run clients final layers
-            logits = self.model.forward_client_final(x)
-
-            # Sample the next token
-            next_token = self.llm.sample_logits(logits, temperature, top_p)
+            if next_token.device != self.llm.device:
+                next_token = next_token.to(self.llm.device)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
@@ -491,10 +510,12 @@ class Client:
         start_time = time.perf_counter()
         tokens_generated = 0
         for i in range(max_new_tokens):
-            # logger.info(f"Generating token {i + 1}/{max_new_tokens}")  # Debugging
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
             self.initial_inference_delay = time.perf_counter() - start_token_gen
+
+            # Move output tensor back to the cpu for serialization
+            x = x.cpu()
 
             # Call the remote server chain
             start = time.perf_counter()
@@ -568,6 +589,9 @@ class Client:
             start = time.perf_counter()
             next_token = response_to_tensor(response)
             self.deserialization_delay = time.perf_counter() - start
+
+            if next_token.device != self.llm.device:
+                next_token = next_token.to(self.llm.device)
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:

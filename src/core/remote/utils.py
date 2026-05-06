@@ -9,6 +9,12 @@ logger = logging.getLogger(__name__)
 
 """-------------- GRPC Connection Utils --------------"""
 
+def get_free_port() -> int:
+    """Finds and returns an available network port on the local machine."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
 
 def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

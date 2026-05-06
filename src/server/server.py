@@ -38,6 +38,7 @@ from core.remote.utils import (
     get_ip_address,
     discover_bootstrap_node_address,
     create_grpc_channel,
+    get_free_port
 )
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
@@ -53,25 +54,34 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-RESERVED_MEM_MB = 200  # Memory reserved for system overhead
+RESERVED_MEM_MB = 1000  # Memory reserved for system overhead
 
 
 class Server:
     def __init__(
         self,
+        grpc_addr: str,
         model_path: Path,
         num_layers: int = None,
         added_delay: float = None,  # Debugging
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
-        grpc_addr: str = "head-server:5001",
     ) -> None:
         self.added_delay = added_delay
 
         self.model_path = model_path
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # self.device = "cpu"
+        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu"
+        if torch.cuda.is_available():
+            try:
+                free_bytes, _ = torch.cuda.mem_get_info()
+                free_mb = free_bytes / (1024 * 1024)
+                if free_mb >= RESERVED_MEM_MB:
+                    self.device = "cuda"
+            except RuntimeError as e:
+                logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
+        
         self._repair_lock = threading.Lock()
 
         # Load Config
@@ -147,7 +157,7 @@ class Server:
 
         # Client Stub
         self.client_stub = None
-
+        self.client_stub_addr = None
     def _load_llm(
         self,
         time_it: bool = False,
@@ -166,6 +176,7 @@ class Server:
 
         self.llm = LLM.load(
             self.model_path,
+            device=self.device,
             load_initial_layer=False,
             layers_to_load=layers_to_load,
             load_output_layer=load_output_layer,
@@ -206,6 +217,7 @@ class Server:
 
         self.llm = LLM.load(
             self.model_path, 
+            device=self.device,
             load_initial_layer=False, 
             layers_to_load=layers, 
             load_output_layer=load_output_layer
@@ -519,8 +531,9 @@ class Server:
 
             # Connect to Client
             try:
-                if not self.client_stub:
+                if not self.client_stub or self.client_stub_addr != response_address:
                     channel = create_grpc_channel(response_address)
+                    self.client_stub_addr = response_address
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
                 client_response = self.client_stub.ReceiveResponse(response)
@@ -972,7 +985,7 @@ class Server:
             self.successor_stub = None
 
 
-GRPC_PORT = 5001
+# GRPC_PORT = 5001
 UDP_PORT = 9999
 MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
@@ -997,7 +1010,10 @@ def serve():
     my_ip = os.getenv("IP")
     if not my_ip:
         my_ip = get_ip_address()
-    grpc_addr = f"{my_ip}:{GRPC_PORT}"
+    
+    grpc_port = os.getenv("GRPC_PORT")
+    grpc_port = grpc_port if grpc_port else get_free_port()
+    grpc_addr = f"{my_ip}:{grpc_port}"
 
     # host_maddrs = os.getenv("HOST_MADDRS")
     host_maddrs = f"/ip4/{my_ip}/tcp/0"

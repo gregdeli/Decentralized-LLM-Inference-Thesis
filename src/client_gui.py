@@ -12,6 +12,7 @@ from core.remote.utils import (
     get_bootstrap_peer_address,
     discover_bootstrap_node_address,
     get_ip_address,
+    get_free_port
 )
 from core.p2p.chain_manager import (
     ChainStatus,
@@ -46,7 +47,7 @@ class AppState:
 
 state = AppState()
 
-GPRC_PORT = 5001
+# GPRC_PORT = 5001
 
 
 async def initialize_client():
@@ -72,7 +73,10 @@ async def initialize_client():
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
     # Initialize the Client Node
-    grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
+    grpc_port = os.getenv("GRPC_PORT")
+    grpc_port = grpc_port if grpc_port else get_free_port()
+    grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
+
     state.client = Client(
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
@@ -683,6 +687,26 @@ async def main_page():
             client_stats_container = ui.column().classes("w-full gap-2")
 
             ui.timer(1.0, lambda: refresh_client_stats(client_stats_container))
+
+async def shutdown_client():
+    """Handles graceful termination of background processes."""
+    logger.info("Shutting down application and releasing ports...")
+    if state.client:
+        # Stop any active generation loops
+        state.is_generating = False 
+
+        # Stop the head health monitor
+        state.client._stop_health_monitor_event.set()
+        
+        # Shut down the P2P/DHT connections and GRPC server
+        if state.client.grpc_server:
+            logger.info("Shutting down GRPC server...")
+            state.client.grpc_server.stop(grace=None)
+        
+        if hasattr(state.client, 'dht') and state.client.dht:
+            state.client.dht.shutdown()
+
+app.on_shutdown(shutdown_client)
 
 
 ui.run(title="Distributed LLM Client", port=8080, host="0.0.0.0")
