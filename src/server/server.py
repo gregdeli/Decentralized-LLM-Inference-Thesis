@@ -200,7 +200,7 @@ class Server:
 
     def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
-        logger.info(f"Reloading model with layers: {layers}")
+        logger.info(f"Reloading model with layers: {layers} | Load Output Layer: {load_output_layer}...")
 
         self._unload_llm()
 
@@ -581,6 +581,7 @@ class Server:
         if succ_info:
             successor_proc_rate = succ_info.get("processing_rate")
             succ_layers = succ_info.get("layers")
+            succ_output_layer_loaded = succ_info.get("output_layer_loaded", False)
 
             # If this node's processing rate is much smaller then its successor's
             # the successor should take this node's layers
@@ -593,6 +594,7 @@ class Server:
                     new_layers,
                     replacement_info=succ_info,
                     replacee_info=self.chain.get_self_info(),
+                    replacement_load_output_layer=succ_output_layer_loaded,
                     make_replacee_backup=True,
                     replacee_was_head=self.chain.is_head(),
                     replacee_pred_info=predecessor_info,
@@ -621,16 +623,17 @@ class Server:
                     f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
                 )
 
-                if self._can_load(layers=succ_layers):
+                if self._can_load(layers=succ_layers, output_layer=succ_output_layer_loaded):
                     layers_to_load = (self.llm.layers_loaded[0], succ_layers[1])
-                    logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}")
+                    logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}. Load Output Layer: {succ_output_layer_loaded}")
 
-                    self._reload_llm(layers_to_load)
+                    self._reload_llm(layers_to_load, load_output_layer=succ_output_layer_loaded)
 
                     self.chain.repair(
                         new_layers=layers_to_load,
                         replacement_info=self.chain.get_self_info(),
                         replacee_info=succ_info,
+                        replacement_load_output_layer=succ_output_layer_loaded,
                         make_replacee_backup=True,
                         replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
                     )
@@ -656,13 +659,10 @@ class Server:
         else:
             ideal_param_count = 0
 
-        logger.info(f"Idead Parameter Count: {ideal_param_count}")
+        logger.info(f"Ideal Parameter Count: {ideal_param_count}")
 
-        # current_num_layers = self.num_local_layers
         current_num_params = self.num_local_params
-        # max_extra_num_layers = self._mem_to_num_layers()
         max_extra_num_params = self._mem_to_num_params()
-        # max_num_layers = current_num_layers + max_extra_num_layers
         max_num_params = current_num_params + max_extra_num_params
 
         logger.info(f"Max Num Parameters: {max_num_params}")
@@ -683,32 +683,20 @@ class Server:
             target_layer_count = end_layer_index - start_layer_index + 1 
 
         # Check if the lm_head should be loaded
-        # remaining_param_count = target_param_count - target_layer_count * transformer_layer_params
         max_num_params -= target_layer_count * transformer_layer_params
+        target_param_count -= target_layer_count * transformer_layer_params
 
         load_output_layer = False
         # if remaining_param_count >= final_output_params:
-        if self.chain.is_tail() and max_num_params >= final_output_params:
+        if (self.chain.is_tail() and max_num_params >= final_output_params) or target_param_count>=final_output_params:
             # load_output_layer = remaining_param_count >= final_output_params
             load_output_layer = True
-
-        # Rounding logic
-        # if self.chain.is_tail():
-        # The tail takes whatever is left
-        # target_layer_count = num_total_layers - start_layer_index
-        # if target_layer_count < 1:
-        #     target_layer_count = 1
-        # elif (start_layer_index + target_layer_count) >= num_total_layers:
-            # Dont exceed the available layers
-            # target_layer_count = num_total_layers - start_layer_index  # - 1
-
-        # if target_layer_count > 0:
         
         new_layers = (start_layer_index, end_layer_index)
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
 
         # Load Layers
-        if new_layers != self.llm.layers_loaded:
+        if new_layers != self.llm.layers_loaded or load_output_layer != self.llm.output_layer_loaded:
             self._reload_llm(new_layers, load_output_layer)
             self.chain.update_layers(new_layers)
         else:
