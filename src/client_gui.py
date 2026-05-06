@@ -98,84 +98,110 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
         )
     )
 
-    with ui.card().classes(f"w-full p-2 bg-{color} gap-2"):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(role).classes("font-bold text-xs uppercase text-gray-600")
-            ui.icon("dns", color="gray").classes("text-sm")
+    with ui.card().classes(f"w-full p-0 bg-{color} gap-2"):
+        # with ui.row().classes("w-full items-center justify-between"):
+        #     ui.label(role).classes("font-bold text-xs uppercase text-gray-600")
+        #     ui.icon("dns", color="gray").classes("text-sm")
 
         # Node ID
-        ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
+        # ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
 
         # Hostname px. "nafplio"
-        ui.label(f"Hostname: {info.get('hostname', None)}").classes("font-mono text-sm")
+        # ui.label(f"Hostname: {info.get('hostname', None)}").classes("font-mono text-sm")
 
-        if "layers" in info:
-            layers = info.get("layers")
-            if layers:
-                num_layers = layers[1] - layers[0] + 1
-                labels["layers"] = ui.label(
-                    f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
+        with ui.expansion().classes("w-full font-mono text-sm") as expasion:
+
+            with expasion.add_slot('header'):
+                with ui.column().classes("gap-2 w-full"):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        ui.label(role).classes("font-bold uppercase text-gray-600")
+                    ui.label(f"Hostname: {info.get('hostname', 'N/A')}")
+                    
+                    if "layers" in info:
+                        layers = info.get("layers")
+                        if layers:
+                            num_layers = layers[1] - layers[0] + 1
+                            labels["layers"] = ui.label(
+                                f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
+                            ).classes("font-mono text-sm")
+                    
+                    output_layer_loaded = info.get("output_layer_loaded", False)
+                    labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
+                        "font-mono text-sm"
+                    )
+
+                    # ui.label(f"Layers: {info.get('layers', None)}")
+                    # ui.label(f"Output Loaded: {info.get('output_layer_loaded', False)}")
+
+            ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
+
+            # if "layers" in info:
+            #     layers = info.get("layers")
+            #     if layers:
+            #         num_layers = layers[1] - layers[0] + 1
+            #         labels["layers"] = ui.label(
+            #             f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
+            #         ).classes("font-mono text-sm")
+
+            layers_loaded = info.get("layers_loaded", False)
+            labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes(
+                "font-mono text-sm"
+            )
+
+            # output_layer_loaded = info.get("output_layer_loaded", False)
+            # labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
+            #     "font-mono text-sm"
+            # )
+
+            if "device" in info:
+                ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
+
+            if "processing_rate" in info:
+                processing_rate = info.get("processing_rate", 0.0)
+                labels["processing_rate"] = ui.label(
+                    f"Processing Rate: {processing_rate / 1000000000:.2f}B params/sec"
                 ).classes("font-mono text-sm")
 
-        layers_loaded = info.get("layers_loaded", False)
-        labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes(
-            "font-mono text-sm"
-        )
+            if "inference_delay" in info:
+                inference_latency = info.get("inference_delay", 0.0)
+                labels["inference_delay"] = ui.label(
+                    f"Inference Delay: {inference_latency:.6f}s"
+                ).classes("font-mono text-sm")
 
-        output_layer_loaded = info.get("output_layer_loaded", False)
-        labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
-            "font-mono text-sm"
-        )
+            if "grpc_overhead" in info:
+                grpc_overhead = info.get("grpc_overhead", 0.0)
+                labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes(
+                    "font-mono text-sm"
+                )
 
-        if "device" in info:
-            ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
+            if "memory_usage" in info and "memory_limit" in info:
+                mem_usage = info["memory_usage"]
+                mem_limit = info["memory_limit"]
+                labels["memory"] = ui.label(
+                    f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB"
+                ).classes("font-mono text-sm")
 
-        if "processing_rate" in info:
-            processing_rate = info.get("processing_rate", 0.0)
-            labels["processing_rate"] = ui.label(
-                f"Processing Rate: {processing_rate / 1000000000:.2f}B params/sec"
-            ).classes("font-mono text-sm")
+            if "available_memory" in info:
+                avail_mem = info["available_memory"]
+                labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes(
+                    "font-mono text-sm"
+                )
 
-        if "inference_delay" in info:
-            inference_latency = info.get("inference_delay", 0.0)
-            labels["inference_delay"] = ui.label(
-                f"Inference Delay: {inference_latency:.6f}s"
-            ).classes("font-mono text-sm")
+            if "vram_usage" in info and "vram_limit" in info:
+                vram_usage = info["vram_usage"]
+                vram_limit = info["vram_limit"]
+                labels["vram"] = ui.label(
+                    f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB"
+                ).classes("font-mono text-sm")
 
-        if "grpc_overhead" in info:
-            grpc_overhead = info.get("grpc_overhead", 0.0)
-            labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes(
-                "font-mono text-sm"
-            )
+            if "available_vram" in info:
+                avail_vram = info["available_vram"]
+                labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes(
+                    "font-mono text-sm"
+                )
 
-        if "memory_usage" in info and "memory_limit" in info:
-            mem_usage = info["memory_usage"]
-            mem_limit = info["memory_limit"]
-            labels["memory"] = ui.label(
-                f"Memory Usage: {int(mem_usage)}/{int(mem_limit)} MB"
-            ).classes("font-mono text-sm")
-
-        if "available_memory" in info:
-            avail_mem = info["available_memory"]
-            labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes(
-                "font-mono text-sm"
-            )
-
-        if "vram_usage" in info and "vram_limit" in info:
-            vram_usage = info["vram_usage"]
-            vram_limit = info["vram_limit"]
-            labels["vram"] = ui.label(
-                f"VRAM Usage: {int(vram_usage)}/{int(vram_limit)} MB"
-            ).classes("font-mono text-sm")
-
-        if "available_vram" in info:
-            avail_vram = info["available_vram"]
-            labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes(
-                "font-mono text-sm"
-            )
-
-        if "address" in info:
-            ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
+            if "address" in info:
+                ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
 
     return labels
 

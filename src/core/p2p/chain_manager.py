@@ -16,10 +16,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 15.0
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -179,7 +179,8 @@ class ChainManager:
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
 
-            self.make_node_backup(server_info=self_info)
+            if not self_info.get("is_backup"):
+                self.make_node_backup(server_info=self_info)
             return
 
         # Get the previous tails layers to determine this nodes layer range

@@ -157,8 +157,6 @@ class Server:
         load_output_layer = self.chain.get_load_output_layer()
 
         if self.chain.is_backup():
-            # num_layers = self._mem_to_num_layers()
-            # layers_to_load = (0, num_layers - 1)
             # Load only a single layer for fast but still accurate profiling
             layers_to_load = (0, 0)
 
@@ -174,7 +172,7 @@ class Server:
             time_it=time_it,
         )
         self.model = self.llm.model
-        # self.num_local_layers = self.llm.model.num_layers
+
         layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
         output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
         self.num_local_params = layer_params + output_params
@@ -184,6 +182,8 @@ class Server:
         self._update_memory_usage()
         if not self.chain.is_backup():
             self.chain.update_layers_loaded(self.model.num_layers>0)
+            if self.llm.output_layer_loaded:
+                self.chain.update_load_output_layer(False)
             self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
             self.chain.update_all_layers_loaded()
 
@@ -689,8 +689,8 @@ class Server:
         load_output_layer = False
         # if remaining_param_count >= final_output_params:
         if (self.chain.is_tail() and max_num_params >= final_output_params) or target_param_count>=final_output_params:
-            # load_output_layer = remaining_param_count >= final_output_params
-            load_output_layer = True
+            if end_layer_index == num_total_layers - 1:
+                load_output_layer = True
         
         new_layers = (start_layer_index, end_layer_index)
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
@@ -772,6 +772,10 @@ class Server:
                     replacee_info=dead_successor_info,
                     replacee_was_tail=dead_succ_was_tail,
                 )
+
+                if self.llm.output_layer_loaded:
+                    self.chain.update_load_output_layer(False)
+
                 self._connect_to_successor()
 
                 if self.chain.get_all_layers_loaded():
