@@ -204,16 +204,27 @@ def mem_to_num_layers(
     avail_vram: Optional[float],
 ) -> int:
     """Calculates how many transformer layers fit in the given available Memory/VRAM"""
+    
+    if "head_dim" not in config:
+        config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
+
     layer_params = config.get("transformer_layer_params")
+
     param_dtype = get_dtype_from_config(config)
     bytes_per_param = param_dtype.itemsize
-    layer_memory_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+    
+    layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+    layer_kv_cache_mem_size_mb = (2 * config.get("num_key_value_heads") * MAX_SEQUENCE_LENGTH * config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+    layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
     if avail_vram:
         available = avail_vram - RESERVED_MEM_MB
     else:
         available = avail_mem - RESERVED_MEM_MB
-    
-    max_num_layers = int(available // layer_memory_size_mb)
+
+    if available <= 0:
+        return 0
+
+    max_num_layers = int(available // layer_mem_size_mb)
     return min(max_num_layers, config.get("num_hidden_layers"))
 

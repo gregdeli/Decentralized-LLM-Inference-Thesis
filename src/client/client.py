@@ -32,8 +32,6 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
-
 
 class Client:
     def __init__(

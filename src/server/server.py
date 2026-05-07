@@ -55,8 +55,6 @@ from core.p2p.chain_manager import (
 
 logger = logging.getLogger(__name__)
 
-RESERVED_MEM_MB = 1000  # Memory reserved for system overhead
-
 
 class Server:
     def __init__(
@@ -280,15 +278,21 @@ class Server:
 
     def _mem_to_num_layers(self) -> int:
         """
-        Calculates how many layers fit in the available Memory/VRAM
+        Calculates how many transformer layers fit in the available Memory/VRAM taking into account the KV Cache 
         """
         self._update_memory_usage(update_on_dht=False)
+
+        if "head_dim" not in self.config:
+            self.config["head_dim"] = self.config["hidden_size"] // self.config["num_attention_heads"]
 
         layer_params = self.config.get("transformer_layer_params")
 
         param_dtype = get_dtype_from_config(self.config)
         bytes_per_param = param_dtype.itemsize
-        layer_memory_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+        
+        layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * MAX_SEQUENCE_LENGTH * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+        layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
         if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
@@ -298,8 +302,8 @@ class Server:
         if available <= 0:
             return 0
 
-        max_num_layers = int(available // layer_memory_size_mb)
-        return min(max_num_layers, self.config["num_hidden_layers"])
+        max_num_layers = int(available // layer_mem_size_mb)
+        return min(max_num_layers, self.config.get("num_hidden_layers"))
 
     def _can_load(
         self,
@@ -686,9 +690,14 @@ class Server:
         current_num_params = self.num_local_params
         max_extra_num_params = self._mem_to_num_params()
         max_num_params = current_num_params + max_extra_num_params
-
         logger.info(f"Max Num Parameters: {max_num_params}")
 
+        current_num_layers = self.model.num_layers
+        max_extra_num_layers = self._mem_to_num_layers()
+        max_num_layers = current_num_layers + max_extra_num_layers
+        logger.info(f"Max Num Layers: {max_num_layers}")
+
+        # Don't exceed the number of layers that can be loaded
         target_param_count = min(ideal_param_count, max_num_params)
         
         logger.info(f"Target Param Count: {target_param_count}")
@@ -697,7 +706,7 @@ class Server:
         final_output_params = self.config.get("final_output_params")
 
         # Start with transformer layers
-        target_layer_count = target_param_count / transformer_layer_params
+        target_layer_count = min(target_param_count / transformer_layer_params, max_num_layers)
         
         end_layer_index = start_layer_index + int(round(target_layer_count)) - 1
         if end_layer_index >= num_total_layers:
@@ -994,9 +1003,7 @@ class Server:
             self.successor_stub = None
 
 
-# GRPC_PORT = 5001
 UDP_PORT = 9999
-MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
 # To not show netlinkrib errors on moto
 os.environ["GOLOG_LOG_LEVEL"] = "fatal"
