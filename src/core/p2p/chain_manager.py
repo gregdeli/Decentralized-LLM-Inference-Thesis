@@ -15,6 +15,7 @@ TOTAL_PARAMS_KEY = "num_total_params"
 ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
+NUM_CLIENTS_KEY = "num_clients"
 
 # EXPIRATION_S = 30.0
 EXPIRATION_S = 7200.0
@@ -369,6 +370,7 @@ class ChainManager:
         all_loaded = self.dht.get(ALL_LAYERS_KEY)
         backup_nodes = self.dht.get(BACKUPS_KEY)
         current_status = self.get_chain_status()
+        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
 
         # if not head_id:
         #     return None
@@ -380,6 +382,7 @@ class ChainManager:
             TOTAL_PARAMS_KEY: total_params,
             ALL_LAYERS_KEY: all_loaded,
             STATUS_KEY: current_status,
+            NUM_CLIENTS_KEY: current_num_clients
         }
 
         # Traverse chain and print server info
@@ -627,6 +630,11 @@ class ChainManager:
         # Republish this servers' info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
+        # Republish the num_clients key
+        num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        if num_clients:
+            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
+
         # Republish the num_total_layers key
         num_total_layers = self._get_num_total_layers()
         if num_total_layers:
@@ -661,6 +669,14 @@ class ChainManager:
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
 
     # ---- Global key update methods ----
+    def increment_num_clients(self):
+        """Called by a client when in joins the DHT"""
+        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        if current_num_clients:
+            self.dht.store(NUM_CLIENTS_KEY, current_num_clients + 1, EXPIRATION_S)
+        else:
+            # This is the first client
+            self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
 
     def update_chain_status(self, status: ChainStatus):
         self.dht.store(STATUS_KEY, status.value, EXPIRATION_S)

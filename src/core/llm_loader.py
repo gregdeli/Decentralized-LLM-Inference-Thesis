@@ -41,7 +41,7 @@ class LLM:
         self.is_instruct_model = is_instruct_model
         self.model_path = model_path
         self.kv_cache_initialized = kv_cache_initialized
-        self.prev_generated_seq_length = 0
+        self.prev_max_seq_length = 0
 
         self.initial_layer_loaded = initial_layer_loaded
         self.layers_loaded = layers_loaded
@@ -205,14 +205,14 @@ class LLM:
                 print(f"KV cache initialization time: {elapsed:.5f} seconds")
 
         # Grow the kv cache size if necessary
-        elif self.prev_generated_seq_length < max_returned_tokens:
+        elif self.prev_max_seq_length < max_returned_tokens:
             device = self.model.mask_cache.device
             self.model.clear_kv_cache()
             self.model.set_kv_cache(
                 batch_size=1, max_seq_length=max_returned_tokens, device=device, dtype=self.dtype
             )
 
-        self.prev_generated_seq_length = max_returned_tokens
+        self.prev_max_seq_length = max_returned_tokens
 
         if stream:
             return self._generate_stream(input_ids, max_new_tokens, temperature, top_p)

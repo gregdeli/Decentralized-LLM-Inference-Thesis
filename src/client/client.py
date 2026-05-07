@@ -58,6 +58,7 @@ class Client:
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht, is_client=True)
+        self.chain.increment_num_clients()
 
         # Load Config
         config_path = model_path / "config.json"

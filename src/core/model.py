@@ -188,35 +188,108 @@ class Llama3(nn.Module):
             device=device,
             base=self.config["rope_theta"],
         )
+    
+    def client_has_cache(self, client_id: str) -> bool:
+        """Check if the given client has a kv cache allocated"""
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                if client_id not in block.self_attn.kv_caches:
+                    return False
+            return True
+        
+        return False
 
-    def set_kv_cache(
+    def add_client_cache(
         self,
-        batch_size: int,
+        client_id: str,
+        batch_size: int = 1,
         max_seq_length: Optional[int] = None,
         device: Optional[torch.device] = "cpu",
-        dtype: Optional[torch.dtype] = torch.get_default_dtype(),
+        dtype: Optional[torch.dtype] = torch.get_default_dtype
     ) -> None:
-        """
-        Pre-allocates the K-V cache for each transformer block.
-        """
+        """Allocate a KV Cache for the new client"""
         if max_seq_length is None:
             max_seq_length = self.max_seq_length
 
-        # Initialize kv cache for all blocks
+        # First reallocate the caches of the previous clients so that their local max_seq_lenths add up to MAX_SEQUENCE_LENGTH
         if self.num_layers > 0:
             for block in self.layers.values():
-                block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
+                for client in block.self_attn.kv_caches.keys():
+                    block.self_attn.kv_caches[client] = block.self_attn.build_kv_cache(
+                        batch_size, max_seq_length, device, dtype
+                    )       
 
-        # Create the causal attention mask and cache it
-        # Pairnei ligh wra auto
+        # Allocate the new client's kv cache
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                block.self_attn.kv_caches[client_id] = block.self_attn.build_kv_cache(
+                    batch_size, max_seq_length, device, dtype
+                )
+        
+        # Ensure mask cache exists
         if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
             self.mask_cache = build_mask_cache(max_seq_length, device)
 
-    def clear_kv_cache(self) -> None:
+    def remove_client_cache(self, client_id: str) -> None:
+        """Frees the KV cache memory of a certain client_id"""
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                if client_id in block.self_attn.kv_caches:
+                    del block.self_attn.kv_caches[client_id]
+
+        # TODO:
+        # Realocate the caches of the remaining clients
+        # Prepei otan client kanei disconnect na stelnw gprc request se olous tous server 
+        # me payload to neo max_seq_length pou prepei na exoun oloi stis remaining kv caches 
+        # if self.num_layers > 0:
+        #     for block in self.layers.values():
+        #         for client in block.self_attn.kv_caches.keys():
+        #             block.self_attn.kv_caches[client] = block.self_attn.build_kv_cache(
+        #                 batch_size, max_seq_length, device, dtype
+        #             )   
+    
+    def set_active_client(self, client_id: str) -> None:
+        """Rotates the active KV cache for the upcoming forward pass."""
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                block.self_attn.active_client_id = client_id
+    
+    def clear_all_kv_caches(self) -> None:
+        """Clears all caches for all clients."""
         self.mask_cache = None
         if self.num_layers > 0:
             for block in self.layers.values():
-                block.self_attn.kv_cache = None
+                block.self_attn.kv_caches.clear()
+                block.self_attn.active_client_id = None
+
+    # def set_kv_cache(
+    #     self,
+    #     batch_size: int,
+    #     max_seq_length: Optional[int] = None,
+    #     device: Optional[torch.device] = "cpu",
+    #     dtype: Optional[torch.dtype] = torch.get_default_dtype(),
+    # ) -> None:
+    #     """
+    #     Pre-allocates the K-V cache for each transformer block.
+    #     """
+    #     if max_seq_length is None:
+    #         max_seq_length = self.max_seq_length
+
+    #     # Initialize kv cache for all blocks
+    #     if self.num_layers > 0:
+    #         for block in self.layers.values():
+    #             block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
+
+    #     # Create the causal attention mask and cache it
+    #     # Pairnei ligh wra auto
+    #     if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
+    #         self.mask_cache = build_mask_cache(max_seq_length, device)
+
+    # def clear_kv_cache(self) -> None:
+    #     self.mask_cache = None
+    #     if self.num_layers > 0:
+    #         for block in self.layers.values():
+    #             block.self_attn.kv_cache = None
 
     def get_kv_cache_memory_size(self) -> float:
         """Returns the total size of the KV Cache in MB"""
@@ -224,10 +297,11 @@ class Llama3(nn.Module):
 
         if self.num_layers > 0:
             for block in self.layers.values():
-                kv_cache = block.self_attn.kv_cache
-                if kv_cache is not None:
-                    total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
-                    total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
+                for client_id in block.self_attn.kv_caches.keys():
+                    kv_cache = block.self_attn.kv_caches[client_id]
+                    if kv_cache is not None:
+                        total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
+                        total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
         
         total_mb = total_bytes / (1024 * 1024)
         return total_mb
@@ -297,7 +371,9 @@ class CausalSelfAttention(nn.Module):
         # Output projection
         self.o_proj = nn.Linear(self.n_head * self.head_dim, self.hidden_size, bias=bias)
 
-        self.kv_cache: Optional[KVCache] = None  # Placeholder for the KV cache
+        self.kv_caches: Dict[str, KVCache] = {}  # Dict of KV Caches, key is the client address
+        self.active_client_id: Optional[str] = None
+
         self.config = config
         self.block_idx = block_idx
 
@@ -326,8 +402,9 @@ class CausalSelfAttention(nn.Module):
         k = apply_rope(k, cos, sin)
 
         # KV Caching
-        if self.kv_cache is not None:
-            k, v = self.kv_cache(input_pos, k, v)
+        if self.active_client_id is not None and self.active_client_id in self.kv_caches:
+            active_cache = self.kv_caches[self.active_client_id] 
+            k, v = active_cache(input_pos, k, v)
 
         # GQA: repeat K and V heads
         if self.n_rep > 1:

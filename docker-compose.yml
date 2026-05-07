@@ -8,8 +8,8 @@ services:
     # network_mode: "host"
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       - GRPC_PORT=5001
       # - NUM_LAYERS=15
       # - ADDED_DELAY=0.08
@@ -39,8 +39,8 @@ services:
     hostname: intermediate-server
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       - GRPC_PORT=5001
       # - NUM_LAYERS=5
       # - ADDED_DELAY=0.08
@@ -71,8 +71,8 @@ services:
     hostname: tail-server
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       - GRPC_PORT=5001
       # - NUM_LAYERS=6
       # - ADDED_DELAY=0.08
@@ -105,8 +105,8 @@ services:
     hostname: server-1
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       - GRPC_PORT=5001
       # - NUM_LAYERS=4
       # - ADDED_DELAY=0.08
@@ -139,8 +139,8 @@ services:
     hostname: client
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       # - GRPC_PORT=5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -161,8 +161,8 @@ services:
     hostname: client
     environment:
       # - MODEL_PATH=/models/Llama-3.2-1B-Instruct 
-      # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
-      - MODEL_PATH=/models/Llama-3.1-8B-Instruct
+      - MODEL_PATH=/models/Llama-3.2-3B-Instruct
+      # - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       # - GRPC_PORT = 5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001

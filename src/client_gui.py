@@ -23,6 +23,7 @@ from core.p2p.chain_manager import (
     ALL_LAYERS_KEY,
     BACKUPS_KEY,
     STATUS_KEY,
+    NUM_CLIENTS_KEY,
     DIGITS_SHOW,
 )
 
@@ -239,12 +240,17 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         # Global Keys
         if "total_params" in state.ui.global_labels:
             state.ui.global_labels["total_params"].text = (
-                f"Total Params: {chain_info.get(TOTAL_PARAMS_KEY)}"
+                f"Total Params: {chain_info.get(TOTAL_PARAMS_KEY) / 1000000000:.2f}B"
             )
 
         if "total_layers" in state.ui.global_labels:
             state.ui.global_labels["total_layers"].text = (
                 f"Total Transformer Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
+            )
+        
+        if "num_clients" in state.ui.global_labels:
+            state.ui.global_labels["num_clients"].text = (
+                f"Num Clients: {chain_info.get(NUM_CLIENTS_KEY)}"
             )
 
         if "all_loaded" in state.ui.global_labels:
@@ -355,13 +361,18 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             total_params = chain_info.get(TOTAL_PARAMS_KEY)
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
+            num_clients = chain_info.get(NUM_CLIENTS_KEY)
 
             state.ui.global_labels["total_params"] = ui.label(
-                f"Total Params: {total_params}"
+                f"Total Params: {total_params / 1000000000:.2f}B"
             ).classes("text-lg")
 
             state.ui.global_labels["total_layers"] = ui.label(
                 f"Total Transformer Layers: {total_layers}"
+            ).classes("text-lg")
+
+            state.ui.global_labels["num_clients"] = ui.label(
+                f"Num Clients: {num_clients}"
             ).classes("text-lg")
 
             state.ui.global_labels["all_loaded"] = ui.label(

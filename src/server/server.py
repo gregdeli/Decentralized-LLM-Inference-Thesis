@@ -49,6 +49,7 @@ from core.p2p.chain_manager import (
     ChainStatus,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
+    NUM_CLIENTS_KEY,
     EXPIRATION_S,
     DIGITS_SHOW,
 )
@@ -382,34 +383,48 @@ class Server:
             
             self.chain.update_kv_cache_size(kv_cache_size_mb)
 
-    def _ensure_kv_cache(self, max_returned_tokens: int):
+    def _ensure_kv_cache(self, client_id: str):
         """Ensures the KV cache is initialized and large enough for the request."""
         cache_updated = False
 
-        # Initialize the kv cache if necessary
-        if not self.llm.kv_cache_initialized:
-            self.model.set_kv_cache(
+        # Initialize the client's kv cache if necessary
+        if not self.model.client_has_cache(client_id):
+            num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
+            max_seq_length = MAX_SEQUENCE_LENGTH // num_clients
+
+            self.model.add_client_cache(
+                client_id, 
                 batch_size=1,
-                # max_seq_length=max_returned_tokens,
-                max_seq_length=MAX_SEQUENCE_LENGTH,
+                max_seq_length=max_seq_length,
                 device=self.device,
-                dtype=self.llm.dtype,
+                dtype=self.llm.dtype
             )
-            self.llm.kv_cache_initialized = True
-            # self.llm.prev_generated_seq_length = max_returned_tokens
             cache_updated = True
 
+        # # Initialize the kv cache if necessary
+        # if not self.llm.kv_cache_initialized:
+        #     self.model.set_kv_cache(
+        #         batch_size=1,
+        #         # max_seq_length=max_returned_tokens,
+        #         max_seq_length=MAX_SEQUENCE_LENGTH,
+        #         device=self.device,
+        #         dtype=self.llm.dtype,
+        #     )
+        #     self.llm.kv_cache_initialized = True
+        #     # self.llm.prev_max_seq_length = max_returned_tokens
+        #     cache_updated = True
+
         # Dynamically grow the kv cache size if necessary
-        # elif max_returned_tokens > self.llm.prev_generated_seq_length:
+        # elif max_returned_tokens > self.llm.prev_max_seq_length:
         #     tmp_device = self.model.mask_cache.device
         #     self.model.clear_kv_cache()
         #     self.model.set_kv_cache(
         #         batch_size=1,
-        #         # max_seq_length=max_returned_tokens,
+        #         max_seq_length=max_returned_tokens,
         #         device=tmp_device,
         #         dtype=self.llm.dtype,
         #     )
-        #     self.llm.prev_generated_seq_length = max_returned_tokens
+        #     self.llm.prev_max_seq_length = max_returned_tokens
         #     cache_updated = True
 
         if cache_updated:
@@ -441,7 +456,9 @@ class Server:
 
         max_returned_tokens = dummy_seq_length + profiling_runs
 
-        self._ensure_kv_cache(max_returned_tokens)
+        # self._ensure_kv_cache(max_returned_tokens)
+        self._ensure_kv_cache(client_id="profiling")
+        self.model.set_active_client(client_id="profiling")
 
         starting_dummy_seq_len = dummy_seq_length
 
@@ -502,7 +519,9 @@ class Server:
             input_pos = input_pos.to(device)
 
         # KV Cache
-        self._ensure_kv_cache(max_returned_tokens)
+        # self._ensure_kv_cache(max_returned_tokens)
+        self._ensure_kv_cache(client_id=response_address)
+        self.model.set_active_client(client_id=response_address)
 
         # Inference
         start = time.perf_counter()
@@ -1066,7 +1085,7 @@ def serve():
 
     # Start GRPC server
     grpc_server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=2),
+        futures.ThreadPoolExecutor(max_workers=1),
         options=[
             ("grpc.max_send_message_length", MAX_MSG_SIZE),
             ("grpc.max_receive_message_length", MAX_MSG_SIZE),
