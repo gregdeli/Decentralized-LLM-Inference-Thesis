@@ -103,24 +103,14 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
     )
 
     with ui.card().classes(f"w-full p-0 bg-{color} gap-2"):
-        # with ui.row().classes("w-full items-center justify-between"):
-        #     ui.label(role).classes("font-bold text-xs uppercase text-gray-600")
-        #     ui.icon("dns", color="gray").classes("text-sm")
-
-        # Node ID
-        # ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
-
-        # Hostname px. "nafplio"
-        # ui.label(f"Hostname: {info.get('hostname', None)}").classes("font-mono text-sm")
-
         with ui.expansion().classes("w-full font-mono text-sm") as expasion:
-
             with expasion.add_slot('header'):
                 with ui.column().classes("gap-2 w-full"):
                     with ui.row().classes("w-full items-center justify-between"):
                         ui.label(role).classes("font-bold uppercase text-gray-600")
                     ui.label(f"Hostname: {info.get('hostname', 'N/A')}")
                     
+                    # Layers 
                     if "layers" in info:
                         layers = info.get("layers")
                         if layers:
@@ -129,33 +119,20 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                                 f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
                             ).classes("font-mono text-sm")
                     
+                    # Output Layer Loaded
                     output_layer_loaded = info.get("output_layer_loaded", False)
                     labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
                         "font-mono text-sm"
                     )
 
-                    # ui.label(f"Layers: {info.get('layers', None)}")
-                    # ui.label(f"Output Loaded: {info.get('output_layer_loaded', False)}")
-
+            # ID
             ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
 
-            # if "layers" in info:
-            #     layers = info.get("layers")
-            #     if layers:
-            #         num_layers = layers[1] - layers[0] + 1
-            #         labels["layers"] = ui.label(
-            #             f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
-            #         ).classes("font-mono text-sm")
-
+            # Layers Loaded (bool)
             layers_loaded = info.get("layers_loaded", False)
             labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes(
                 "font-mono text-sm"
             )
-
-            # output_layer_loaded = info.get("output_layer_loaded", False)
-            # labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
-            #     "font-mono text-sm"
-            # )
 
             if "device" in info:
                 ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
@@ -202,6 +179,11 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                 avail_vram = info["available_vram"]
                 labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes(
                     "font-mono text-sm"
+                )
+            
+            if "kv_cache_size" in info:
+                labels["kv_cache_size"] = ui.label(f"KV Cache Size: {int(info.get('kv_cache_size'))} MB").classes(
+                    "font-mono tesxt-sm"
                 )
 
             if "address" in info:
@@ -348,6 +330,9 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Available VRAM: {int(node_info['available_vram'])} MB"
                         )
 
+                    if "kv_cache_size" in labels and "kv_cache_size" in node_info:
+                        labels["kv_cache_size"].text = f"KV Cache Size: {int(node_info.get('kv_cache_size'))} MB"
+
         update_node_labels(server_list)
         update_node_labels(backups_list)
 
@@ -427,6 +412,7 @@ def refresh_client_stats(client_stats_container: ui.row):
     client_stats_container.clear()
     with client_stats_container:
         ui.label("Client").classes("text-lg font-bold")
+        ui.label(f"Address: {state.client.grpc_addr}").classes("")
         ui.separator()
         ui.label(f"Initial Inference Delay: {state.client.initial_inference_delay:.6f}s")
         ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
@@ -515,7 +501,7 @@ async def generate(
 
                     full_response += token
                     await update_response_message(response_message, full_response)
-        except (RuntimeError, AttributeError, grpc.RpcError) as e:
+        except (RuntimeError, ValueError, AttributeError, grpc.RpcError) as e:
             state.is_generating = False
             ui.notify(f"Generation Failed: {str(e)}", type="negative")
             send_btn.visible = True
@@ -531,13 +517,15 @@ async def generate(
 
     # Update Stats
     stats = state.client.last_inference_stats
-    latency = stats["latency"]
-    throughput = stats["throughput"]
+    num_tokens = stats.get("num_tokens_generated")
+    latency = stats.get("latency")
+    throughput = stats.get("throughput")
 
     stats_container.clear()
     with stats_container:
         ui.label("Generation").classes("text-lg font-bold")
         ui.separator()
+        ui.label(f"Tokens Generated: {num_tokens} tokens")
         ui.label(f"Generation Time: {latency:.2f}s")
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
         ui.label(f"Total Rate: {state.client.total_rate / 1000000000:.2f}B params/sec")

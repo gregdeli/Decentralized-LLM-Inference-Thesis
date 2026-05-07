@@ -16,10 +16,10 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 
-EXPIRATION_S = 30.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 15.0
+# EXPIRATION_S = 30.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -442,6 +442,13 @@ class ChainManager:
         """Check if this node is the head of the server chain"""
         head_id = self.dht.get(HEAD_KEY)
         if not head_id:
+            # If the head_id is None then it just not have been republished, check layers
+            self_info = self.get_self_info()
+            my_layers = self_info.get("layers")
+            layers_loaded = self_info.get("layers_loaded", False)
+            if my_layers and my_layers[0] == 0 and layers_loaded and self.get_chain_status() == ChainStatus.UNREADY:
+                return True
+            
             return None
         return head_id == self.node_id
 
@@ -755,6 +762,11 @@ class ChainManager:
         self_info["vram_usage"] = vram_usage
         self_info["vram_limit"] = vram_limit
         self_info["available_vram"] = avail_vram
+        self._update_server_info(self.node_id, self_info)
+
+    def update_kv_cache_size(self, kv_cache_size_mb: float):
+        self_info = self.get_self_info()
+        self_info["kv_cache_size"] = kv_cache_size_mb
         self._update_server_info(self.node_id, self_info)
 
     def update_successor(self, new_successor_data: str = None):

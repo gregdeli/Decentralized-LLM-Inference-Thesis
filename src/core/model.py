@@ -218,6 +218,20 @@ class Llama3(nn.Module):
             for block in self.layers.values():
                 block.self_attn.kv_cache = None
 
+    def get_kv_cache_memory_size(self) -> float:
+        """Returns the total size of the KV Cache in MB"""
+        total_bytes = 0
+
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                kv_cache = block.self_attn.kv_cache
+                if kv_cache is not None:
+                    total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
+                    total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
+        
+        total_mb = total_bytes / (1024 * 1024)
+        return total_mb
+
     def post_init(self):
         # Tie the weights between the input embeddings and the output embeddings
         # only if both layers are loaded on this specific node.
@@ -410,13 +424,6 @@ class KVCache(nn.Module):
         if input_pos is None:  # prefill phase
             seq_len = k.size(2)
             input_pos = torch.arange(0, seq_len, device=k.device)
-
-        # Ensure correct dtype
-        # Error: self.k = ... destroys pytorch buffer registration
-        # if self.k.dtype != k.dtype:
-        #     self.k = self.k.to(k.dtype)
-        # if self.v.dtype != v.dtype:
-        #     self.v = self.v.to(v.dtype)
 
         # Update cache
         self.k.index_copy_(2, input_pos, k)

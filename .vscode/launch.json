@@ -113,6 +113,22 @@
                 }
             ],
             "justMyCode": true
+        },
+        {
+            "name": "Python: Attach to Container client-A",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5676
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/src",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
         }
     ]
 }

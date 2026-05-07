@@ -15,6 +15,7 @@ import torch
 from client.servicer import ClientServicer
 from core.llm_loader import LLM
 from core.utils import can_load
+from core.constants import *
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
 from core.remote.serialization import *
@@ -32,7 +33,6 @@ from core.p2p.chain_manager import (
 logger = logging.getLogger(__name__)
 
 MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
-RESERVED_MEM_MB = 1000
 
 
 class Client:
@@ -369,7 +369,7 @@ class Client:
         # Determine if all the layers have been loaded on the server chain
         all_layers_loaded = self.chain.get_all_layers_loaded()
         chain_status = self.chain.get_chain_status()
-        if not all_layers_loaded or chain_status != ChainStatus.READY:
+        if not all_layers_loaded or chain_status not in (ChainStatus.READY, ChainStatus.RUNNING):
             warning = '<span style="color:red">Not all model layers have been loaded or the chain is not READY. Cannot initiate the generation task.</span>'
             logger.warning(warning)
             return warning
@@ -386,10 +386,9 @@ class Client:
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
-        if max_returned_tokens > self.model.max_seq_length:
-            raise ValueError(
-                f"The combined prompt and max_new_tokens length ({max_returned_tokens}) exceeds "
-                f"the model's maximum sequence length of {self.model.max_seq_length}."
+        if max_returned_tokens > MAX_SEQUENCE_LENGTH:
+            return (
+                f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds the systems fixed max sequence length of {MAX_SEQUENCE_LENGTH} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
             )
 
         if stream:
@@ -618,5 +617,5 @@ class Client:
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
-        self.last_inference_stats = {"latency": elapsed_time, "throughput": throughput}
+        self.last_inference_stats = {"num_tokens_generated": tokens_generated, "latency": elapsed_time, "throughput": throughput}
         self.chain.update_chain_status(ChainStatus.READY)

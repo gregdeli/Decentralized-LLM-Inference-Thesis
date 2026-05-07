@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 import torch
 
+from core.constants import *
+
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +173,6 @@ def can_load(
             return True
         
         return max_num_params >= config.get("final_output_params")
-
-RESERVED_MEM_MB = 200  # Memory reserved for system overhead
 
 def mem_to_num_params(
     config: Dict[str, Any],

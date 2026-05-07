@@ -11,7 +11,7 @@ services:
       # - MODEL_PATH=/models/Llama-3.2-3B-Instruct
       - MODEL_PATH=/models/Llama-3.1-8B-Instruct
       - GRPC_PORT=5001
-      # - NUM_LAYERS=5
+      - NUM_LAYERS=15
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -24,7 +24,7 @@ services:
               count: 1
               capabilities: [gpu]
         limits:
-          memory: 5G
+          memory: 8G
         #   cpus: '16.0'
     ports:
       - "5671:5678"
@@ -171,5 +171,5 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8081:8080" # NiceGUI
-      - "5680:5678"
+      - "5676:5678"
 

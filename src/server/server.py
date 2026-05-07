@@ -24,6 +24,7 @@ sys.path.insert(0, str(src_root))
 
 from servicer import NodeServicer
 from core.llm_loader import LLM
+from core.constants import *
 from core.utils import (
     get_dtype_from_config,
     calculate_transformer_params,
@@ -360,6 +361,11 @@ class Server:
             self.available_vram_mb = free_bytes / (1024 * 1024)
             self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
 
+        # KV Cache Size
+        kv_cache_size_mb = 0
+        if hasattr(self, "model") and self.model is not None:
+            kv_cache_size_mb = self.model.get_kv_cache_memory_size()
+
         if update_on_dht:
             self.chain.update_memory(
                 self.memory_usage_mb, self.memory_limit_mb, self.available_memory_mb
@@ -369,6 +375,8 @@ class Server:
                 self.chain.update_vram(
                     self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
                 )
+            
+            self.chain.update_kv_cache_size(kv_cache_size_mb)
 
     def _ensure_kv_cache(self, max_returned_tokens: int):
         """Ensures the KV cache is initialized and large enough for the request."""
@@ -378,26 +386,27 @@ class Server:
         if not self.llm.kv_cache_initialized:
             self.model.set_kv_cache(
                 batch_size=1,
-                max_seq_length=max_returned_tokens,
+                # max_seq_length=max_returned_tokens,
+                max_seq_length=MAX_SEQUENCE_LENGTH,
                 device=self.device,
                 dtype=self.llm.dtype,
             )
             self.llm.kv_cache_initialized = True
+            # self.llm.prev_generated_seq_length = max_returned_tokens
             cache_updated = True
 
         # Dynamically grow the kv cache size if necessary
-        elif self.llm.prev_generated_seq_length < max_returned_tokens:
-            tmp_device = self.model.mask_cache.device
-            self.model.clear_kv_cache()
-            self.model.set_kv_cache(
-                batch_size=1,
-                max_seq_length=max_returned_tokens,
-                device=tmp_device,
-                dtype=self.llm.dtype,
-            )
-            cache_updated = True
-
-        self.llm.prev_generated_seq_length = max_returned_tokens
+        # elif max_returned_tokens > self.llm.prev_generated_seq_length:
+        #     tmp_device = self.model.mask_cache.device
+        #     self.model.clear_kv_cache()
+        #     self.model.set_kv_cache(
+        #         batch_size=1,
+        #         # max_seq_length=max_returned_tokens,
+        #         device=tmp_device,
+        #         dtype=self.llm.dtype,
+        #     )
+        #     self.llm.prev_generated_seq_length = max_returned_tokens
+        #     cache_updated = True
 
         if cache_updated:
             self._update_memory_usage(update_on_dht=True)
