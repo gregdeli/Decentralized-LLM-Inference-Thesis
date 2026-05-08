@@ -122,7 +122,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         )
         if not self.server_node.chain.is_tail() and self.server_node.successor_stub:
             try:
-                self.successor_stub.Reallocate(request)
+                # self.server_node._connect_to_successor()
+                self.server_node.successor_stub.Reallocate(request)
                 return nodeservice_pb2.Empty()
             except grpc.RpcError as e:
                 logger.error(f"Failed to forward Client Removal Request to successor: {e}")

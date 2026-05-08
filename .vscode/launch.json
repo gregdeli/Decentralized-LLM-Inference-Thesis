@@ -35,7 +35,7 @@
             "justMyCode": false
         },
         {
-            "name": "Python: Attach to Container head",
+            "name": "Python: Attach to Container worker-A",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -51,7 +51,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container intermediate",
+            "name": "Python: Attach to Container worker-B",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -67,7 +67,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container tail",
+            "name": "Python: Attach to Container worker-C",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -83,7 +83,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container server-1",
+            "name": "Python: Attach to Container worker-D",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -121,6 +121,22 @@
             "connect": {
                 "host": "localhost",
                 "port": 5676
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/src",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Attach to Container client-B",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5677
             },
             "pathMappings": [
                 {

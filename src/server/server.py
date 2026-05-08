@@ -441,7 +441,7 @@ class Server:
                 self.processing_rate = int((0.7 * self.processing_rate) + (0.3 * current_rate))
 
     @torch.no_grad()
-    def _profile_backup_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
+    def _profile_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
         # LLM has already been loaded for profiling with the number of layers the backup node can hold
 
@@ -453,9 +453,7 @@ class Server:
         )
         dummy_input_pos = None
 
-        max_returned_tokens = dummy_seq_length + profiling_runs
-
-        # self._ensure_kv_cache(max_returned_tokens)
+        # KV Cache
         self._ensure_kv_cache(client_id="profiling")
         self.model.set_active_client(client_id="profiling")
 
@@ -474,7 +472,7 @@ class Server:
             self._calculate_processing_rate(self.inference_delay)
 
             logger.info(
-                f"Backup profiling: Layers {self.llm.layers_loaded}: "
+                f"Profiling: Layers {self.llm.layers_loaded}: "
                 f"Delay: {self.inference_delay:.4f}s "
                 f"Params/sec: {self.processing_rate} "
             )
@@ -484,10 +482,13 @@ class Server:
             dummy_input_pos = torch.tensor([current_pos], device=self.device)
             dummy_seq_length = 1
 
-        logger.info(f"Backup Node Profiling Complete")
         self.chain.update_processing_rate(self.processing_rate)
         self.model.remove_client_cache("profiling")
-        self._unload_llm()
+        self._update_memory_usage()
+
+        if self.chain.is_backup():
+            logger.info(f"Backup Node Profiling Complete")
+            self._unload_llm()
 
     @torch.no_grad()
     def run_local_layers(
@@ -1203,8 +1204,9 @@ def serve():
     server_node._load_llm()
 
     # Profile if backup node for the opportunistic takeover feature
-    if server_node.chain.is_backup():
-        server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=300)
+    # if server_node.chain.is_backup():
+        # server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=300)
+    server_node._profile_node(dummy_seq_length=50, profiling_runs=300)
 
     grpc_server.wait_for_termination()
 
