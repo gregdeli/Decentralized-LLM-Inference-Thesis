@@ -129,6 +129,9 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
             # ID
             ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
 
+            if "address" in info:
+                ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
+
             # Layers Loaded (bool)
             layers_loaded = info.get("layers_loaded", False)
             labels["layers_loaded"] = ui.label(f"Layers Loaded: {layers_loaded}").classes(
@@ -186,16 +189,11 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                 kv_cache_memories = info.get("kv_cache_memories")
                 if kv_cache_memories:
                     for client_addr, kv_cache_size in kv_cache_memories.items():
-                        labels[client_addr] = ui.label(f"{client_addr} KV Cache Size: {int(kv_cache_size)} MB").classes(
+                        labels[client_addr] = ui.label(f"KV Cache ({client_addr}): {int(kv_cache_size)} MB").classes(
                             "font-mono tesxt-sm"
                         )
 
-                # labels["kv_cache_size"] = ui.label(f"KV Cache Size: {int(info.get('kv_cache_size'))} MB").classes(
-                #     "font-mono tesxt-sm"
-                # )
-
-            if "address" in info:
-                ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
+    
 
     return labels
 
@@ -231,12 +229,16 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             if s["id"] == chain_info[HEAD_KEY]
             else "Tail" if s["id"] == chain_info[TAIL_KEY] else "Intemediate"
         )
-        current_topology.append((s["id"], role, len(s)))
+
+        num_kv_caches = len(s.get("kv_cache_memories", {}).keys())
+
+        current_topology.append((s["id"], role, len(s), num_kv_caches))
 
     # Process Backups
     backups_list = chain_info.get(BACKUPS_KEY, [])
     for b in backups_list:
-        current_topology.append((b["id"], "Backup", len(b)))
+        num_kv_caches = len(b.get("kv_cache_memories", {}).keys())
+        current_topology.append((b["id"], "Backup", len(b), num_kv_caches))
 
     # Check if the topology matches the previous state
     topology_changed = (state.ui.last_topology != current_topology) or (full_rebuild)
@@ -343,12 +345,12 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Available VRAM: {int(node_info['available_vram'])} MB"
                         )
 
-                    # if "kv_cache_memories" in node_info:
-                    #     kv_cache_memories = node_info.get("kv_cache_memories")
-                    #     if kv_cache_memories:
-                    #         for client_addr, kv_cache_size in kv_cache_memories.items():
-                    #             labels[client_addr].text = f"{client_addr} KV Cache Size: {int(kv_cache_size)} MB"
-                        # labels["kv_cache_size"].text = f"KV Cache Size: {int(node_info.get('kv_cache_size'))} MB"
+                    if "kv_cache_memories" in node_info:
+                        kv_cache_memories = node_info.get("kv_cache_memories")
+                        if kv_cache_memories:
+                            for client_addr, kv_cache_size in kv_cache_memories.items():
+                                labels[client_addr].text = f"KV Cache ({client_addr}): {int(kv_cache_size)} MB"
+                        
 
         update_node_labels(server_list)
         update_node_labels(backups_list)
