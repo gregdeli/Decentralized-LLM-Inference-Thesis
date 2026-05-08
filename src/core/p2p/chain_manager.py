@@ -673,7 +673,20 @@ class ChainManager:
         """Called by a client when in joins the DHT"""
         current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
         if current_num_clients:
-            self.dht.store(NUM_CLIENTS_KEY, current_num_clients + 1, EXPIRATION_S)
+            new_num_clients = current_num_clients + 1
+            self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
+            logger.info(f"Num Clientes updated to {new_num_clients}...")
+        else:
+            # This is the first client
+            self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
+
+    def decrement_num_clients(self):
+        """Called by a client when in leaves the DHT"""
+        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        if current_num_clients:
+            new_num_clients = current_num_clients - 1
+            self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
+            logger.info(f"Num Clientes updated to {new_num_clients}...")
         else:
             # This is the first client
             self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
@@ -780,9 +793,10 @@ class ChainManager:
         self_info["available_vram"] = avail_vram
         self._update_server_info(self.node_id, self_info)
 
-    def update_kv_cache_size(self, kv_cache_size_mb: float):
+    def update_kv_cache_size(self, kv_cache_memories: Dict[str, float]):
+        """kv_cache_memories = {"client-addr-1": 100.23 MB, "client-addr-2": 100.23 MB}"""
         self_info = self.get_self_info()
-        self_info["kv_cache_size"] = kv_cache_size_mb
+        self_info["kv_cache_memories"] = kv_cache_memories
         self._update_server_info(self.node_id, self_info)
 
     def update_successor(self, new_successor_data: str = None):

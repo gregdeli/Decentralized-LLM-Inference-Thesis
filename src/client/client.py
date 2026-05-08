@@ -26,6 +26,7 @@ from core.p2p.chain_manager import (
     HEAD_KEY,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
+    NUM_CLIENTS_KEY,
     EXPIRATION_S,
     DIGITS_SHOW,
 )
@@ -84,8 +85,8 @@ class Client:
         self.serialization_delay = 0.0
         self.head_communication_latency = 0.0
         self.deserialization_delay = 0.0
-        self.final_inference_delay = 0.0
-        self.sample_delay = 0.0
+        # self.final_inference_delay = 0.0
+        # self.sample_delay = 0.0
         self.decode_delay = 0.0
         self.yield_delay = 0.0
 
@@ -116,6 +117,32 @@ class Client:
         head_monitor_thread.start()
 
         self.grpc_server.wait_for_termination()
+    
+    def shutdown(self):
+        # Stop the head health monitor
+        self._stop_health_monitor_event.set()
+
+        # Decrement the num_clients DHT key
+        self.chain.decrement_num_clients()
+
+        # Remove this client's kv cache from the server nodes
+        num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
+        max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
+
+        request = nodeservice_pb2.RemoveClientKVCacheRequest(
+            client_id=self.grpc_addr,
+            new_max_seq_length=max_seq_length
+        )
+
+        self.head_server_stub.RemoveClientKVCache(request)
+        
+        # Shut down the P2P/DHT connections and GRPC server
+        if self.grpc_server:
+            logger.info("Shutting down GRPC server...")
+            self.grpc_server.stop(grace=None)
+        
+        if hasattr(self, 'dht') and self.dht:
+            self.dht.shutdown()
 
     def _head_health_monitor_task(self):
         while not self._stop_health_monitor_event.is_set():
@@ -385,9 +412,10 @@ class Client:
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
-        if max_returned_tokens > MAX_SEQUENCE_LENGTH:
+        num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
+        if max_returned_tokens > GLOBAL_MAX_SEQ_LEN // num_clients:
             return (
-                f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds the systems fixed max sequence length of {MAX_SEQUENCE_LENGTH} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
+                f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds this client's max sequence length of {GLOBAL_MAX_SEQ_LEN//num_clients} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
             )
 
         if stream:

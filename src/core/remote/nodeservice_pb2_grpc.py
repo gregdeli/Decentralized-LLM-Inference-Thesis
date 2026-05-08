@@ -70,6 +70,11 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
+        self.RemoveClientKVCache = channel.unary_unary(
+                '/nodeservice.NodeService/RemoveClientKVCache',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class NodeServiceServicer(object):
@@ -125,6 +130,14 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RemoveClientKVCache(self, request, context):
+        """Makes the server node remove the client's kv cache from memory
+        Also triggers a rebalancing of the memory allocated to the rest of the nodes' kv caches
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -161,6 +174,11 @@ def add_NodeServiceServicer_to_server(servicer, server):
             'UnloadLayers': grpc.unary_unary_rpc_method_handler(
                     servicer.UnloadLayers,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'RemoveClientKVCache': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveClientKVCache,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
@@ -353,6 +371,33 @@ class NodeService(object):
             target,
             '/nodeservice.NodeService/UnloadLayers',
             core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveClientKVCache(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/RemoveClientKVCache',
+            core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,

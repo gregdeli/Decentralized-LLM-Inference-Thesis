@@ -1,5 +1,7 @@
 from typing import Dict, Any, Optional, Tuple
 
+from core.constants import GLOBAL_MAX_SEQ_LEN
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -203,15 +205,12 @@ class Llama3(nn.Module):
         self,
         client_id: str,
         batch_size: int = 1,
-        max_seq_length: Optional[int] = None,
+        max_seq_length: Optional[int] = GLOBAL_MAX_SEQ_LEN,
         device: Optional[torch.device] = "cpu",
-        dtype: Optional[torch.dtype] = torch.get_default_dtype
+        dtype: Optional[torch.dtype] = torch.get_default_dtype()
     ) -> None:
         """Allocate a KV Cache for the new client"""
-        if max_seq_length is None:
-            max_seq_length = self.max_seq_length
-
-        # First reallocate the caches of the previous clients so that their local max_seq_lenths add up to MAX_SEQUENCE_LENGTH
+        # First reallocate the caches of the previous clients so that their local max_seq_lenths add up to GLOBAL_MAX_SEQ_LEN
         if self.num_layers > 0:
             for block in self.layers.values():
                 for client in block.self_attn.kv_caches.keys():
@@ -237,16 +236,23 @@ class Llama3(nn.Module):
                 if client_id in block.self_attn.kv_caches:
                     del block.self_attn.kv_caches[client_id]
 
-        # TODO:
-        # Realocate the caches of the remaining clients
-        # Prepei otan client kanei disconnect na stelnw gprc request se olous tous server 
-        # me payload to neo max_seq_length pou prepei na exoun oloi stis remaining kv caches 
-        # if self.num_layers > 0:
-        #     for block in self.layers.values():
-        #         for client in block.self_attn.kv_caches.keys():
-        #             block.self_attn.kv_caches[client] = block.self_attn.build_kv_cache(
-        #                 batch_size, max_seq_length, device, dtype
-        #             )   
+    def reallocate_caches(
+        self, 
+        batch_size: int = 1,
+        max_seq_length: Optional[int] = GLOBAL_MAX_SEQ_LEN,
+        device: Optional[torch.device] = "cpu",
+        dtype: Optional[torch.dtype] = torch.get_default_dtype(),
+    ) -> None:
+        """
+        Realocate the caches of the remaining clients so that each of their caches 
+        has a max_seq_length of GLOBAL_MAX_SEQ_LEN // num_clients
+        """
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                for client_id in block.self_attn.kv_caches.keys():
+                    block.self_attn.kv_caches[client_id] = block.self_attn.build_kv_cache(
+                        batch_size, max_seq_length, device, dtype
+                    )   
     
     def set_active_client(self, client_id: str) -> None:
         """Rotates the active KV cache for the upcoming forward pass."""
@@ -291,17 +297,34 @@ class Llama3(nn.Module):
     #         for block in self.layers.values():
     #             block.self_attn.kv_cache = None
 
-    def get_kv_cache_memory_size(self) -> float:
-        """Returns the total size of the KV Cache in MB"""
-        total_bytes = 0
+    def get_kv_cache_memory_sizes(self) -> Dict[str, float]:
+        """Returns the size of each client's KV Cache in MB"""
+        kv_cache_memories = {}
 
         if self.num_layers > 0:
             for block in self.layers.values():
                 for client_id in block.self_attn.kv_caches.keys():
                     kv_cache = block.self_attn.kv_caches[client_id]
                     if kv_cache is not None:
-                        total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
-                        total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
+                        if client_id not in kv_cache_memories:
+                            kv_cache_memories[client_id] = 0.0
+
+                        client_cache_bytes = kv_cache.k.nelement() * kv_cache.k.element_size()
+                        client_cache_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
+                        kv_cache_memories[client_id] += client_cache_bytes / (1024 * 1024)
+        
+        return kv_cache_memories
+    
+    def get_client_kv_cache_memory_size(self, client_id: int) -> float:
+        """Returns the size of a client's KV Cache in MB"""
+        total_bytes = 0
+
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                kv_cache = block.self_attn.kv_caches[client_id]
+                if kv_cache is not None:
+                    total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
+                    total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
         
         total_mb = total_bytes / (1024 * 1024)
         return total_mb

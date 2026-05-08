@@ -24,6 +24,10 @@ service NodeService {
 
   // Triggers layer unloading on a node
   rpc UnloadLayers(Empty) returns (Empty) {}
+
+  // Makes the server node remove the client's kv cache from memory
+  // Also triggers a rebalancing of the memory allocated to the rest of the nodes' kv caches
+  rpc RemoveClientKVCache(RemoveClientKVCacheRequest) returns (Empty) {}
 }
 
 // The service definition for a client node that receives inference responses form the TAIL node.
@@ -75,4 +79,8 @@ message ReallocateRequest {
   optional bytes predecessor_info = 3;
 }
 
+message RemoveClientKVCacheRequest {
+  string client_id = 1; // The client's address
+  int64 new_max_seq_length = 2;
+}
 

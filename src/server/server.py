@@ -292,7 +292,7 @@ class Server:
         bytes_per_param = param_dtype.itemsize
         
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
-        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * MAX_SEQUENCE_LENGTH * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
         layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
         if self.device == "cuda":
@@ -367,9 +367,10 @@ class Server:
             self.vram_usage_mb = self.vram_limit_mb - self.available_vram_mb
 
         # KV Cache Size
-        kv_cache_size_mb = 0
         if hasattr(self, "model") and self.model is not None:
-            kv_cache_size_mb = self.model.get_kv_cache_memory_size()
+            kv_cache_memories = self.model.get_kv_cache_memory_sizes()
+            if update_on_dht:
+                self.chain.update_kv_cache_size(kv_cache_memories)
 
         if update_on_dht:
             self.chain.update_memory(
@@ -380,8 +381,6 @@ class Server:
                 self.chain.update_vram(
                     self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
                 )
-            
-            self.chain.update_kv_cache_size(kv_cache_size_mb)
 
     def _ensure_kv_cache(self, client_id: str):
         """Ensures the KV cache is initialized and large enough for the request."""
@@ -390,7 +389,7 @@ class Server:
         # Initialize the client's kv cache if necessary
         if not self.model.client_has_cache(client_id):
             num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
-            max_seq_length = MAX_SEQUENCE_LENGTH // num_clients
+            max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
 
             self.model.add_client_cache(
                 client_id, 
@@ -487,6 +486,7 @@ class Server:
 
         logger.info(f"Backup Node Profiling Complete")
         self.chain.update_processing_rate(self.processing_rate)
+        self.model.remove_client_cache("profiling")
         self._unload_llm()
 
     @torch.no_grad()

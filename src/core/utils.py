@@ -214,7 +214,7 @@ def mem_to_num_layers(
     bytes_per_param = param_dtype.itemsize
     
     layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
-    layer_kv_cache_mem_size_mb = (2 * config.get("num_key_value_heads") * MAX_SEQUENCE_LENGTH * config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+    layer_kv_cache_mem_size_mb = (2 * config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * config.get("head_dim") * bytes_per_param) / (1024 * 1024)
     layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
     if avail_vram:

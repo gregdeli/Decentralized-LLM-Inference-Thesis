@@ -182,10 +182,17 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                     "font-mono text-sm"
                 )
             
-            if "kv_cache_size" in info:
-                labels["kv_cache_size"] = ui.label(f"KV Cache Size: {int(info.get('kv_cache_size'))} MB").classes(
-                    "font-mono tesxt-sm"
-                )
+            if "kv_cache_memories" in info:
+                kv_cache_memories = info.get("kv_cache_memories")
+                if kv_cache_memories:
+                    for client_addr, kv_cache_size in kv_cache_memories.items():
+                        labels[client_addr] = ui.label(f"{client_addr} KV Cache Size: {int(kv_cache_size)} MB").classes(
+                            "font-mono tesxt-sm"
+                        )
+
+                # labels["kv_cache_size"] = ui.label(f"KV Cache Size: {int(info.get('kv_cache_size'))} MB").classes(
+                #     "font-mono tesxt-sm"
+                # )
 
             if "address" in info:
                 ui.label(f'Address: {info["address"]}').classes("font-mono text-sm")
@@ -336,8 +343,12 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Available VRAM: {int(node_info['available_vram'])} MB"
                         )
 
-                    if "kv_cache_size" in labels and "kv_cache_size" in node_info:
-                        labels["kv_cache_size"].text = f"KV Cache Size: {int(node_info.get('kv_cache_size'))} MB"
+                    # if "kv_cache_memories" in node_info:
+                    #     kv_cache_memories = node_info.get("kv_cache_memories")
+                    #     if kv_cache_memories:
+                    #         for client_addr, kv_cache_size in kv_cache_memories.items():
+                    #             labels[client_addr].text = f"{client_addr} KV Cache Size: {int(kv_cache_size)} MB"
+                        # labels["kv_cache_size"].text = f"KV Cache Size: {int(node_info.get('kv_cache_size'))} MB"
 
         update_node_labels(server_list)
         update_node_labels(backups_list)
@@ -429,8 +440,8 @@ def refresh_client_stats(client_stats_container: ui.row):
         ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
         ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
         ui.label(f"Deserialization Delay: {state.client.deserialization_delay:.6f}s")
-        ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
-        ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
+        # ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
+        # ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
         ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
         ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
 
@@ -694,16 +705,7 @@ async def shutdown_client():
         # Stop any active generation loops
         state.is_generating = False 
 
-        # Stop the head health monitor
-        state.client._stop_health_monitor_event.set()
-        
-        # Shut down the P2P/DHT connections and GRPC server
-        if state.client.grpc_server:
-            logger.info("Shutting down GRPC server...")
-            state.client.grpc_server.stop(grace=None)
-        
-        if hasattr(state.client, 'dht') and state.client.dht:
-            state.client.dht.shutdown()
+        state.client.shutdown()
 
 app.on_shutdown(shutdown_client)
 

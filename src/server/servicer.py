@@ -8,6 +8,7 @@ import json
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import request_to_tensor
+from core.constants import GLOBAL_MAX_SEQ_LEN
 
 if TYPE_CHECKING:
     from .server import Server
@@ -96,4 +97,34 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
     def UnloadLayers(self, request, context):
         self.server_node._unload_llm()
+        return nodeservice_pb2.Empty()
+    
+    def RemoveClientKVCache(self, request, context):
+        # Free the client's cache memory
+        logger.info(f"Removing client's {request.client_id} KV Cache...")
+        self.server_node.model.remove_client_cache(request.client_id)
+
+        # Reallocate the remaining caches
+        logger.info(f"Reallocating the remaining KV Caches...")
+        self.server_node.model.reallocate_caches(
+            batch_size=1,
+            max_seq_length=request.new_max_seq_length,
+            device=self.server_node.device,
+            dtype=self.server_node.llm.dtype
+        )
+
+        self.server_node._update_memory_usage()
+
+        # Forward to successor
+        request = nodeservice_pb2.RemoveClientKVCacheRequest(
+            client_id=request.client_id,
+            new_max_seq_length=request.new_max_seq_length
+        )
+        if not self.server_node.chain.is_tail() and self.server_node.successor_stub:
+            try:
+                self.successor_stub.Reallocate(request)
+                return nodeservice_pb2.Empty()
+            except grpc.RpcError as e:
+                logger.error(f"Failed to forward Client Removal Request to successor: {e}")
+
         return nodeservice_pb2.Empty()
