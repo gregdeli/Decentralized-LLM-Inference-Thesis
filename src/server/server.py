@@ -441,7 +441,12 @@ class Server:
                 self.processing_rate = int((0.7 * self.processing_rate) + (0.3 * current_rate))
 
     @torch.no_grad()
-    def _profile_node(self, dummy_seq_length: int = 30, profiling_runs: int = 100):
+    def _profile_node(
+        self, 
+        dummy_seq_length: int = 30, 
+        profiling_runs: int = 100, 
+        profiling_duration_s: int = 3
+    ):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
         # LLM has already been loaded for profiling with the number of layers the backup node can hold
 
@@ -459,6 +464,7 @@ class Server:
 
         starting_dummy_seq_len = dummy_seq_length
 
+        prof_start_time = time.perf_counter()
         for i in range(profiling_runs):
             start = time.perf_counter()
             _ = self.model.forward_server(
@@ -481,6 +487,10 @@ class Server:
             current_pos = starting_dummy_seq_len + (i + 1)
             dummy_input_pos = torch.tensor([current_pos], device=self.device)
             dummy_seq_length = 1
+
+            profiling_time = time.perf_counter() - prof_start_time
+            if profiling_time >= profiling_duration_s:
+                break
 
         self.chain.update_processing_rate(self.processing_rate)
         self.model.remove_client_cache("profiling")
@@ -1086,10 +1096,10 @@ def serve():
 
     # Start GRPC server
     grpc_server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=1),
+        futures.ThreadPoolExecutor(max_workers=GPRC_MAX_WORKERS),
         options=[
-            ("grpc.max_send_message_length", MAX_MSG_SIZE),
-            ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+            ("grpc.max_send_message_length", GRPC_MAX_MSG_SIZE),
+            ("grpc.max_receive_message_length", GRPC_MAX_MSG_SIZE),
         ],
     )
     nodeservice_pb2_grpc.add_NodeServiceServicer_to_server(NodeServicer(server_node), grpc_server)
@@ -1203,10 +1213,8 @@ def serve():
     # Load the server's assigned layers
     server_node._load_llm()
 
-    # Profile if backup node for the opportunistic takeover feature
-    # if server_node.chain.is_backup():
-        # server_node._profile_backup_node(dummy_seq_length=50, profiling_runs=300)
-    server_node._profile_node(dummy_seq_length=50, profiling_runs=300)
+    # Profile the node to get processing rate measurements
+    server_node._profile_node(dummy_seq_length=50, profiling_runs=300, profiling_duration_s=PROFILING_DURATION)
 
     grpc_server.wait_for_termination()
 

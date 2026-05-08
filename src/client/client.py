@@ -104,8 +104,8 @@ class Client:
         self.grpc_server = grpc.server(
             futures.ThreadPoolExecutor(max_workers=1),
             options=[
-                ("grpc.max_send_message_length", MAX_MSG_SIZE),
-                ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+                ("grpc.max_send_message_length", GRPC_MAX_MSG_SIZE),
+                ("grpc.max_receive_message_length", GRPC_MAX_MSG_SIZE),
             ],
         )
         nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), self.grpc_server)

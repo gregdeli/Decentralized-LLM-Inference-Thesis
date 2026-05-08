@@ -185,7 +185,7 @@ class Llama3(nn.Module):
 
     def build_rope_cache(self, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         return build_rope_cache(
-            seq_len=self.max_seq_length,
+            seq_len=GLOBAL_MAX_SEQ_LEN,
             n_elem=self.config["head_dim"],
             device=device,
             base=self.config["rope_theta"],
@@ -267,35 +267,6 @@ class Llama3(nn.Module):
             for block in self.layers.values():
                 block.self_attn.kv_caches.clear()
                 block.self_attn.active_client_id = None
-
-    # def set_kv_cache(
-    #     self,
-    #     batch_size: int,
-    #     max_seq_length: Optional[int] = None,
-    #     device: Optional[torch.device] = "cpu",
-    #     dtype: Optional[torch.dtype] = torch.get_default_dtype(),
-    # ) -> None:
-    #     """
-    #     Pre-allocates the K-V cache for each transformer block.
-    #     """
-    #     if max_seq_length is None:
-    #         max_seq_length = self.max_seq_length
-
-    #     # Initialize kv cache for all blocks
-    #     if self.num_layers > 0:
-    #         for block in self.layers.values():
-    #             block.self_attn.kv_cache = block.self_attn.build_kv_cache(batch_size, max_seq_length, device, dtype)
-
-    #     # Create the causal attention mask and cache it
-    #     # Pairnei ligh wra auto
-    #     if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
-    #         self.mask_cache = build_mask_cache(max_seq_length, device)
-
-    # def clear_kv_cache(self) -> None:
-    #     self.mask_cache = None
-    #     if self.num_layers > 0:
-    #         for block in self.layers.values():
-    #             block.self_attn.kv_cache = None
 
     def get_kv_cache_memory_sizes(self) -> Dict[str, float]:
         """Returns the size of each client's KV Cache in MB"""
