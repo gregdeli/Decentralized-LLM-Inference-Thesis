@@ -214,9 +214,12 @@ class Llama3(nn.Module):
         if self.num_layers > 0:
             for block in self.layers.values():
                 for client in block.self_attn.kv_caches.keys():
-                    block.self_attn.kv_caches[client] = block.self_attn.build_kv_cache(
-                        batch_size, max_seq_length, device, dtype
-                    )       
+                    if max_seq_length != block.self_attn.kv_caches[client].max_seq_length:
+                        prev_max_seq_length = block.self_attn.kv_caches[client].max_seq_length
+
+                        block.self_attn.kv_caches[client] = block.self_attn.rebuild_kv_cache(
+                            batch_size, max_seq_length, prev_max_seq_length, device, dtype
+                        )       
 
         # Allocate the new client's kv cache
         if self.num_layers > 0:
@@ -250,9 +253,28 @@ class Llama3(nn.Module):
         if self.num_layers > 0:
             for block in self.layers.values():
                 for client_id in block.self_attn.kv_caches.keys():
-                    block.self_attn.kv_caches[client_id] = block.self_attn.build_kv_cache(
-                        batch_size, max_seq_length, device, dtype
+                    prev_max_seq_length = block.self_attn.kv_caches[client_id].max_seq_length
+                    block.self_attn.kv_caches[client_id] = block.self_attn.rebuild_kv_cache(
+                        batch_size, max_seq_length, prev_max_seq_length, device, dtype
                     )   
+
+    def client_cache_reallocated(
+        self,
+        client_id: str,
+    ) -> bool:
+        cache_reallocated = False
+
+        if self.num_layers > 0:
+            for block in self.layers.values():
+                client_cache = block.self_attn.kv_caches.get(client_id) 
+                if client_cache and client_cache.prev_max_seq_length and client_cache.max_seq_length != client_cache.prev_max_seq_length:
+                    # update the prev_max_seq_length
+                    client_cache.prev_max_seq_length = client_cache.max_seq_length
+                    cache_reallocated = True
+                else:
+                    return False
+        
+        return cache_reallocated
     
     def set_active_client(self, client_id: str) -> None:
         """Rotates the active KV cache for the upcoming forward pass."""
@@ -431,7 +453,17 @@ class CausalSelfAttention(nn.Module):
         """
         k_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
         v_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
-        return KVCache(k_shape, v_shape, device=device, dtype=dtype)
+        return KVCache(k_shape, v_shape, max_seq_length=max_seq_length, device=device, dtype=dtype)
+    
+    def rebuild_kv_cache(
+        self, batch_size: int, max_seq_length: int, prev_max_seq_length: int, device: Optional[torch.device] = None, dtype: Optional[torch.device] = None
+    ) -> "KVCache":
+        """
+        Rebuilds the K-V cache for this attention layer
+        """
+        k_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
+        v_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
+        return KVCache(k_shape, v_shape, max_seq_length=max_seq_length, prev_max_seq_length=prev_max_seq_length, device=device, dtype=dtype)
 
 
 class MLP(nn.Module):
@@ -481,10 +513,14 @@ class KVCache(nn.Module):
         self,
         k_shape: Tuple[int, int, int, int],
         v_shape: Tuple[int, int, int, int],
+        max_seq_length: int,
+        prev_max_seq_length: Optional[int] = None,
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        self.prev_max_seq_length = prev_max_seq_length
+        self.max_seq_length = max_seq_length
         self.register_buffer("k", torch.zeros(k_shape, device=device, dtype=dtype), persistent=False)
         self.register_buffer("v", torch.zeros(v_shape, device=device, dtype=dtype), persistent=False)
 

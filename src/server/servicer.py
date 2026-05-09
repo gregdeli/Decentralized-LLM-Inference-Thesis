@@ -30,6 +30,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def RunLayers(self, request, context):
         start = time.perf_counter()
 
+        # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
+
         # Deserialize the incoming request to a tensor
         input_tensor = request_to_tensor(request)
 
@@ -58,7 +60,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
         )
 
-        logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")
+        # logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")
 
         ack_response.processing_time = total_grpc_time
 
@@ -66,6 +68,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         self.server_node.chain.update_processing_rate(self.server_node.processing_rate)
         self.server_node.chain.update_inference_delay(self.server_node.inference_delay)
         self.server_node.chain.update_grpc_overhead(self.server_node.grpc_overhead)
+
+        # logger.info(f"End RunLayers handling from ({request.response_address})...")
 
         return ack_response
 

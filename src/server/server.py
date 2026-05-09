@@ -82,7 +82,9 @@ class Server:
             except RuntimeError as e:
                 logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
         
+        # Locks
         self._repair_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
         # Load Config
         config_path = model_path / "config.json"
@@ -382,10 +384,8 @@ class Server:
                     self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
                 )
 
-    def _ensure_kv_cache(self, client_id: str):
+    def _ensure_kv_cache(self, client_id: str) -> None:
         """Ensures the KV cache is initialized and large enough for the request."""
-        cache_updated = False
-
         # Initialize the client's kv cache if necessary
         if not self.model.client_has_cache(client_id):
             num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
@@ -398,7 +398,8 @@ class Server:
                 device=self.device,
                 dtype=self.llm.dtype
             )
-            cache_updated = True
+
+            self._update_memory_usage(update_on_dht=True)
 
         # # Initialize the kv cache if necessary
         # if not self.llm.kv_cache_initialized:
@@ -426,8 +427,8 @@ class Server:
         #     self.llm.prev_max_seq_length = max_returned_tokens
         #     cache_updated = True
 
-        if cache_updated:
-            self._update_memory_usage(update_on_dht=True)
+        # if cache_updated:
+        #     self._update_memory_usage(update_on_dht=True)
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
@@ -529,27 +530,36 @@ class Server:
         if input_pos is not None and input_pos.device != device:
             input_pos = input_pos.to(device)
 
-        # KV Cache
-        # self._ensure_kv_cache(max_returned_tokens)
-        self._ensure_kv_cache(client_id=response_address)
-        self.model.set_active_client(client_id=response_address)
+        # If KV caches have been reallocated the generation needs to stop because the context is lost
+        if self.model.client_cache_reallocated(client_id=response_address) and input_pos is not None:
+            return nodeservice_pb2.InferenceResponse(
+                error_message="KV Caches have been reallocated!"
+            )
+        
+        # Set KV Cache and Process Layers
+        with self._inference_lock:
+            self._ensure_kv_cache(client_id=response_address)
 
-        # Inference
-        start = time.perf_counter()
+            self.model.set_active_client(client_id=response_address)
 
-        h = self.model.forward_server(input_tensor, seq_length, input_pos)
-        if self.added_delay:
-            time.sleep(self.added_delay)
+            # Inference
+            start = time.perf_counter()
 
-        self.inference_delay = time.perf_counter() - start
+            logger.info(f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})...")
+
+            h = self.model.forward_server(input_tensor, seq_length, input_pos)
+            if self.added_delay:
+                time.sleep(self.added_delay)
+        
+            self.inference_delay = time.perf_counter() - start
 
         self._calculate_processing_rate(self.inference_delay)
 
-        logger.info(
-            f"Layers {self.llm.layers_loaded}: "
-            f"Delay: {self.inference_delay:.4f}s "
-            f"Params/sec: {self.processing_rate} "
-        )
+        # logger.info(
+        #     f"Layers {self.llm.layers_loaded}: "
+        #     f"Delay: {self.inference_delay:.4f}s "
+        #     f"Rate: {self.processing_rate} params/sec"
+        # )
 
         # Move output tensor back to the cpu for serialization
         h = h.cpu()
@@ -579,6 +589,7 @@ class Server:
                     self.client_stub_addr = response_address
                     self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
+                logger.info(f"Sending Response to client ({self.client_stub_addr})...")
                 client_response = self.client_stub.ReceiveResponse(response)
 
             except grpc.RpcError as e:
@@ -605,6 +616,7 @@ class Server:
         request.response_address = response_address
 
         try:
+            logger.info(f"Forwarding RunLayers request to successor from ({response_address})...")
             response = self.successor_stub.RunLayers(request, timeout=5)
         except grpc.RpcError as e:
             if (
