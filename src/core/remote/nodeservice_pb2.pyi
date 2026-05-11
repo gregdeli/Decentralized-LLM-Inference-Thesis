@@ -37,18 +37,16 @@ class InferenceRequest(_message.Message):
     def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., max_returned_tokens: _Optional[int] = ..., seq_length: _Optional[int] = ..., input_pos: _Optional[int] = ..., response_address: _Optional[str] = ..., block_scales: _Optional[bytes] = ...) -> None: ...
 
 class InferenceResponse(_message.Message):
-    __slots__ = ("tensor_data", "tensor_shape", "dtype", "error_message", "processing_time")
+    __slots__ = ("tensor_data", "tensor_shape", "dtype", "error_message")
     TENSOR_DATA_FIELD_NUMBER: _ClassVar[int]
     TENSOR_SHAPE_FIELD_NUMBER: _ClassVar[int]
     DTYPE_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
-    PROCESSING_TIME_FIELD_NUMBER: _ClassVar[int]
     tensor_data: bytes
     tensor_shape: _containers.RepeatedScalarFieldContainer[int]
     dtype: str
     error_message: str
-    processing_time: float
-    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., error_message: _Optional[str] = ..., processing_time: _Optional[float] = ...) -> None: ...
+    def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class ReallocateRequest(_message.Message):
     __slots__ = ("total_rate", "start_layer_index", "predecessor_info")

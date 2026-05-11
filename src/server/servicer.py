@@ -5,6 +5,7 @@ import grpc
 import torch
 import time
 import json
+import threading
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import request_to_tensor
@@ -28,8 +29,6 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         return nodeservice_pb2.MultiaddrResponse(multiaddr=str(visible_maddrs[0]))
 
     def RunLayers(self, request, context):
-        start = time.perf_counter()
-
         # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
 
         # Deserialize the incoming request to a tensor
@@ -41,37 +40,12 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         input_pos_val = request.input_pos if request.HasField("input_pos") else None
         input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
-        # partial_rate = request.partial_rate
         response_address = request.response_address
 
-        # Run the inference logic
-        ack_response = self.server_node.run_local_layers(
-            input_tensor, 
-            max_returned_tokens, 
-            seq_length, 
-            input_pos, 
-            response_address
-        )
-
-        end = time.perf_counter()
-
-        total_grpc_time = end - start
-        self.server_node.grpc_overhead = (
-            total_grpc_time - self.server_node.inference_delay - ack_response.processing_time
-        )
-
-        # logger.info(f"GPRC Overhead: {self.server_node.grpc_overhead:.6f}s")
-
-        ack_response.processing_time = total_grpc_time
-
-        # Update processing rate, inference delay and grpc overhead on the dht
-        self.server_node.chain.update_processing_rate(self.server_node.processing_rate)
-        self.server_node.chain.update_inference_delay(self.server_node.inference_delay)
-        self.server_node.chain.update_grpc_overhead(self.server_node.grpc_overhead)
+        threading.Thread(target=self.server_node.run_local_layers, args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address), daemon=True).start()
 
         # logger.info(f"End RunLayers handling from ({request.response_address})...")
-
-        return ack_response
+        return nodeservice_pb2.Empty()
 
     def Check(self, request, context):
         """If the server is running it will return an Empty response"""

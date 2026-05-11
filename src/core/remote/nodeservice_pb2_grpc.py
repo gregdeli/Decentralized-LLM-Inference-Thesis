@@ -38,7 +38,7 @@ class NodeServiceStub(object):
         self.RunLayers = channel.unary_unary(
                 '/nodeservice.NodeService/RunLayers',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
         self.GetPeerMultiaddr = channel.unary_unary(
                 '/nodeservice.NodeService/GetPeerMultiaddr',
@@ -144,7 +144,7 @@ def add_NodeServiceServicer_to_server(servicer, server):
             'RunLayers': grpc.unary_unary_rpc_method_handler(
                     servicer.RunLayers,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceRequest.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
             'GetPeerMultiaddr': grpc.unary_unary_rpc_method_handler(
                     servicer.GetPeerMultiaddr,
@@ -209,7 +209,7 @@ class NodeService(object):
             target,
             '/nodeservice.NodeService/RunLayers',
             core_dot_remote_dot_nodeservice__pb2.InferenceRequest.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
@@ -423,7 +423,7 @@ class ClientServiceStub(object):
         self.ReceiveResponse = channel.unary_unary(
                 '/nodeservice.ClientService/ReceiveResponse',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
 
 
@@ -445,7 +445,7 @@ def add_ClientServiceServicer_to_server(servicer, server):
             'ReceiveResponse': grpc.unary_unary_rpc_method_handler(
                     servicer.ReceiveResponse,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -475,7 +475,7 @@ class ClientService(object):
             target,
             '/nodeservice.ClientService/ReceiveResponse',
             core_dot_remote_dot_nodeservice__pb2.InferenceResponse.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.InferenceResponse.FromString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

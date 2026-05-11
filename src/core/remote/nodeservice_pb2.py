@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x63ore/remote/nodeservice.proto\x12\x0bnodeservice\"\x07\n\x05\x45mpty\"&\n\x11MultiaddrResponse\x12\x11\n\tmultiaddr\x18\x01 \x01(\t\"\xe7\x01\n\x10InferenceRequest\x12\x13\n\x0btensor_data\x18\x01 \x01(\x0c\x12\x14\n\x0ctensor_shape\x18\x02 \x03(\x05\x12\r\n\x05\x64type\x18\x03 \x01(\t\x12\x1b\n\x13max_returned_tokens\x18\x04 \x01(\x05\x12\x17\n\nseq_length\x18\x05 \x01(\x05H\x00\x88\x01\x01\x12\x16\n\tinput_pos\x18\x06 \x01(\x05H\x01\x88\x01\x01\x12\x18\n\x10response_address\x18\x07 \x01(\t\x12\x14\n\x0c\x62lock_scales\x18\x08 \x01(\x0c\x42\r\n\x0b_seq_lengthB\x0c\n\n_input_pos\"\x94\x01\n\x11InferenceResponse\x12\x13\n\x0btensor_data\x18\x01 \x01(\x0c\x12\x14\n\x0ctensor_shape\x18\x02 \x03(\x05\x12\r\n\x05\x64type\x18\x03 \x01(\t\x12\x1a\n\rerror_message\x18\x04 \x01(\tH\x00\x88\x01\x01\x12\x17\n\x0fprocessing_time\x18\x05 \x01(\x02\x42\x10\n\x0e_error_message\"v\n\x11ReallocateRequest\x12\x12\n\ntotal_rate\x18\x01 \x01(\x03\x12\x19\n\x11start_layer_index\x18\x02 \x01(\x05\x12\x1d\n\x10predecessor_info\x18\x03 \x01(\x0cH\x00\x88\x01\x01\x42\x13\n\x11_predecessor_info\"K\n\x1aRemoveClientKVCacheRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x1a\n\x12new_max_seq_length\x18\x02 \x01(\x03\x32\xa5\x04\n\x0bNodeService\x12L\n\tRunLayers\x12\x1d.nodeservice.InferenceRequest\x1a\x1e.nodeservice.InferenceResponse\"\x00\x12H\n\x10GetPeerMultiaddr\x12\x12.nodeservice.Empty\x1a\x1e.nodeservice.MultiaddrResponse\"\x00\x12\x31\n\x05\x43heck\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x42\n\nReallocate\x12\x1e.nodeservice.ReallocateRequest\x1a\x12.nodeservice.Empty\"\x00\x12?\n\x13UpdateSuccessorStub\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x36\n\nLoadLayers\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x38\n\x0cUnloadLayers\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12T\n\x13RemoveClientKVCache\x12\'.nodeservice.RemoveClientKVCacheRequest\x1a\x12.nodeservice.Empty\"\x00\x32\x64\n\rClientService\x12S\n\x0fReceiveResponse\x12\x1e.nodeservice.InferenceResponse\x1a\x1e.nodeservice.InferenceResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1d\x63ore/remote/nodeservice.proto\x12\x0bnodeservice\"\x07\n\x05\x45mpty\"&\n\x11MultiaddrResponse\x12\x11\n\tmultiaddr\x18\x01 \x01(\t\"\xe7\x01\n\x10InferenceRequest\x12\x13\n\x0btensor_data\x18\x01 \x01(\x0c\x12\x14\n\x0ctensor_shape\x18\x02 \x03(\x05\x12\r\n\x05\x64type\x18\x03 \x01(\t\x12\x1b\n\x13max_returned_tokens\x18\x04 \x01(\x05\x12\x17\n\nseq_length\x18\x05 \x01(\x05H\x00\x88\x01\x01\x12\x16\n\tinput_pos\x18\x06 \x01(\x05H\x01\x88\x01\x01\x12\x18\n\x10response_address\x18\x07 \x01(\t\x12\x14\n\x0c\x62lock_scales\x18\x08 \x01(\x0c\x42\r\n\x0b_seq_lengthB\x0c\n\n_input_pos\"{\n\x11InferenceResponse\x12\x13\n\x0btensor_data\x18\x01 \x01(\x0c\x12\x14\n\x0ctensor_shape\x18\x02 \x03(\x05\x12\r\n\x05\x64type\x18\x03 \x01(\t\x12\x1a\n\rerror_message\x18\x04 \x01(\tH\x00\x88\x01\x01\x42\x10\n\x0e_error_message\"v\n\x11ReallocateRequest\x12\x12\n\ntotal_rate\x18\x01 \x01(\x03\x12\x19\n\x11start_layer_index\x18\x02 \x01(\x05\x12\x1d\n\x10predecessor_info\x18\x03 \x01(\x0cH\x00\x88\x01\x01\x42\x13\n\x11_predecessor_info\"K\n\x1aRemoveClientKVCacheRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x1a\n\x12new_max_seq_length\x18\x02 \x01(\x03\x32\x99\x04\n\x0bNodeService\x12@\n\tRunLayers\x12\x1d.nodeservice.InferenceRequest\x1a\x12.nodeservice.Empty\"\x00\x12H\n\x10GetPeerMultiaddr\x12\x12.nodeservice.Empty\x1a\x1e.nodeservice.MultiaddrResponse\"\x00\x12\x31\n\x05\x43heck\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x42\n\nReallocate\x12\x1e.nodeservice.ReallocateRequest\x1a\x12.nodeservice.Empty\"\x00\x12?\n\x13UpdateSuccessorStub\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x36\n\nLoadLayers\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12\x38\n\x0cUnloadLayers\x12\x12.nodeservice.Empty\x1a\x12.nodeservice.Empty\"\x00\x12T\n\x13RemoveClientKVCache\x12\'.nodeservice.RemoveClientKVCacheRequest\x1a\x12.nodeservice.Empty\"\x00\x32X\n\rClientService\x12G\n\x0fReceiveResponse\x12\x1e.nodeservice.InferenceResponse\x1a\x12.nodeservice.Empty\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,14 +37,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MULTIADDRRESPONSE']._serialized_end=93
   _globals['_INFERENCEREQUEST']._serialized_start=96
   _globals['_INFERENCEREQUEST']._serialized_end=327
-  _globals['_INFERENCERESPONSE']._serialized_start=330
-  _globals['_INFERENCERESPONSE']._serialized_end=478
-  _globals['_REALLOCATEREQUEST']._serialized_start=480
-  _globals['_REALLOCATEREQUEST']._serialized_end=598
-  _globals['_REMOVECLIENTKVCACHEREQUEST']._serialized_start=600
-  _globals['_REMOVECLIENTKVCACHEREQUEST']._serialized_end=675
-  _globals['_NODESERVICE']._serialized_start=678
-  _globals['_NODESERVICE']._serialized_end=1227
-  _globals['_CLIENTSERVICE']._serialized_start=1229
-  _globals['_CLIENTSERVICE']._serialized_end=1329
+  _globals['_INFERENCERESPONSE']._serialized_start=329
+  _globals['_INFERENCERESPONSE']._serialized_end=452
+  _globals['_REALLOCATEREQUEST']._serialized_start=454
+  _globals['_REALLOCATEREQUEST']._serialized_end=572
+  _globals['_REMOVECLIENTKVCACHEREQUEST']._serialized_start=574
+  _globals['_REMOVECLIENTKVCACHEREQUEST']._serialized_end=649
+  _globals['_NODESERVICE']._serialized_start=652
+  _globals['_NODESERVICE']._serialized_end=1189
+  _globals['_CLIENTSERVICE']._serialized_start=1191
+  _globals['_CLIENTSERVICE']._serialized_end=1279
 # @@protoc_insertion_point(module_scope)

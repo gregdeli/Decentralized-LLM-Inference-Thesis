@@ -78,16 +78,13 @@ class Client:
         self.head_server_stub_addr = None
         self._connect_to_head()
 
-        self.inference_response = None
+        self.inference_response: nodeservice_pb2.InferenceResponse = None
         self.inference_response_event = threading.Event()
-        self.final_activations = None
 
         self.initial_inference_delay = 0.0
         self.serialization_delay = 0.0
         self.head_communication_latency = 0.0
         self.deserialization_delay = 0.0
-        # self.final_inference_delay = 0.0
-        # self.sample_delay = 0.0
         self.decode_delay = 0.0
         self.yield_delay = 0.0
 
@@ -572,9 +569,11 @@ class Client:
 
             self.serialization_delay = time.perf_counter() - start
 
-            start = time.perf_counter()
             try:
-                ack_response = self.head_server_stub.RunLayers(request)
+                start = time.perf_counter()
+                self.head_server_stub.RunLayers(request)
+
+                self.head_communication_latency = time.perf_counter() - start
             except grpc.RpcError as e:
                 if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                     logger.warning(f"HEAD failure detected duting INFERENCE")
@@ -585,35 +584,9 @@ class Client:
 
                 yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
                 return
+            
 
-            end = time.perf_counter()
-
-            total_rpc_time = end - start
-            # logger.info(f"Total HEAD RPC Delay: {total_rpc_time:.6f}")
-            if ack_response.processing_time > 0:
-                total_rpc_time = end - start
-                current_network_latency = total_rpc_time - ack_response.processing_time
-
-                if self.head_communication_latency > 0.0:
-                    self.head_communication_latency = (0.7 * self.head_communication_latency) + (
-                        0.3 * current_network_latency
-                    )
-                else:
-                    self.head_communication_latency = current_network_latency
-
-                # logger.info(f"Head Communication Latency: {self.head_communication_latency:.6f}s")
-
-            if ack_response.HasField("error_message"):
-                logger.error(f"Server-side failure: {ack_response.error_message}")
-                logger.error("Aborting generation task. Please try again.")
-
-                if self.chain.get_all_layers_loaded():
-                    self.chain.update_chain_status(ChainStatus.READY)
-
-                yield f'<br><span style="color:red">Server-side failure: {ack_response.error_message} Aborting generation task. Please try again.</span>'
-                return
-
-            # Wait for the Tail to set the response_event
+            # Wait for the Tail to set the inference_response event
             is_set = self.inference_response_event.wait(timeout=15)
 
             if not is_set:
@@ -621,10 +594,22 @@ class Client:
                 if self.chain.get_all_layers_loaded():
                     self.chain.update_chain_status(ChainStatus.READY)
 
-                yield "Error: Timeout"
+                yield f'<br><span style="color:red">Error: Timeout'
                 return
 
+            self.inference_response_event.clear()
             response = self.inference_response
+
+            # Error handling
+            if response.HasField("error_message"):
+                logger.error(f"Server-side failure: {response.error_message}")
+                logger.error("Aborting generation task. Please try again.")
+
+                if self.chain.get_all_layers_loaded():
+                    self.chain.update_chain_status(ChainStatus.READY)
+
+                yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
+                return
 
             # Capture the TOTAL PROCESSING RATE
             self.total_rate = self.chain.gather_total_rate()

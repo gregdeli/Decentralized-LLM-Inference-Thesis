@@ -5,7 +5,7 @@ package nodeservice;
 // The service definition for a server node in the inference chain.
 service NodeService {
   // Processes a tensor through the node's layers.
-  rpc RunLayers(InferenceRequest) returns (InferenceResponse) {}
+  rpc RunLayers(InferenceRequest) returns (Empty) {}
 
   // Returns the full P2P multiaddress of the server node.
   rpc GetPeerMultiaddr(Empty) returns (MultiaddrResponse) {}
@@ -34,7 +34,7 @@ service NodeService {
 service ClientService {
   // Receives the inference response from the tail node and returns an empty message.
   // rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
-  rpc ReceiveResponse(InferenceResponse) returns (InferenceResponse) {}
+  rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
 }
 
 message Empty {}
@@ -65,9 +65,10 @@ message InferenceResponse {
   bytes tensor_data = 1;
   repeated int32 tensor_shape = 2;
   string dtype = 3;  
+  
   optional string error_message = 4;
 
-  float processing_time = 5;
+  // float processing_time = 5;
 
   // For block-wise quantization
   // bytes block_scales = 6;

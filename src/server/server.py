@@ -532,9 +532,11 @@ class Server:
 
         # If KV caches have been reallocated the generation needs to stop because the context is lost
         if self.model.client_cache_reallocated(client_id=response_address) and input_pos is not None:
-            return nodeservice_pb2.InferenceResponse(
-                error_message="KV Caches have been reallocated!"
+            self._connect_to_client(response_address)
+            self.client_stub.ReceiveResponse(
+                nodeservice_pb2.InferenceResponse(error_message="KV Caches have been reallocated!")
             )
+            return
         
         # Set KV Cache and Process Layers
         with self._inference_lock:
@@ -542,7 +544,7 @@ class Server:
 
             self.model.set_active_client(client_id=response_address)
 
-            # Inference
+            # --- Inference ---
             start = time.perf_counter()
 
             logger.info(f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})...")
@@ -552,8 +554,11 @@ class Server:
                 time.sleep(self.added_delay)
         
             self.inference_delay = time.perf_counter() - start
-
-        self._calculate_processing_rate(self.inference_delay)
+        
+            self.chain.update_inference_delay(self.inference_delay)
+            
+            self._calculate_processing_rate(self.inference_delay)
+            self.chain.update_processing_rate(self.processing_rate)
 
         # logger.info(
         #     f"Layers {self.llm.layers_loaded}: "
@@ -567,9 +572,11 @@ class Server:
         # To prevent nonesense output when a node fails during inference
         if not self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.UNREADY)
-            return nodeservice_pb2.InferenceResponse(
-                error_message="Inference requested without all the layers being loaded..."
+            self._connect_to_client(response_address)
+            self.client_stub.ReceiveResponse(
+                nodeservice_pb2.InferenceResponse(error_message="Inference requested without all the layers being loaded!")
             )
+            return
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail() and self.chain.get_output_layer_loaded():
@@ -584,20 +591,20 @@ class Server:
 
             # Connect to Client
             try:
-                if not self.client_stub or self.client_stub_addr != response_address:
-                    channel = create_grpc_channel(response_address)
-                    self.client_stub_addr = response_address
-                    self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
+                self._connect_to_client(client_addr=response_address)
 
                 logger.info(f"Sending Response to client ({self.client_stub_addr})...")
-                client_response = self.client_stub.ReceiveResponse(response)
+
+                start = time.perf_counter()
+                self.client_stub.ReceiveResponse(response)
+                
+                self.grpc_overhead = time.perf_counter() - start
+                self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
 
-            return nodeservice_pb2.InferenceResponse(
-                processing_time=client_response.processing_time
-            )
+            return 
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
@@ -617,7 +624,12 @@ class Server:
 
         try:
             logger.info(f"Forwarding RunLayers request to successor from ({response_address})...")
-            response = self.successor_stub.RunLayers(request, timeout=5)
+
+            start = time.perf_counter()
+            self.successor_stub.RunLayers(request, timeout=5)
+
+            self.grpc_overhead = time.perf_counter() - start
+            self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (
                 e.code() == grpc.StatusCode.UNAVAILABLE
@@ -625,11 +637,12 @@ class Server:
             ):
                 logger.warning(f"Successor failure detected during INFERENCE.")
                 threading.Thread(target=self.repair_chain, daemon=True).start()
-                return nodeservice_pb2.InferenceResponse(
-                    error_message="A node in the chain has failed. The chain is being repaired..."
+                self._connect_to_client(response_address)
+                self.client_stub.ReceiveResponse(
+                    nodeservice_pb2.InferenceResponse(error_message=f"Node with address: {self.successor_stub_addr} has failed. The chain is being repaired...")
                 )
 
-        return response
+        return
 
     def reallocate_layers(
         self,
@@ -1043,6 +1056,13 @@ class Server:
                 f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}"
             )
             self.successor_stub = None
+    
+    def _connect_to_client(self, client_addr: str):
+        """Establishes a gRPC connection to a client node."""       
+        if not self.client_stub or self.client_stub_addr != client_addr:
+            channel = create_grpc_channel(client_addr)
+            self.client_stub_addr = client_addr
+            self.client_stub = nodeservice_pb2_grpc.ClientServiceStub(channel)
 
 
 UDP_PORT = 9999
