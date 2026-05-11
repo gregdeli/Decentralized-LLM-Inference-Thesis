@@ -60,6 +60,7 @@ class Client:
         self.dht.start()
         self.chain = ChainManager(self.dht, is_client=True)
         self.chain.increment_num_clients()
+        self.chain.add_node_to_clients(self.chain.node_id)
 
         # Load Config
         config_path = model_path / "config.json"
@@ -125,6 +126,9 @@ class Client:
         # Decrement the num_clients DHT key
         self.chain.decrement_num_clients()
 
+        # Remove form client_nodes list
+        self.chain.remove_node_from_clients(self.chain.node_id)
+
         # Remove this client's kv cache from the server nodes
         num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
         max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
@@ -151,7 +155,7 @@ class Client:
             if is_stopped:
                 break
 
-            if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
+            if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY, ChainStatus.REPAIRING):
                 try:
                     self._connect_to_head()
                     if self.head_server_stub is not None:
@@ -226,15 +230,28 @@ class Client:
             if not dead_head_info:
                 logger.error("Could not retrieve HEAD data from DHT! Chain is broken.")
                 return
+            
+            self.head_server_stub = None
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self.chain.update_chain_status(ChainStatus.REPAIRING)
+            
+            # Only one client has to do the repair
+            client_nodes = self.chain.get_client_nodes()
+
+            if client_nodes[0] != self.chain.node_id:
+                logger.info(f"Waiting for client {client_nodes[0][:DIGITS_SHOW]} to finish the HEAD replacement...")
+
+                while self.chain.get_chain_status() == ChainStatus.REPAIRING:
+                    time.sleep(HEARTBEAT_INTERVAL_S)
+                
+                self._connect_to_head()
+                return
 
             head_succ_info = None
             head_succ_data = dead_head_info.get("successor")
             if head_succ_data:
                 head_succ_info = self.chain.get_server_info(head_succ_data.get("id"))
 
-            self.head_server_stub = None
-            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-            self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             orphaned_layers = dead_head_info.get("layers")
             head_was_tail = self.chain.node_is_tail(dead_head_info.get("id"))

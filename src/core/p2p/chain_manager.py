@@ -14,6 +14,7 @@ TOTAL_LAYERS_KEY = "num_total_layers"
 TOTAL_PARAMS_KEY = "num_total_params"
 ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
+CLIENTS_KEY = "client_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 NUM_CLIENTS_KEY = "num_clients"
 
@@ -118,6 +119,8 @@ class ChainManager:
 
         if not self.get_backup_nodes():
             self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
+        
+        self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
 
         self.update_chain_status(ChainStatus.UNREADY)
 
@@ -332,6 +335,9 @@ class ChainManager:
     def get_backup_nodes(self) -> Optional[List[str]]:
         return self.dht.get(BACKUPS_KEY)
 
+    def get_client_nodes(self) -> Optional[List[str]]:
+        return self.dht.get(CLIENTS_KEY)
+
     def get_successor_address(self, attempts: int = 5) -> Optional[str]:
         if self.is_tail() or self.is_backup():
             return None
@@ -371,6 +377,7 @@ class ChainManager:
         backup_nodes = self.dht.get(BACKUPS_KEY)
         current_status = self.get_chain_status()
         current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        client_nodes = self.get_client_nodes()
 
         # if not head_id:
         #     return None
@@ -382,7 +389,8 @@ class ChainManager:
             TOTAL_PARAMS_KEY: total_params,
             ALL_LAYERS_KEY: all_loaded,
             STATUS_KEY: current_status,
-            NUM_CLIENTS_KEY: current_num_clients
+            NUM_CLIENTS_KEY: current_num_clients,
+            CLIENTS_KEY: client_nodes
         }
 
         # Traverse chain and print server info
@@ -634,6 +642,11 @@ class ChainManager:
         num_clients = self.dht.get(NUM_CLIENTS_KEY)
         if num_clients:
             self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
+        
+        # Republish the client_nodes list
+        client_nodes = self.get_client_nodes()
+        if client_nodes:
+            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
         # Republish the num_total_layers key
         num_total_layers = self._get_num_total_layers()
@@ -690,6 +703,14 @@ class ChainManager:
         else:
             # This is the first client
             self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
+    
+    def add_node_to_clients(self, client_node_id: str):
+        """Appends a client_node id to the client_nodes list"""
+        client_nodes = self.get_client_nodes()
+        if client_node_id not in client_nodes:
+            client_nodes.append(client_node_id)
+        
+        self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
     def update_chain_status(self, status: ChainStatus):
         self.dht.store(STATUS_KEY, status.value, EXPIRATION_S)
@@ -863,3 +884,17 @@ class ChainManager:
             return
 
         logger.info(f"Node: {backup_node_id[:DIGITS_SHOW]} was not a backup")
+
+    def remove_node_from_clients(self, client_node_id: str):
+        """Remove a client node from the client_nodes list"""
+
+        logger.info(f"Removing Client {client_node_id[:DIGITS_SHOW]} from client_nodes list...")
+
+        # Remove the node from the client_nodes list
+        client_nodes = self.get_client_nodes()
+        if client_node_id in client_nodes:
+            client_nodes.remove(client_node_id)
+            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+            return
+
+        logger.info(f"Node: {client_node_id[:DIGITS_SHOW]} was not in the client_nodes list.")

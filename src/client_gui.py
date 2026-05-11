@@ -24,6 +24,7 @@ from core.p2p.chain_manager import (
     BACKUPS_KEY,
     STATUS_KEY,
     NUM_CLIENTS_KEY,
+    CLIENTS_KEY,
     DIGITS_SHOW,
 )
 
@@ -261,6 +262,12 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             state.ui.global_labels["num_clients"].text = (
                 f"Num Clients: {chain_info.get(NUM_CLIENTS_KEY)}"
             )
+        
+        if "client_nodes" in state.ui.global_labels:
+            client_nodes = [c[:DIGITS_SHOW] for c in chain_info.get(CLIENTS_KEY, [])]
+            state.ui.global_labels["client_nodes"].text = (
+                f"Clients: {client_nodes}"
+            )
 
         if "all_loaded" in state.ui.global_labels:
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
@@ -375,6 +382,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
             num_clients = chain_info.get(NUM_CLIENTS_KEY)
+            client_nodes = chain_info.get(CLIENTS_KEY, [])
 
             state.ui.global_labels["total_params"] = ui.label(
                 f"Total Params: {total_params / 1000000000:.2f}B"
@@ -386,6 +394,10 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
             state.ui.global_labels["num_clients"] = ui.label(
                 f"Num Clients: {num_clients}"
+            ).classes("text-lg")
+
+            state.ui.global_labels["client_nodes"] = ui.label(
+                f"Clients: {client_nodes}"
             ).classes("text-lg")
 
             state.ui.global_labels["all_loaded"] = ui.label(
