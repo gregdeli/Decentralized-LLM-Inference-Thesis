@@ -382,7 +382,8 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
             num_clients = chain_info.get(NUM_CLIENTS_KEY)
-            client_nodes = chain_info.get(CLIENTS_KEY, [])
+            # client_nodes = chain_info.get(CLIENTS_KEY, [])
+            client_nodes = [c[:DIGITS_SHOW] for c in chain_info.get(CLIENTS_KEY, [])]
 
             state.ui.global_labels["total_params"] = ui.label(
                 f"Total Params: {total_params / 1000000000:.2f}B"

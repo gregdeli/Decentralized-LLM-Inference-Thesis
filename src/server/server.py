@@ -757,6 +757,15 @@ class Server:
         
         logger.info(f"Target Param Count: {target_param_count}")
 
+        # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
+        # max_num_params = num_total_params * effective_rate / (effective_rate + remaining_rate)
+        # where, remaining_rate = total_system_rate - my_rate
+        if target_param_count == max_num_params:
+            remaining_rate = total_system_rate - self.processing_rate
+            effective_rate = max_num_params * remaining_rate / (num_total_params - max_num_params)
+            rate_difference = self.processing_rate - effective_rate
+            total_system_rate -= int(rate_difference)
+
         transformer_layer_params = self.config.get("transformer_layer_params")
         final_output_params = self.config.get("final_output_params")
 

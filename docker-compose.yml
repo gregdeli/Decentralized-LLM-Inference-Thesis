@@ -9,18 +9,18 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=10
+      # - NUM_LAYERS=10
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
     deploy:
       resources:
-      #   reservations:
-      #     devices:
-      #       - driver: nvidia
-      #         count: 1
-      #         capabilities: [gpu]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         limits:
           memory: 4G
         #   cpus: '16.0'
@@ -38,7 +38,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=3
+      # - NUM_LAYERS=3
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-A:5001
@@ -52,7 +52,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G # 2.2
+          memory: 6G # 2.2
           # cpus: '1.0'
     ports:
       - "5672:5678"  
@@ -68,7 +68,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=3
+      # - NUM_LAYERS=3
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-B:5001
@@ -82,7 +82,7 @@ services:
         #         count: 1
         #         capabilities: [gpu]
         limits:
-          memory: 6G
+          memory: 4G
           # cpus: '1.0'
     depends_on:
       - worker-A
@@ -114,7 +114,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 6G
+          memory: 4G
     depends_on:
       - worker-A
       - worker-B
