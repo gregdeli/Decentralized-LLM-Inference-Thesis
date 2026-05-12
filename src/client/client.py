@@ -95,7 +95,9 @@ class Client:
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
         grpc_thread.start()
         self.grpc_server = None
+        
         self._stop_health_monitor_event = threading.Event()
+        self._stop_dht_heartbeat_task = threading.Event()
 
     def _run_grpc_server(self, grpc_addr):
         # Start GRPC server
@@ -111,14 +113,15 @@ class Client:
         self.grpc_server.start()
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
 
-        head_monitor_thread = threading.Thread(target=self._head_health_monitor_task, daemon=True)
-        head_monitor_thread.start()
+        threading.Thread(target=self._head_health_monitor_task, daemon=True).start()
+        threading.Thread(target=self._dht_heartbeat_task, daemon=True).start()
 
         self.grpc_server.wait_for_termination()
     
     def shutdown(self):
-        # Stop the head health monitor
+        # Stop the head health monitor and dht heartbeat
         self._stop_health_monitor_event.set()
+        self._stop_dht_heartbeat_task.set()
 
         # Decrement the num_clients DHT key
         self.chain.decrement_num_clients()
@@ -144,6 +147,15 @@ class Client:
         
         if hasattr(self, 'dht') and self.dht:
             self.dht.shutdown()
+
+    def _dht_heartbeat_task(self):
+        """Background task to keep client DHT keys alive."""
+        while not self._stop_health_monitor_event.is_set():
+            is_stopped = self._stop_health_monitor_event.wait(timeout=HEARTBEAT_INTERVAL_S)
+            if is_stopped:
+                break
+
+            self.chain.republish_client_keys()
 
     def _head_health_monitor_task(self):
         while not self._stop_health_monitor_event.is_set():

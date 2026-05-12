@@ -670,7 +670,10 @@ class Server:
             # If this node's processing rate is much smaller then its successor's
             # the successor should take this node's layers
             if successor_proc_rate > self.processing_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-                new_layers = (self.llm.layers_loaded[0], succ_layers[1])
+                if succ_layers:
+                    new_layers = (self.llm.layers_loaded[0], succ_layers[1])
+                else:
+                    new_layers = self.llm.layers_loaded
 
                 self._unload_llm()
 
@@ -700,7 +703,7 @@ class Server:
                 except grpc.RpcError as e:
                     logger.error(f"Failed to propagate Reallocation to successor: {e}")
 
-            # If this node's processing rate is much greater than the proceccing rate of its successor
+            # If this node's processing rate is much greater than the processing rate of its successor
             # it should take its layers and make it a backup
             elif self.processing_rate > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
                 logger.info(

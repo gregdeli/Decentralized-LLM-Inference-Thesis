@@ -1,5 +1,5 @@
 """----- LLM Constants -----"""
-GLOBAL_MAX_SEQ_LEN = 4096 #2048 #4096
+GLOBAL_MAX_SEQ_LEN = 8192 #2048 #4096
 
 """----- Server and Client Constants -----"""
 RESERVED_MEM_MB = 500 # Memory reserved for system overhead

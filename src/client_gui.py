@@ -484,15 +484,19 @@ def clear_chain_throughput(chain_throughput_container: ui.column):
     with chain_throughput_container:
         ui.plotly(state.ui.throughput_fig).classes('w-full')
 
-async def refresh_chain_throughput(chain_throughput_container: ui.column):
+async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_btn: ui.button):
     chain_throughput = await run.io_bound(state.client.chain.get_chain_throughput)
 
     if not chain_throughput:
+        clear_btn.visible = True
         return
     
     if len(state.last_chain_throughput.keys()) == len(chain_throughput.keys()):
+        clear_btn.visible = True
         return
     
+    clear_btn.visible = False
+
     state.last_chain_throughput = chain_throughput
 
     first_timestamp = next(iter(chain_throughput))
@@ -787,8 +791,8 @@ async def main_page():
             # Chain Throughput measurements
             ui.label("Chain Throughput").classes("text-lg font-bold")
             chain_throughput_container = ui.column().classes("w-full gap-2")
-            ui.timer(1.0, lambda: refresh_chain_throughput(chain_throughput_container))
-            ui.button("Clear", on_click=lambda: clear_chain_throughput(chain_throughput_container)).classes("w-full")
+            clear_throughput_btn = ui.button("Clear", on_click=lambda: clear_chain_throughput(chain_throughput_container)).classes("w-full")
+            ui.timer(1.0, lambda: refresh_chain_throughput(chain_throughput_container, clear_throughput_btn))
 
 async def shutdown_client():
     """Handles graceful termination of background processes."""

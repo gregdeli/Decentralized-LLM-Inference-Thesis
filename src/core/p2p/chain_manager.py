@@ -125,11 +125,13 @@ class ChainManager:
         if not self.get_backup_nodes():
             self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
         
-        self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
+        if not self.get_client_nodes():
+            self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
 
         self.update_chain_status(ChainStatus.UNREADY)
 
-        self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
+        if not self.dht.get(TOKENS_GENERATED_KEY):
+            self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
 
         self_info["successor"] = None
 
@@ -654,16 +656,6 @@ class ChainManager:
         # Republish this servers' info
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
-        # Republish the num_clients key
-        num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        if num_clients:
-            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
-        
-        # Republish the client_nodes list
-        client_nodes = self.get_client_nodes()
-        if client_nodes:
-            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
-
         # Republish the num_total_layers key
         num_total_layers = self._get_num_total_layers()
         if num_total_layers:
@@ -696,6 +688,20 @@ class ChainManager:
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
+
+    
+    def republish_client_keys(self):
+        # Republish the num_clients key
+        num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        if num_clients:
+            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
+
+        # Republish the client_nodes list
+        client_nodes = self.get_client_nodes()
+        if client_nodes:
+            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+        
+        logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished the client keys.")
 
 
     # ---- Global key update methods ----
@@ -746,6 +752,8 @@ class ChainManager:
         head_id = self.dht.get(HEAD_KEY)
 
         if not head_id:
+            self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self.update_chain_status(ChainStatus.UNREADY)
             return
 
         # Traverse chain and check the layers_loaded subkey
@@ -795,6 +803,7 @@ class ChainManager:
         self.dht.store(key=THROUGHPUT_KEY, subkey=time.perf_counter(), value=tokens_generated, expiration_s=THROUGHPUT_EXPIRATION_S)
 
     def clear_chain_throughput(self):
+        self.dht.store(TOKENS_GENERATED_KEY, 0, EXPIRATION_S)
         self.dht.store(key=THROUGHPUT_KEY, value={}, expiration_s=THROUGHPUT_EXPIRATION_S)
 
     # ---- Server info subkey update methods ----
