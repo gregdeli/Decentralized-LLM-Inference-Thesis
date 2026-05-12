@@ -34,14 +34,14 @@ class DHTManager:
             raise RuntimeError("DHT has not been started. Call start() first.")
         return self.dht.peer_id.to_string()
 
-    def store(self, key: str, value: Any, expiration_s: float) -> bool:
+    def store(self, key: str, value: Any, expiration_s: float, subkey: Optional[float] = None) -> bool:
         """
         Stores a key-value pair on the DHT with a given expiration time.
         """
         if not self.dht:
             raise RuntimeError("DHT has not been started.")
         expiration_time = get_dht_time() + expiration_s
-        return self.dht.store(key, value, expiration_time)
+        return self.dht.store(key=key, subkey=subkey, value=value, expiration_time=expiration_time)
 
     def get(self, key: str) -> Optional[Any]:
         """

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
+import plotly.graph_objects as go
 
 from nicegui import ui, run, app
 from client.client import Client
@@ -37,12 +38,17 @@ class UIReferences:
         self.node_labels = {}  # Label references for each node id
         self.last_topology = None  # Signature of the current chain structure
 
+        self.throughput_fig = go.Figure()
+
 
 class AppState:
     def __init__(self):
         self.client: Client = None
         self.is_generating = False
         self.ui = UIReferences()
+        self.last_chain_throughput = {}
+
+        # Generation parameters
         self.max_new_tokens = 500
         self.stream = True
 
@@ -445,7 +451,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
     state.ui.last_topology = current_topology
 
 
-def refresh_client_stats(client_stats_container: ui.row):
+def refresh_client_stats(client_stats_container: ui.column):
     client_stats_container.clear()
     with client_stats_container:
         ui.label("Client").classes("text-lg font-bold")
@@ -459,6 +465,69 @@ def refresh_client_stats(client_stats_container: ui.row):
         # ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
         ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
         ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
+
+def clear_chain_throughput(chain_throughput_container: ui.column):
+    state.client.chain.clear_chain_throughput()
+    state.last_chain_throughput = {}
+    state.ui.throughput_fig = go.Figure().update_layout(
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=200,
+        xaxis_title="Time (s)",
+        yaxis_title="Number of Tokens",
+        template="plotly_white",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(size=10)
+    )
+
+    chain_throughput_container.clear()
+    with chain_throughput_container:
+        ui.plotly(state.ui.throughput_fig).classes('w-full')
+
+async def refresh_chain_throughput(chain_throughput_container: ui.column):
+    chain_throughput = await run.io_bound(state.client.chain.get_chain_throughput)
+
+    if not chain_throughput:
+        return
+    
+    if len(state.last_chain_throughput.keys()) == len(chain_throughput.keys()):
+        return
+    
+    state.last_chain_throughput = chain_throughput
+
+    first_timestamp = next(iter(chain_throughput))
+    first_num_tokens = next(iter(chain_throughput.values())).value
+
+    x_values = [timestamp - first_timestamp for timestamp in chain_throughput.keys()]
+    y_values = [val.value - first_num_tokens for val in chain_throughput.values()]
+
+    state.ui.throughput_fig.data = []
+
+    # Create the plotly figure
+    state.ui.throughput_fig.add_trace(go.Scatter(
+        x=x_values,
+        y=y_values,
+        mode='lines+markers',
+        line=dict(color='#38bdf8', width=2),
+        marker=dict(size=4)
+    ))
+
+    # Style the layout
+    state.ui.throughput_fig.update_layout(
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=200,
+        xaxis_title="Time (s)",
+        yaxis_title="Number of Tokens",
+        template="plotly_white",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(size=10)
+    )
+
+
+    chain_throughput_container.clear()
+    with chain_throughput_container:
+        ui.plotly(state.ui.throughput_fig).classes('w-full')
 
 
 def get_next_token(generator):
@@ -705,13 +774,21 @@ async def main_page():
         # Right Sidebar: Stats (Fixed Width)
         with ui.column().classes("w-1/4 h-full border-l border-gray-200 p-4"):
             ui.label("Stats").classes("text-2xl font-bold")
+
+            # Generation Stats
             generation_stats_container = ui.column().classes("w-full gap-2")
             with generation_stats_container:
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
 
+            # Client Stats
             client_stats_container = ui.column().classes("w-full gap-2")
-
             ui.timer(1.0, lambda: refresh_client_stats(client_stats_container))
+
+            # Chain Throughput measurements
+            ui.label("Chain Throughput").classes("text-lg font-bold")
+            chain_throughput_container = ui.column().classes("w-full gap-2")
+            ui.timer(1.0, lambda: refresh_chain_throughput(chain_throughput_container))
+            ui.button("Clear", on_click=lambda: clear_chain_throughput(chain_throughput_container)).classes("w-full")
 
 async def shutdown_client():
     """Handles graceful termination of background processes."""

@@ -11,3 +11,4 @@ psutil
 nicegui
 # pywebview # For nicegui natives
 python-dotenv
+plotly

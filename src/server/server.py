@@ -583,6 +583,9 @@ class Server:
             logits = h
             next_token = self.llm.sample_logits(logits)
 
+            # Benchmarking
+            self.chain.update_chain_throughput()
+
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
                 return

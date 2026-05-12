@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, Optional, Tuple, Union, List
 import time
 from enum import Enum
+from hivemind.utils import ValueWithExpiration
 
 from core.p2p.dht_manager import DHTManager
 
@@ -18,10 +19,14 @@ CLIENTS_KEY = "client_nodes"
 SERVER_INFO_PREFIX = "server_info_"
 NUM_CLIENTS_KEY = "num_clients"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 15.0
+TOKENS_GENERATED_KEY = "global_tokens_generated"
+THROUGHPUT_KEY = "chain_throughput"
+
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+THROUGHPUT_EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -123,6 +128,8 @@ class ChainManager:
         self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
 
         self.update_chain_status(ChainStatus.UNREADY)
+
+        self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
 
         self_info["successor"] = None
 
@@ -241,6 +248,8 @@ class ChainManager:
 
     # ---- Getters ----
 
+    # ----- Global Keys -----
+
     def get_head_id(self) -> str:
         return self.dht.get(TAIL_KEY)
 
@@ -281,6 +290,34 @@ class ChainManager:
         # logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
 
         return head_info
+    
+    def _get_num_total_layers(self) -> int:
+        num_total_layers = self.dht.get(TOTAL_LAYERS_KEY)
+        if not num_total_layers:
+            raise RuntimeError(f"Could not retrieve the total number of transformer layers.")
+        return num_total_layers
+    
+    def _get_num_total_params(self) -> int:
+        num_total_params = self.dht.get(TOTAL_PARAMS_KEY)
+        if not num_total_params:
+            raise RuntimeError(f"Could not retrieve the total number of parameters.")
+        return num_total_params
+    
+    def get_all_layers_loaded(self) -> Optional[bool]:
+        return self.dht.get(ALL_LAYERS_KEY)
+
+    def get_backup_nodes(self) -> Optional[List[str]]:
+        return self.dht.get(BACKUPS_KEY)
+
+    def get_client_nodes(self) -> Optional[List[str]]:
+        return self.dht.get(CLIENTS_KEY)
+
+    def get_chain_throughput(self) -> Optional[Dict[float, ValueWithExpiration]]:
+        chain_throughput = self.dht.get(THROUGHPUT_KEY)
+        return chain_throughput
+    
+
+    # ----- Server Info Subkeys -----
 
     def get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
@@ -304,18 +341,6 @@ class ChainManager:
     def get_server_info(self, node_id: str) -> Optional[Dict[str, Any]]:
         return self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
 
-    def _get_num_total_layers(self) -> int:
-        num_total_layers = self.dht.get(TOTAL_LAYERS_KEY)
-        if not num_total_layers:
-            raise RuntimeError(f"Could not retrieve the total number of transformer layers.")
-        return num_total_layers
-    
-    def _get_num_total_params(self) -> int:
-        num_total_params = self.dht.get(TOTAL_PARAMS_KEY)
-        if not num_total_params:
-            raise RuntimeError(f"Could not retrieve the total number of parameters.")
-        return num_total_params
-
     def get_layers(self) -> Optional[Tuple[int, int]]:
         """Get the layers tuple for this node from the DHT"""
         self_info = self.get_self_info()
@@ -328,15 +353,6 @@ class ChainManager:
     def get_output_layer_loaded(self) -> bool:
         self_info = self.get_self_info()
         return self_info.get("output_layer_loaded", False)
-
-    def get_all_layers_loaded(self) -> Optional[bool]:
-        return self.dht.get(ALL_LAYERS_KEY)
-
-    def get_backup_nodes(self) -> Optional[List[str]]:
-        return self.dht.get(BACKUPS_KEY)
-
-    def get_client_nodes(self) -> Optional[List[str]]:
-        return self.dht.get(CLIENTS_KEY)
 
     def get_successor_address(self, attempts: int = 5) -> Optional[str]:
         if self.is_tail() or self.is_backup():
@@ -681,6 +697,7 @@ class ChainManager:
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
 
+
     # ---- Global key update methods ----
     def increment_num_clients(self):
         """Called by a client when in joins the DHT"""
@@ -766,6 +783,19 @@ class ChainManager:
             else:
                 self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
                 break
+
+    def update_chain_throughput(self):
+        """Increments the global tokens generated and adds a timestamp subkey to the chain_throughput key"""
+        tokens_generated = self.dht.get(TOKENS_GENERATED_KEY)
+        if tokens_generated is None:
+            tokens_generated = 0
+        tokens_generated += 1
+        self.dht.store(TOKENS_GENERATED_KEY, tokens_generated, THROUGHPUT_EXPIRATION_S)
+
+        self.dht.store(key=THROUGHPUT_KEY, subkey=time.perf_counter(), value=tokens_generated, expiration_s=THROUGHPUT_EXPIRATION_S)
+
+    def clear_chain_throughput(self):
+        self.dht.store(key=THROUGHPUT_KEY, value={}, expiration_s=THROUGHPUT_EXPIRATION_S)
 
     # ---- Server info subkey update methods ----
 
