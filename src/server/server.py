@@ -231,6 +231,8 @@ class Server:
         self.num_local_params = layer_params + output_params
 
         self._update_memory_usage()
+        if self.llm.output_layer_loaded:
+            self.chain.update_load_output_layer(False)
         self.chain.update_layers_loaded(self.model.num_layers>0)
         self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
 
@@ -401,34 +403,6 @@ class Server:
 
             self._update_memory_usage(update_on_dht=True)
 
-        # # Initialize the kv cache if necessary
-        # if not self.llm.kv_cache_initialized:
-        #     self.model.set_kv_cache(
-        #         batch_size=1,
-        #         # max_seq_length=max_returned_tokens,
-        #         max_seq_length=MAX_SEQUENCE_LENGTH,
-        #         device=self.device,
-        #         dtype=self.llm.dtype,
-        #     )
-        #     self.llm.kv_cache_initialized = True
-        #     # self.llm.prev_max_seq_length = max_returned_tokens
-        #     cache_updated = True
-
-        # Dynamically grow the kv cache size if necessary
-        # elif max_returned_tokens > self.llm.prev_max_seq_length:
-        #     tmp_device = self.model.mask_cache.device
-        #     self.model.clear_kv_cache()
-        #     self.model.set_kv_cache(
-        #         batch_size=1,
-        #         max_seq_length=max_returned_tokens,
-        #         device=tmp_device,
-        #         dtype=self.llm.dtype,
-        #     )
-        #     self.llm.prev_max_seq_length = max_returned_tokens
-        #     cache_updated = True
-
-        # if cache_updated:
-        #     self._update_memory_usage(update_on_dht=True)
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
@@ -659,7 +633,6 @@ class Server:
         logger.info(
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate} | My Rate: {self.processing_rate} | Start Index: {start_layer_index}"
         )
-        REALLOC_TAKEOVER_MULT_THRESHOLD = 2.0
         succ_info = self.chain.get_successor_info()
 
         if succ_info:
@@ -670,38 +643,47 @@ class Server:
             # If this node's processing rate is much smaller then its successor's
             # the successor should take this node's layers
             if successor_proc_rate > self.processing_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-                if succ_layers:
-                    new_layers = (self.llm.layers_loaded[0], succ_layers[1])
-                else:
-                    new_layers = self.llm.layers_loaded
+                # Only if the successor can load the layers
+                if can_load(
+                    self.config,
+                    succ_info.get("available_memory"),
+                    succ_info.get("available_vram"),
+                    layers=self.llm.layers_loaded
+                ):
+                    if succ_layers:
+                        new_layers = (self.llm.layers_loaded[0], succ_layers[1])
+                    else:
+                        new_layers = self.llm.layers_loaded
 
-                self._unload_llm()
+                    self._unload_llm()
 
-                self.chain.repair(
-                    new_layers,
-                    replacement_info=succ_info,
-                    replacee_info=self.chain.get_self_info(),
-                    replacement_load_output_layer=succ_output_layer_loaded,
-                    make_replacee_backup=True,
-                    replacee_was_head=self.chain.is_head(),
-                    replacee_pred_info=predecessor_info,
-                )
+                    self.chain.repair(
+                        new_layers,
+                        replacement_info=succ_info,
+                        replacee_info=self.chain.get_self_info(),
+                        replacement_load_output_layer=succ_output_layer_loaded,
+                        make_replacee_backup=True,
+                        replacee_was_head=self.chain.is_head(),
+                        replacee_pred_info=predecessor_info,
+                    )
 
-                total_system_rate -= self.processing_rate
+                    total_system_rate -= self.processing_rate
 
-                # Forward reallocation request
-                serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
+                    # Forward reallocation request
+                    serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
 
-                request = nodeservice_pb2.ReallocateRequest(
-                    total_rate=total_system_rate,
-                    start_layer_index=start_layer_index,
-                    predecessor_info=serialized_pred_info,
-                )
-                try:
-                    self.successor_stub.Reallocate(request)
-                    return
-                except grpc.RpcError as e:
-                    logger.error(f"Failed to propagate Reallocation to successor: {e}")
+                    realloc_request = nodeservice_pb2.ReallocateRequest(
+                        total_rate=total_system_rate,
+                        start_layer_index=start_layer_index,
+                        predecessor_info=serialized_pred_info,
+                    )
+                    try:
+                        self.successor_stub.LoadLayers(nodeservice_pb2.Empty())
+
+                        self.successor_stub.Reallocate(realloc_request)
+                        return
+                    except grpc.RpcError as e:
+                        logger.error(f"Failed to propagate Reallocation to successor: {e}")
 
             # If this node's processing rate is much greater than the processing rate of its successor
             # it should take its layers and make it a backup
@@ -720,7 +702,7 @@ class Server:
                         new_layers=layers_to_load,
                         replacement_info=self.chain.get_self_info(),
                         replacee_info=succ_info,
-                        replacement_load_output_layer=succ_output_layer_loaded,
+                        # replacement_load_output_layer=succ_output_layer_loaded,
                         make_replacee_backup=True,
                         replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
                     )
@@ -748,14 +730,19 @@ class Server:
 
         logger.info(f"Ideal Parameter Count: {ideal_param_count}")
 
-        current_num_params = self.num_local_params
-        max_extra_num_params = self._mem_to_num_params()
-        max_num_params = current_num_params + max_extra_num_params
+        # Unload llm to start allocation from the begining
+        self._unload_llm()
+
+        # current_num_params = self.num_local_params
+        # max_extra_num_params = self._mem_to_num_params()
+        # max_num_params = current_num_params + max_extra_num_params
+        max_num_params = self._mem_to_num_params()
         logger.info(f"Max Num Parameters: {max_num_params}")
 
-        current_num_layers = self.model.num_layers
-        max_extra_num_layers = self._mem_to_num_layers()
-        max_num_layers = current_num_layers + max_extra_num_layers
+        # current_num_layers = self.model.num_layers
+        # max_extra_num_layers = self._mem_to_num_layers()
+        # max_num_layers = current_num_layers + max_extra_num_layers
+        max_num_layers = self._mem_to_num_layers()
         logger.info(f"Max Num Layers: {max_num_layers}")
 
         # Don't exceed the number of layers that can be loaded
@@ -776,19 +763,20 @@ class Server:
         final_output_params = self.config.get("final_output_params")
 
         # Start with transformer layers
-        target_layer_count = min(target_param_count / transformer_layer_params, max_num_layers)
+        ideal_layer_count = target_param_count / transformer_layer_params
+        target_layer_count = min(ideal_layer_count, max_num_layers)
+        # target_layer_count = target_param_count / transformer_layer_params
         
         end_layer_index = start_layer_index + int(round(target_layer_count)) - 1
-        if end_layer_index >= num_total_layers:
+        if end_layer_index >= num_total_layers or (self.chain.is_tail() and max_num_layers >= ideal_layer_count):
             end_layer_index = num_total_layers - 1
             target_layer_count = end_layer_index - start_layer_index + 1 
 
         # Check if the lm_head should be loaded
-        max_num_params -= target_layer_count * transformer_layer_params
+        max_num_params -= target_layer_count * transformer_layer_params     
         target_param_count -= target_layer_count * transformer_layer_params
 
         load_output_layer = False
-        # if remaining_param_count >= final_output_params:
         if (self.chain.is_tail() and max_num_params >= final_output_params) or target_param_count>=final_output_params:
             if end_layer_index == num_total_layers - 1:
                 load_output_layer = True
@@ -797,11 +785,11 @@ class Server:
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
 
         # Load Layers
-        if new_layers != self.llm.layers_loaded or load_output_layer != self.llm.output_layer_loaded:
-            self._reload_llm(new_layers, load_output_layer)
-            self.chain.update_layers(new_layers)
-        else:
-            logger.info("Layer assignment unchanged.")
+        # if new_layers != self.llm.layers_loaded or load_output_layer != self.llm.output_layer_loaded:
+        self._reload_llm(new_layers, load_output_layer)
+        self.chain.update_layers(new_layers)
+        # else:
+        #     logger.info("Layer assignment unchanged.")
 
         next_start_index = end_layer_index + 1
 
@@ -869,13 +857,13 @@ class Server:
                 self.chain.repair(
                     layers_to_load,
                     replacement_info=self_info,
-                    replacement_load_output_layer=dead_succ_output_loaded,
+                    # replacement_load_output_layer=dead_succ_output_loaded,
                     replacee_info=dead_successor_info,
                     replacee_was_tail=dead_succ_was_tail,
                 )
 
-                if self.llm.output_layer_loaded:
-                    self.chain.update_load_output_layer(False)
+                # if self.llm.output_layer_loaded:
+                #     self.chain.update_load_output_layer(False)
 
                 self._connect_to_successor()
 
@@ -995,7 +983,7 @@ class Server:
             self.chain.repair(
                 layers_to_takeover,
                 replacement_info=self.chain.get_self_info(),
-                replacement_load_output_layer=weak_node_output_layer_loaded,
+                # replacement_load_output_layer=weak_node_output_layer_loaded,
                 replacee_info=weak_node_info,
                 make_replacee_backup=True,
                 replacee_was_head=weak_node_was_head,

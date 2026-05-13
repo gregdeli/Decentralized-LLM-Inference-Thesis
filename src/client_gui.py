@@ -145,6 +145,12 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                 "font-mono text-sm"
             )
 
+            # Load Output Layer
+            load_output_layer = info.get("load_output_layer", False) 
+            labels["load_output_layer"] = ui.label(f"Load Output Layer: {load_output_layer}").classes(
+                "font-mono text-sm"
+            )
+
             if "device" in info:
                 ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
 
@@ -310,6 +316,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     if "layers_loaded" in labels:
                         labels["layers_loaded"].text = (
                             f"Layers Loaded: {node_info.get('layers_loaded', False)}"
+                        )
+                    
+                    if "load_output_layer" in labels:
+                        labels["load_output_layer"].text = (
+                            f"Load Output Layer: {node_info.get('load_output_layer', False)}"
                         )
 
                     if "output_layer_loaded" in labels:
@@ -556,7 +567,7 @@ async def update_response_message(response_message: ui.chat_message, text: str):
 async def generate(
     input_element: ui.input,
     chat_container: ui.column,
-    stats_container: ui.column,
+    generation_stats_container: ui.column,
     chain_container: ui.column,
     send_btn: ui.button,
     stop_btn: ui.button,
@@ -631,8 +642,8 @@ async def generate(
     latency = stats.get("latency")
     throughput = stats.get("throughput")
 
-    stats_container.clear()
-    with stats_container:
+    generation_stats_container.clear()
+    with generation_stats_container:
         ui.label("Generation").classes("text-lg font-bold")
         ui.separator()
         ui.label(f"Tokens Generated: {num_tokens} tokens")
@@ -640,11 +651,11 @@ async def generate(
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
         ui.label(f"Total Rate: {state.client.total_rate / 1000000000:.2f}B params/sec")
 
-        if state.client.total_rate > 0:
-            ui.button(
-                "Trigger Reallocation",
-                on_click=lambda: trigger_reallocation(stats_container, chain_container),
-            ).classes("w-full")
+        # if state.client.total_rate > 0:
+            # ui.button(
+            #     "Trigger Reallocation",
+            #     on_click=lambda: trigger_reallocation(generation_stats_container, chain_container),
+            # ).classes("w-full")
 
 
 def stop_generation():
@@ -654,10 +665,9 @@ def stop_generation():
         ui.notify("Stopping generation...")
 
 
-async def trigger_reallocation(stats_container: ui.column, chain_container: ui.column):
-
+async def trigger_reallocation(generation_stats_container: ui.column, chain_container: ui.column):
     spinner = ui.spinner().props("size=lg")
-    with stats_container:
+    with generation_stats_container:
         spinner
 
     ui.notify("Triggering layer reallocation.")
@@ -666,7 +676,7 @@ async def trigger_reallocation(stats_container: ui.column, chain_container: ui.c
     await asyncio.to_thread(state.client.trigger_reallocation)
 
     ui.notify("Reallocation complete.")
-    stats_container.remove(spinner)
+    generation_stats_container.remove(spinner)
 
     await refresh_chain_view(chain_container)
 
@@ -783,6 +793,11 @@ async def main_page():
             generation_stats_container = ui.column().classes("w-full gap-2")
             with generation_stats_container:
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
+            
+            ui.button(
+                "Trigger Reallocation",
+                on_click=lambda: trigger_reallocation(generation_stats_container, chain_container),
+            ).classes("w-full")
 
             # Client Stats
             client_stats_container = ui.column().classes("w-full gap-2")

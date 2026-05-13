@@ -4,6 +4,7 @@ import time
 from enum import Enum
 from hivemind.utils import ValueWithExpiration
 
+from core.constants import *
 from core.p2p.dht_manager import DHTManager
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,11 @@ NUM_CLIENTS_KEY = "num_clients"
 TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput"
 
-EXPIRATION_S = 30.0
-# EXPIRATION_S = 7200.0
+# EXPIRATION_S = 30.0
+EXPIRATION_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 15.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 
 DIGITS_SHOW = 12
@@ -598,8 +599,6 @@ class ChainManager:
 
         Returns: the first weaker nodes' info if one is found along with its predecessors' info, otherwise (None, None)
         """
-        OPPRTUNISTIC_TAKEOVER_MULT_THRESHOLD = 1.5
-
         self_info = self.get_self_info()
         self_proc_rate = self_info.get("processing_rate")
         self_device = self_info.get("device")
@@ -665,6 +664,16 @@ class ChainManager:
         num_total_params = self._get_num_total_params()
         if num_total_params:
             self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
+        
+        # Republish the num_clients key
+        num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        if num_clients:
+            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
+
+        # Republish the client_nodes list
+        client_nodes = self.get_client_nodes()
+        if client_nodes:
+            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
         self.update_all_layers_loaded()
 
