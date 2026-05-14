@@ -783,7 +783,7 @@ class ChainManager:
                     current_node_id = successor_data.get("id")
                 
                 elif self.node_is_tail(current_node_id):
-                    layers = server_info.get("layers")
+                    # layers = server_info.get("layers")
                     # total_layers = self._get_num_total_layers()
                     if output_layer_loaded:
                         self.dht.store(ALL_LAYERS_KEY, True, EXPIRATION_S)
@@ -799,6 +799,7 @@ class ChainManager:
                     break  # current_node_id = None  # End of chain
             else:
                 self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                self.update_chain_status(ChainStatus.UNREADY)
                 break
 
     def update_chain_throughput(self):

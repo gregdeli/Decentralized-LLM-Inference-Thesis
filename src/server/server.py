@@ -7,6 +7,7 @@ import os
 import signal
 import threading
 import socket
+import random
 from dotenv import load_dotenv
 import gc
 import time
@@ -151,6 +152,8 @@ class Server:
         self.successor_stub = None
         self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
         self.num_local_params = 0
+        self.output_layer_temporal_tle = 1 # Transformer Layer Equivilant 
+        self.output_layer_memory_tle = 1
 
         self.inference_delay = 0.0
         self.processing_rate = 0
@@ -162,15 +165,15 @@ class Server:
         self.client_stub_addr = None
     def _load_llm(
         self,
+        layers_to_load: Optional[Tuple[int, int]] = None,
+        load_output_layer: Optional[bool] = None,
+        update_on_dht: bool = True,
         time_it: bool = False,
     ):
         """Loads the layers assigned by the ChainManager."""
-        layers_to_load = self.chain.get_layers()
-        load_output_layer = self.chain.get_load_output_layer()
-
-        if self.chain.is_backup():
-            # Load only a single layer for fast but still accurate profiling
-            layers_to_load = (0, 0)
+        if layers_to_load is None and load_output_layer is None:
+            layers_to_load = self.chain.get_layers()
+            load_output_layer = self.chain.get_load_output_layer()
 
         logger.info(f"Loading layers: {layers_to_load}...")
         if load_output_layer:
@@ -193,7 +196,7 @@ class Server:
         # Update DHT and Chain Status
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
-        if not self.chain.is_backup():
+        if not self.chain.is_backup() and update_on_dht:
             self.chain.update_layers_loaded(self.model.num_layers>0)
             if self.llm.output_layer_loaded:
                 self.chain.update_load_output_layer(False)
@@ -202,6 +205,8 @@ class Server:
 
     def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
+        if self.model:
+            self.model.clear_all_kv_caches()
         self.model = None
         self.llm = None
         self.num_local_params = 0
@@ -299,6 +304,10 @@ class Server:
         layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
         layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
+        # Set the output layer's equivilance to a transformer layer in memory
+        final_output_params = self.config.get("final_output_params")
+        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
+
         if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
@@ -307,7 +316,8 @@ class Server:
         if available <= 0:
             return 0
 
-        max_num_layers = int(available // layer_mem_size_mb)
+        # max_num_layers = int(available // layer_mem_size_mb)
+        max_num_layers = int(round(available / layer_mem_size_mb))
         return min(max_num_layers, self.config.get("num_hidden_layers"))
 
     def _can_load(
@@ -406,14 +416,24 @@ class Server:
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
-        if delay > 0 and self.num_local_params > 0:
-            current_rate = int(self.num_local_params / delay)
+        if delay <= 0:
+            return
 
-            # Moving average to avoid jitter
-            if self.processing_rate == 0:
-                self.processing_rate = current_rate
-            else:
-                self.processing_rate = int((0.7 * self.processing_rate) + (0.3 * current_rate))
+        num_layers = self.model.num_layers
+
+        if self.model.output_layer_loaded:
+            num_layers += self.output_layer_temporal_tle
+        
+        if num_layers == 0:
+            return 
+            
+        current_rate = num_layers / delay
+
+        # Moving average to avoid jitter
+        if self.processing_rate == 0:
+            self.processing_rate = current_rate
+        else:
+            self.processing_rate = (0.7 * self.processing_rate) + (0.3 * current_rate)
 
     @torch.no_grad()
     def _profile_node(
@@ -423,7 +443,22 @@ class Server:
         profiling_duration_s: int = 3
     ):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
-        # LLM has already been loaded for profiling with the number of layers the backup node can hold
+
+        time.sleep(random.uniform(0.5, 3.0))
+
+        other_node_profiling =  self.chain.get_chain_status() == ChainStatus.PROFILING
+        while other_node_profiling:
+            logger.info(f"Another node is currently profiling. Sleeping for {profiling_duration_s} seconds...")
+            time.sleep(profiling_duration_s)
+            other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
+
+        self.chain.update_chain_status(ChainStatus.PROFILING)
+
+        # ------ Transformer Layer Profiling ------
+
+        # First profile a signle transformer layer to get the nodes processing rate and 
+        # the transformer layers inference delay 
+        self._load_llm(layers_to_load=(0,0), load_output_layer=False, update_on_dht=False)
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
@@ -448,14 +483,14 @@ class Server:
             if self.added_delay:
                 time.sleep(self.added_delay)
 
-            self.inference_delay = time.perf_counter() - start
+            transformer_layer_delay = time.perf_counter() - start
 
-            self._calculate_processing_rate(self.inference_delay)
+            self._calculate_processing_rate(transformer_layer_delay)
 
             logger.info(
                 f"Profiling: Layers {self.llm.layers_loaded}: "
-                f"Delay: {self.inference_delay:.4f}s "
-                f"Params/sec: {self.processing_rate} "
+                f"Delay: {transformer_layer_delay}s "
+                f"Layers/sec: {self.processing_rate} "
             )
 
             dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=self.llm.dtype)
@@ -466,14 +501,49 @@ class Server:
             profiling_time = time.perf_counter() - prof_start_time
             if profiling_time >= profiling_duration_s:
                 break
+        
+        self._unload_llm()
+
+        # ---------- Output Layer Profiling ---------------
+        self._load_llm(load_output_layer=True, update_on_dht=False)
+
+        dummy_input = torch.randn(
+            1, dummy_seq_length, hidden_size, device=self.device, dtype=self.llm.dtype
+        )
+        prof_start_time = time.perf_counter()
+        for i in range(profiling_runs):
+            start = time.perf_counter()
+            _ = self.model.forward_server(dummy_input)
+            if self.added_delay:
+                time.sleep(self.added_delay)
+
+            output_layer_delay = time.perf_counter() - start
+
+            # self._calculate_processing_rate(transformer_layer_delay)
+
+            logger.info(
+                f"Profiling: Output Layer: "
+                f"Delay: {output_layer_delay}s "
+            )
+
+            profiling_time = time.perf_counter() - prof_start_time
+            if profiling_time >= profiling_duration_s:
+                break
+        
+        self._unload_llm()
+
+        # Calculate the output layer's Transformer Layer Equivilant (TLE)
+        self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
 
         self.chain.update_processing_rate(self.processing_rate)
-        self.model.remove_client_cache("profiling")
+        
         self._update_memory_usage()
 
-        if self.chain.is_backup():
-            logger.info(f"Backup Node Profiling Complete")
-            self._unload_llm()
+        self.chain.update_chain_status(ChainStatus.UNREADY)
+
+        # if self.chain.is_backup():
+        #     logger.info(f"Backup Node Profiling Complete")
+        #     self._unload_llm()
 
     @torch.no_grad()
     def run_local_layers(
@@ -718,78 +788,71 @@ class Server:
                     logger.info("Cannot load layers. Continuing with the layer reallocation...")
 
         # ---- Reallocation ----
-        num_total_params = self.config.get("num_total_params")
         num_total_layers = self.config.get("num_hidden_layers")
+        transformer_layer_params = self.config.get("transformer_layer_params")
+        final_output_params = self.config.get("final_output_params")
 
         # Calculate share
         if total_system_rate > 0:
             # Epic equation
-            ideal_param_count = num_total_params * (self.processing_rate / total_system_rate)
+            ideal_tle_count = (num_total_layers + self.output_layer_temporal_tle) * (self.processing_rate / total_system_rate)
         else:
-            ideal_param_count = 0
+            # ideal_param_count = 0
+            ideal_tle_count = 0
 
-        logger.info(f"Ideal Parameter Count: {ideal_param_count}")
+        # logger.info(f"Ideal Parameter Count: {ideal_param_count}")
+        logger.info(f"Ideal TLE Count: {ideal_tle_count}")
 
         # Unload llm to start allocation from the begining
         self._unload_llm()
 
-        # current_num_params = self.num_local_params
-        # max_extra_num_params = self._mem_to_num_params()
-        # max_num_params = current_num_params + max_extra_num_params
-        max_num_params = self._mem_to_num_params()
-        logger.info(f"Max Num Parameters: {max_num_params}")
-
-        # current_num_layers = self.model.num_layers
-        # max_extra_num_layers = self._mem_to_num_layers()
-        # max_num_layers = current_num_layers + max_extra_num_layers
         max_num_layers = self._mem_to_num_layers()
-        logger.info(f"Max Num Layers: {max_num_layers}")
+        logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
 
-        # Don't exceed the number of layers that can be loaded
-        target_param_count = min(ideal_param_count, max_num_params)
-        
-        logger.info(f"Target Param Count: {target_param_count}")
+        # Seperate the ideal layer count into transformer blocks and output layer
+        # if self.chain.is_tail():
+        #     ideal_transformer_layers = max(0.0, ideal_tle_count - self.output_layer_temporal_tle)
+        #     available_transformer_layers = max(0, max_num_layers - self.output_layer_memory_tle)
+        # else:
+        #     ideal_transformer_layers = ideal_tle_count
+        #     available_transformer_layers = max_num_layers
+
+        # logger.info(f"Ideal Transformer Layers: {ideal_transformer_layers}")
+        # logger.info(f"Available Transformer Layers: {available_transformer_layers}")
+
+        target_layer_count = min(ideal_tle_count, max_num_layers)
+        logger.info(f"Target Transformer Layer Count: {target_layer_count}")
 
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
-        # max_num_params = num_total_params * effective_rate / (effective_rate + remaining_rate)
-        # where, remaining_rate = total_system_rate - my_rate
-        if target_param_count == max_num_params:
+        if target_layer_count == max_num_layers:
             remaining_rate = total_system_rate - self.processing_rate
-            effective_rate = max_num_params * remaining_rate / (num_total_params - max_num_params)
+            effective_rate = max_num_layers * remaining_rate / ((num_total_layers + self.output_layer_temporal_tle) - max_num_layers)
             rate_difference = self.processing_rate - effective_rate
-            total_system_rate -= int(rate_difference)
-
-        transformer_layer_params = self.config.get("transformer_layer_params")
-        final_output_params = self.config.get("final_output_params")
+            total_system_rate -= rate_difference
 
         # Start with transformer layers
-        ideal_layer_count = target_param_count / transformer_layer_params
-        target_layer_count = min(ideal_layer_count, max_num_layers)
-        # target_layer_count = target_param_count / transformer_layer_params
+        target_layer_count = int(round(target_layer_count))
         
-        end_layer_index = start_layer_index + int(round(target_layer_count)) - 1
-        if end_layer_index >= num_total_layers or (self.chain.is_tail() and max_num_layers >= ideal_layer_count):
+        end_layer_index = start_layer_index + target_layer_count - 1
+        if end_layer_index >= num_total_layers:# or (self.chain.is_tail() and end_layer_indexand max_num_layers >= ideal_tle_count):
             end_layer_index = num_total_layers - 1
             target_layer_count = end_layer_index - start_layer_index + 1 
+        
 
         # Check if the lm_head should be loaded
-        max_num_params -= target_layer_count * transformer_layer_params     
-        target_param_count -= target_layer_count * transformer_layer_params
-
         load_output_layer = False
-        if (self.chain.is_tail() and max_num_params >= final_output_params) or target_param_count>=final_output_params:
-            if end_layer_index == num_total_layers - 1:
-                load_output_layer = True
+        # if (self.chain.is_tail() and max_num_params >= final_output_params):# or target_param_count>=final_output_params:
+        if self.chain.is_tail() and max_num_layers >= (target_layer_count + self.output_layer_memory_tle) and end_layer_index == num_total_layers - 1:
+            load_output_layer = True
         
-        new_layers = (start_layer_index, end_layer_index)
+        new_layers = None
+        if start_layer_index < num_total_layers:
+            new_layers = (start_layer_index, end_layer_index)
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
 
         # Load Layers
-        # if new_layers != self.llm.layers_loaded or load_output_layer != self.llm.output_layer_loaded:
-        self._reload_llm(new_layers, load_output_layer)
+        self._load_llm(layers_to_load=new_layers, load_output_layer=load_output_layer)
         self.chain.update_layers(new_layers)
-        # else:
-        #     logger.info("Layer assignment unchanged.")
 
         next_start_index = end_layer_index + 1
 
@@ -1245,11 +1308,12 @@ def serve():
     signal.signal(signal.SIGINT, _handle_shutdown)  # Ctrl+C
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
-    # Load the server's assigned layers
-    server_node._load_llm()
-
     # Profile the node to get processing rate measurements
-    server_node._profile_node(dummy_seq_length=50, profiling_runs=300, profiling_duration_s=PROFILING_DURATION)
+    server_node._profile_node(dummy_seq_length=50, profiling_runs=50, profiling_duration_s=PROFILING_DURATION)
+
+    # Load the server's assigned layers
+    if not server_node.chain.is_backup():
+        server_node._load_llm()
 
     grpc_server.wait_for_termination()
 

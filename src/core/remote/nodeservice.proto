@@ -75,7 +75,7 @@ message InferenceResponse {
 }
 
 message ReallocateRequest {
-  int64 total_rate = 1;
+  float total_rate = 1;
   int32 start_layer_index = 2;
   optional bytes predecessor_info = 3;
 }

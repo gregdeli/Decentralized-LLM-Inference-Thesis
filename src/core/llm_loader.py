@@ -31,6 +31,7 @@ class LLM:
         kv_cache_initialized: bool = False,
         initial_layer_loaded: bool = True,
         layers_loaded: Tuple[int, int] = None,
+        num_layers: int = 0,
         output_layer_loaded: bool = True,
         device: str = "cpu",
         dtype: torch.dtype = torch.float32,
@@ -46,6 +47,7 @@ class LLM:
         self.initial_layer_loaded = initial_layer_loaded
         self.layers_loaded = layers_loaded
         self.output_layer_loaded = output_layer_loaded
+        
         self.device = device
         self.dtype = dtype
 

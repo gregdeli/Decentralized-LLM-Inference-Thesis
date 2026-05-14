@@ -53,10 +53,10 @@ class ReallocateRequest(_message.Message):
     TOTAL_RATE_FIELD_NUMBER: _ClassVar[int]
     START_LAYER_INDEX_FIELD_NUMBER: _ClassVar[int]
     PREDECESSOR_INFO_FIELD_NUMBER: _ClassVar[int]
-    total_rate: int
+    total_rate: float
     start_layer_index: int
     predecessor_info: bytes
-    def __init__(self, total_rate: _Optional[int] = ..., start_layer_index: _Optional[int] = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...
 
 class RemoveClientKVCacheRequest(_message.Message):
     __slots__ = ("client_id", "new_max_seq_length")

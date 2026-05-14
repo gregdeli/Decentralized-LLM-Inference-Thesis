@@ -140,7 +140,7 @@ class Llama3(nn.Module):
     def forward_server(
         self,
         input: torch.Tensor,
-        seq_length: Optional[int],
+        seq_length: Optional[int] = None,
         input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
@@ -155,25 +155,26 @@ class Llama3(nn.Module):
         if self.rope_cache is None:
             self.rope_cache = self.build_rope_cache(device=input.device)
 
-        T = seq_length
-        # Get the RoPE embeddings for the current sequence
-        cos, sin = self.rope_cache
-        if input_pos is None:  # prefill
-            cos = cos[:T]
-            sin = sin[:T]
-        else:  # generation
-            cos = cos[input_pos]
-            sin = sin[input_pos]
-
-        # Get the attention mask
-        mask = self.mask_cache
-        if mask is not None and T > 1:  # prefill
-            mask = mask[:, :, :T, :T]
-        else:
-            mask = None
-
         h = input
+
         if self.num_layers > 0:
+            T = seq_length
+            # Get the RoPE embeddings for the current sequence
+            cos, sin = self.rope_cache
+            if input_pos is None:  # prefill
+                cos = cos[:T]
+                sin = sin[:T]
+            else:  # generation
+                cos = cos[input_pos]
+                sin = sin[input_pos]
+
+            # Get the attention mask
+            mask = self.mask_cache
+            if mask is not None and T > 1:  # prefill
+                mask = mask[:, :, :T, :T]
+            else:
+                mask = None
+        
             for block in self.layers.values():
                 h = block(h, cos, sin, mask, input_pos)
         
