@@ -381,9 +381,16 @@ class Client:
         Triggers the layer reallocation process starting from the HEAD.
         """
         # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation
-        self.total_rate = self.chain.gather_total_rate()
+        self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
-        if self.total_rate > 0:
+        requires_restart = True
+        while requires_restart:
+            self.total_rate = self.chain.gather_total_rate()
+
+            if self.total_rate <= 0:
+                logger.error("Total Rate is 0 or less, cannot reallocate.")
+                break
+
             logger.info(
                 f"Triggering reallocation with Total Rate: {self.total_rate} layers/sec..."
             )
@@ -393,19 +400,31 @@ class Client:
             )
 
             try:
-                self.chain.update_chain_status(ChainStatus.REALLOCATING)
+                response = self.head_server_stub.Reallocate(request)
 
-                self.head_server_stub.Reallocate(request)
+                if response.requires_restart:
+                    logger.info(f"Reallocation bottlenecked at {response.bottleneck_node}. Restarting...")
+                    continue
 
-                self.chain.update_all_layers_loaded()
-                if self.chain.get_all_layers_loaded():
-                    self.chain.update_chain_status(ChainStatus.READY)
+                if response.success:
+                    self.chain.update_all_layers_loaded()
+                    if self.chain.get_all_layers_loaded():
+                        self.chain.update_chain_status(ChainStatus.READY)
+                    else:
+                        self.chain.update_chain_status(ChainStatus.UNREADY)
+                    
+                    logger.info("Reallocation completed successfully.")
+                    break
+                
                 else:
+                    logger.error("Reallocation failed without a restart request.")
                     self.chain.update_chain_status(ChainStatus.UNREADY)
+                    break
 
-                logger.info("Reallocation triggered successfully...")
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
+                self.chain.update_chain_status(ChainStatus.UNREADY)
+                break
 
     @torch.no_grad()
     def generate(

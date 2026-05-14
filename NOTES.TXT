@@ -16,6 +16,8 @@ TODO:
   
   Temp fix -> thetw bootstrap node ton proigoumeno tou kathe server sto docker-compose
 
+* node me cuda kanei polu pio grigora to final output layer. 0.09 output_layer_temporal_tle vs 0.085 se node me cpu.
+  Einai kalutera o tail na exei gpu
 
 
 

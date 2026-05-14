@@ -71,6 +71,8 @@ class Server:
     ) -> None:
         self.added_delay = added_delay
 
+        self.grpc_addr = grpc_addr
+
         self.model_path = model_path
         # self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = "cpu"
@@ -109,6 +111,13 @@ class Server:
         self.dht.start()
         self.chain = ChainManager(self.dht)
 
+        # Initialize LLM State
+        self.llm = None
+        self.model = None
+        self.num_local_params = 0
+        self.output_layer_temporal_tle = 1 # Transformer Layer Equivilant 
+        self.output_layer_memory_tle = 1
+
         # Determine Model Parameter Load Capacity
         max_num_params = self._mem_to_num_params()
 
@@ -146,19 +155,15 @@ class Server:
 
         )
 
-        # Initialize State
-        self.llm = None
-        self.model = None
-        self.successor_stub = None
-        self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
-        self.num_local_params = 0
-        self.output_layer_temporal_tle = 1 # Transformer Layer Equivilant 
-        self.output_layer_memory_tle = 1
-
+        # Metrics 
         self.inference_delay = 0.0
         self.processing_rate = 0
         self.grpc_overhead = 0.0
         # self.succ_network_latency = 0.0
+
+        # Successor Stub
+        self.successor_stub = None
+        self.successor_stub_addr = None  # Address that corresponds to the successor_stub. To check if same with dht succ. addr.
 
         # Client Stub
         self.client_stub = None
@@ -203,7 +208,7 @@ class Server:
             self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
             self.chain.update_all_layers_loaded()
 
-    def _unload_llm(self):
+    def _unload_llm(self, update_on_dht: bool = True):
         """Helper to unload the model with explicit GC"""
         if self.model:
             self.model.clear_all_kv_caches()
@@ -215,6 +220,10 @@ class Server:
             torch.cuda.empty_cache()
 
         self._update_memory_usage()
+        if update_on_dht:
+            self.chain.update_layers(None)
+            self.chain.update_layers_loaded(False)
+            self.chain.update_output_layer_loaded(False)
 
     def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
@@ -306,6 +315,8 @@ class Server:
 
         # Set the output layer's equivilance to a transformer layer in memory
         final_output_params = self.config.get("final_output_params")
+        
+        
         self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
 
         if self.device == "cuda":
@@ -502,7 +513,7 @@ class Server:
             if profiling_time >= profiling_duration_s:
                 break
         
-        self._unload_llm()
+        self._unload_llm(update_on_dht=False)
 
         # ---------- Output Layer Profiling ---------------
         self._load_llm(load_output_layer=True, update_on_dht=False)
@@ -530,10 +541,11 @@ class Server:
             if profiling_time >= profiling_duration_s:
                 break
         
-        self._unload_llm()
+        self._unload_llm(update_on_dht=False)
 
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
         self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
+        self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
 
         self.chain.update_processing_rate(self.processing_rate)
         
@@ -696,106 +708,109 @@ class Server:
         total_system_rate: float,
         start_layer_index: int,
         predecessor_info: Optional[Dict[str, Any]],
-    ):
+    ) -> nodeservice_pb2.ReallocateResponse:
         """
         Executes the AR-MDI logic
         """
         logger.info(
             f" REALLOCATION TRIGGERED:\nTotal Rate: {total_system_rate} | My Rate: {self.processing_rate} | Start Index: {start_layer_index}"
         )
-        succ_info = self.chain.get_successor_info()
+        # succ_info = self.chain.get_successor_info()
 
-        if succ_info:
-            successor_proc_rate = succ_info.get("processing_rate")
-            succ_layers = succ_info.get("layers")
-            succ_output_layer_loaded = succ_info.get("output_layer_loaded", False)
+        # if succ_info:
+        #     successor_proc_rate = succ_info.get("processing_rate")
+        #     succ_layers = succ_info.get("layers")
+        #     succ_output_layer_loaded = succ_info.get("output_layer_loaded", False)
 
-            # If this node's processing rate is much smaller then its successor's
-            # the successor should take this node's layers
-            if successor_proc_rate > self.processing_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-                # Only if the successor can load the layers
-                if can_load(
-                    self.config,
-                    succ_info.get("available_memory"),
-                    succ_info.get("available_vram"),
-                    layers=self.llm.layers_loaded
-                ):
-                    if succ_layers:
-                        new_layers = (self.llm.layers_loaded[0], succ_layers[1])
-                    else:
-                        new_layers = self.llm.layers_loaded
+        #     # If this node's processing rate is much smaller then its successor's
+        #     # the successor should take this node's layers
+        #     if successor_proc_rate > self.processing_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
+        #         # Only if the successor can load the layers
+        #         if can_load(
+        #             self.config,
+        #             succ_info.get("available_memory"),
+        #             succ_info.get("available_vram"),
+        #             layers=self.llm.layers_loaded
+        #         ):
+        #             if succ_layers:
+        #                 new_layers = (self.llm.layers_loaded[0], succ_layers[1])
+        #             else:
+        #                 new_layers = self.llm.layers_loaded
 
-                    self._unload_llm()
+        #             self._unload_llm()
 
-                    self.chain.repair(
-                        new_layers,
-                        replacement_info=succ_info,
-                        replacee_info=self.chain.get_self_info(),
-                        replacement_load_output_layer=succ_output_layer_loaded,
-                        make_replacee_backup=True,
-                        replacee_was_head=self.chain.is_head(),
-                        replacee_pred_info=predecessor_info,
-                    )
+        #             self.chain.repair(
+        #                 new_layers,
+        #                 replacement_info=succ_info,
+        #                 replacee_info=self.chain.get_self_info(),
+        #                 replacement_load_output_layer=succ_output_layer_loaded,
+        #                 make_replacee_backup=True,
+        #                 replacee_was_head=self.chain.is_head(),
+        #                 replacee_pred_info=predecessor_info,
+        #             )
 
-                    total_system_rate -= self.processing_rate
+        #             total_system_rate -= self.processing_rate
 
-                    # Forward reallocation request
-                    serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
+        #             # Forward reallocation request
+        #             serialized_pred_info = json.dumps(predecessor_info).encode("utf-8")
 
-                    realloc_request = nodeservice_pb2.ReallocateRequest(
-                        total_rate=total_system_rate,
-                        start_layer_index=start_layer_index,
-                        predecessor_info=serialized_pred_info,
-                    )
-                    try:
-                        self.successor_stub.LoadLayers(nodeservice_pb2.Empty())
+        #             realloc_request = nodeservice_pb2.ReallocateRequest(
+        #                 total_rate=total_system_rate,
+        #                 start_layer_index=start_layer_index,
+        #                 predecessor_info=serialized_pred_info,
+        #             )
+        #             try:
+        #                 self.successor_stub.LoadLayers(nodeservice_pb2.Empty())
 
-                        self.successor_stub.Reallocate(realloc_request)
-                        return
-                    except grpc.RpcError as e:
-                        logger.error(f"Failed to propagate Reallocation to successor: {e}")
+        #                 response = self.successor_stub.Reallocate(realloc_request)
+        #                 return response
+        #             except grpc.RpcError as e:
+        #                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
+        #                 return nodeservice_pb2.ReallocateResponse(success=False)
 
-            # If this node's processing rate is much greater than the processing rate of its successor
-            # it should take its layers and make it a backup
-            elif self.processing_rate > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-                logger.info(
-                    f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
-                )
+        #     # If this node's processing rate is much greater than the processing rate of its successor
+        #     # it should take its layers and make it a backup
+        #     elif self.processing_rate > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
+        #         logger.info(
+        #             f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
+        #         )
 
-                if self._can_load(layers=succ_layers, output_layer=succ_output_layer_loaded):
-                    layers_to_load = (self.llm.layers_loaded[0], succ_layers[1])
-                    logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}. Load Output Layer: {succ_output_layer_loaded}")
+        #         if self._can_load(layers=succ_layers, output_layer=succ_output_layer_loaded):
+        #             layers_to_load = (self.llm.layers_loaded[0], succ_layers[1])
+        #             logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}. Load Output Layer: {succ_output_layer_loaded}")
 
-                    self._reload_llm(layers_to_load, load_output_layer=succ_output_layer_loaded)
+        #             self._reload_llm(layers_to_load, load_output_layer=succ_output_layer_loaded)
 
-                    self.chain.repair(
-                        new_layers=layers_to_load,
-                        replacement_info=self.chain.get_self_info(),
-                        replacee_info=succ_info,
-                        # replacement_load_output_layer=succ_output_layer_loaded,
-                        make_replacee_backup=True,
-                        replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
-                    )
+        #             self.chain.repair(
+        #                 new_layers=layers_to_load,
+        #                 replacement_info=self.chain.get_self_info(),
+        #                 replacee_info=succ_info,
+        #                 # replacement_load_output_layer=succ_output_layer_loaded,
+        #                 make_replacee_backup=True,
+        #                 replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
+        #             )
 
-                    # Send GRPC request to the weak node to unload its layers
-                    self.successor_stub.UnloadLayers(nodeservice_pb2.Empty())
+        #             # Send GRPC request to the weak node to unload its layers
+        #             self.successor_stub.UnloadLayers(nodeservice_pb2.Empty())
 
-                    self._connect_to_successor()
+        #             self._connect_to_successor()
 
-                    total_system_rate -= successor_proc_rate
+        #             total_system_rate -= successor_proc_rate
 
-                else:
-                    logger.info("Cannot load layers. Continuing with the layer reallocation...")
+        #         else:
+        #             logger.info("Cannot load layers. Continuing with the layer reallocation...")
 
         # ---- Reallocation ----
         num_total_layers = self.config.get("num_hidden_layers")
-        transformer_layer_params = self.config.get("transformer_layer_params")
-        final_output_params = self.config.get("final_output_params")
+        # transformer_layer_params = self.config.get("transformer_layer_params")
+        # final_output_params = self.config.get("final_output_params")
+
+        tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
 
         # Calculate share
         if total_system_rate > 0:
             # Epic equation
-            ideal_tle_count = (num_total_layers + self.output_layer_temporal_tle) * (self.processing_rate / total_system_rate)
+            ideal_tle_count = (num_total_layers + tail_output_temporal_tle) * (self.processing_rate / total_system_rate)
         else:
             # ideal_param_count = 0
             ideal_tle_count = 0
@@ -809,26 +824,22 @@ class Server:
         max_num_layers = self._mem_to_num_layers()
         logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
 
-        # Seperate the ideal layer count into transformer blocks and output layer
-        # if self.chain.is_tail():
-        #     ideal_transformer_layers = max(0.0, ideal_tle_count - self.output_layer_temporal_tle)
-        #     available_transformer_layers = max(0, max_num_layers - self.output_layer_memory_tle)
-        # else:
-        #     ideal_transformer_layers = ideal_tle_count
-        #     available_transformer_layers = max_num_layers
-
-        # logger.info(f"Ideal Transformer Layers: {ideal_transformer_layers}")
-        # logger.info(f"Available Transformer Layers: {available_transformer_layers}")
-
         target_layer_count = min(ideal_tle_count, max_num_layers)
         logger.info(f"Target Transformer Layer Count: {target_layer_count}")
 
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         if target_layer_count == max_num_layers:
             remaining_rate = total_system_rate - self.processing_rate
-            effective_rate = max_num_layers * remaining_rate / ((num_total_layers + self.output_layer_temporal_tle) - max_num_layers)
-            rate_difference = self.processing_rate - effective_rate
-            total_system_rate -= rate_difference
+            effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
+            # total_system_rate = remaining_rate + effective_rate
+            logger.warning(f"Memory limit hit. Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
+            self.processing_rate = effective_rate
+            self.chain.update_processing_rate(effective_rate)
+            return nodeservice_pb2.ReallocateResponse(
+                success=False,
+                requires_restart=True,
+                bottleneck_node=self.grpc_addr
+            )
 
         # Start with transformer layers
         target_layer_count = int(round(target_layer_count))
@@ -866,9 +877,16 @@ class Server:
                 predecessor_info=serialized_pred_info,
             )
             try:
-                self.successor_stub.Reallocate(request)
+                response = self.successor_stub.Reallocate(request)
+                return response
             except grpc.RpcError as e:
                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
+                return nodeservice_pb2.ReallocateResponse(success=False)
+        else:
+            return nodeservice_pb2.ReallocateResponse(
+                success=True,
+                requires_restart=False
+            )
 
     def repair_chain(self):
         """
@@ -1036,7 +1054,7 @@ class Server:
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
         weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(
-            f"Backup Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
+            f"Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
         )
 
         if self._can_load(layers=layers_to_takeover, output_layer=weak_node_output_layer_loaded):
@@ -1079,7 +1097,7 @@ class Server:
 
         else:
             logger.info(
-                f"Backup Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node."
+                f"Node: {self.chain.node_id} can not load layers {layers_to_takeover} of the weak node."
             )
 
         # Update chain status
@@ -1222,7 +1240,7 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
-                # if the TAIL doesn't have the final layer loaded the backup node can join the chain
+                # If the TAIL doesn't have the final layer loaded the backup node can join the chain
                 if (
                     not server_node.chain.get_all_layers_loaded()
                     and server_node.chain.get_chain_status() == ChainStatus.UNREADY

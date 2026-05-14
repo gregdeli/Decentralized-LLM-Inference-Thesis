@@ -60,8 +60,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             else None
         )
 
-        self.server_node.reallocate_layers(total_rate, start_layer_index, predecessor_info)
-        return nodeservice_pb2.Empty()
+        response = self.server_node.reallocate_layers(total_rate, start_layer_index, predecessor_info)
+        return response
 
     def UpdateSuccessorStub(self, request, context):
         self.server_node._connect_to_successor()

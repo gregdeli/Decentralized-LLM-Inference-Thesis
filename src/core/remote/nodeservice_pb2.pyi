@@ -58,6 +58,16 @@ class ReallocateRequest(_message.Message):
     predecessor_info: bytes
     def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...
 
+class ReallocateResponse(_message.Message):
+    __slots__ = ("success", "requires_restart", "bottleneck_node")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    REQUIRES_RESTART_FIELD_NUMBER: _ClassVar[int]
+    BOTTLENECK_NODE_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    requires_restart: bool
+    bottleneck_node: str
+    def __init__(self, success: bool = ..., requires_restart: bool = ..., bottleneck_node: _Optional[str] = ...) -> None: ...
+
 class RemoveClientKVCacheRequest(_message.Message):
     __slots__ = ("client_id", "new_max_seq_length")
     CLIENT_ID_FIELD_NUMBER: _ClassVar[int]

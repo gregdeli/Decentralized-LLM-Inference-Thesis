@@ -14,7 +14,7 @@ service NodeService {
   rpc Check(Empty) returns (Empty) {}
 
   // Triggers the layer re-allocation process
-  rpc Reallocate(ReallocateRequest) returns (Empty) {}
+  rpc Reallocate(ReallocateRequest) returns (ReallocateResponse) {}
 
   // Runs server_node._connect_to_successor()
   rpc UpdateSuccessorStub(Empty) returns (Empty) {}
@@ -78,6 +78,12 @@ message ReallocateRequest {
   float total_rate = 1;
   int32 start_layer_index = 2;
   optional bytes predecessor_info = 3;
+}
+
+message ReallocateResponse {
+  bool success = 1;
+  bool requires_restart = 2;
+  string bottleneck_node =3;
 }
 
 message RemoveClientKVCacheRequest {

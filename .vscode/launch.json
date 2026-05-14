@@ -115,7 +115,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container client",
+            "name": "Python: Attach to Container client-A",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -131,7 +131,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container client-A",
+            "name": "Python: Attach to Container client-B",
             "type": "debugpy",
             "request": "attach",
             "connect": {
@@ -147,7 +147,7 @@
             "justMyCode": true
         },
         {
-            "name": "Python: Attach to Container client-B",
+            "name": "Python: Attach to Container client-C",
             "type": "debugpy",
             "request": "attach",
             "connect": {

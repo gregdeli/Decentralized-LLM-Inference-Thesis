@@ -46,11 +46,11 @@ services:
       - ./models:/models:ro 
     deploy:
       resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
         limits:
           memory: 4G # 2.2
           # cpus: '1.0'
@@ -68,7 +68,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=8
+      # - NUM_LAYERS=18
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-B:5001
@@ -76,13 +76,13 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+        # reservations:
+        #     devices:
+        #       - driver: nvidia
+        #         count: 1
+        #         capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 5G
           # cpus: '1.0'
     depends_on:
       - worker-A
@@ -151,14 +151,14 @@ services:
     ports:
       - "5675:5678"
 
-  client:
+  client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
     # command: python distributed_chatbot.py 
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     command: sleep infinity 
-    hostname: client
+    hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       # - GRPC_PORT=5001
@@ -171,26 +171,6 @@ services:
       - "8080:8080" # NiceGUI
       - "5676:5678"
 
-  client-A:
-    image: decentralized-llm-thesis:latest 
-    # command: python dht_test.py 
-    # command: python distributed_chatbot.py 
-    # command: python client_gui.py 
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    command: sleep infinity 
-    hostname: client-A
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      # - GRPC_PORT = 5001
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-      # - BOOTSTRAP_NODE_ADDR=head-server:5001
-    volumes:
-      - ./models:/models:ro
-      - ./src:/app # To make live changes to the client gui code
-    ports:
-      - "8081:8080" # NiceGUI
-      - "5677:5678"
-  
   client-B:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
@@ -208,9 +188,9 @@ services:
       - ./models:/models:ro
       - ./src:/app # To make live changes to the client gui code
     ports:
-      - "8082:8080" # NiceGUI
-      - "5678:5678"
-
+      - "8081:8080" # NiceGUI
+      - "5677:5678"
+  
   client-C:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
@@ -219,6 +199,26 @@ services:
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     command: sleep infinity 
     hostname: client-C
+    environment:
+      - MODEL_PATH=/${MODEL_PATH}
+      # - GRPC_PORT = 5001
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
+      # - BOOTSTRAP_NODE_ADDR=head-server:5001
+    volumes:
+      - ./models:/models:ro
+      - ./src:/app # To make live changes to the client gui code
+    ports:
+      - "8082:8080" # NiceGUI
+      - "5678:5678"
+
+  client-D:
+    image: decentralized-llm-thesis:latest 
+    # command: python dht_test.py 
+    # command: python distributed_chatbot.py 
+    # command: python client_gui.py 
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
+    command: sleep infinity 
+    hostname: client-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       # - GRPC_PORT = 5001

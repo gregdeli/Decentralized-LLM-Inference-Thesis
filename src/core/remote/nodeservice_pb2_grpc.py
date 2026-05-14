@@ -53,7 +53,7 @@ class NodeServiceStub(object):
         self.Reallocate = channel.unary_unary(
                 '/nodeservice.NodeService/Reallocate',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
-                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.FromString,
                 _registered_method=True)
         self.UpdateSuccessorStub = channel.unary_unary(
                 '/nodeservice.NodeService/UpdateSuccessorStub',
@@ -159,7 +159,7 @@ def add_NodeServiceServicer_to_server(servicer, server):
             'Reallocate': grpc.unary_unary_rpc_method_handler(
                     servicer.Reallocate,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
-                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.SerializeToString,
             ),
             'UpdateSuccessorStub': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateSuccessorStub,
@@ -290,7 +290,7 @@ class NodeService(object):
             target,
             '/nodeservice.NodeService/Reallocate',
             core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
-            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.FromString,
             options,
             channel_credentials,
             insecure,

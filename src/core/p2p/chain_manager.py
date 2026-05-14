@@ -467,6 +467,12 @@ class ChainManager:
                 current_node_id = None  # End of chain
 
         return total_rate
+    
+    def get_tail_output_temporal_tle(self):
+        tail_id = self.get_tail_id()
+        tail_info = self.get_server_info(tail_id)
+
+        return tail_info.get("output_layer_temporal_tle")
 
     def is_head(self) -> Optional[bool]:
         """Check if this node is the head of the server chain"""
@@ -842,6 +848,11 @@ class ChainManager:
     def update_output_layer_loaded(self, output_layer_loaded: bool):
         self_info = self.get_self_info()
         self_info["output_layer_loaded"] = output_layer_loaded
+        self._update_server_info(self.node_id, self_info)
+
+    def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float):
+        self_info = self.get_self_info()
+        self_info["output_layer_temporal_tle"] = output_layer_temporal_tle
         self._update_server_info(self.node_id, self_info)
 
     def update_device(self, device: str):
