@@ -308,9 +308,8 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     # Update Layers
                     if "layers" in labels and "layers" in node_info:
                         l = node_info["layers"]
-                        labels["layers"].text = (
-                            f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}"
-                        )
+                        text = f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}" if l is not None else "Layers: None"
+                        labels["layers"].text = text
 
                     # Update Loaded Status
                     if "layers_loaded" in labels:

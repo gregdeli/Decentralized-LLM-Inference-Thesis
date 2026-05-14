@@ -423,11 +423,6 @@ class CausalSelfAttention(nn.Module):
             active_cache = self.kv_caches[self.active_client_id] 
             k, v = active_cache(input_pos, k, v)
 
-        # GQA: repeat K and V heads
-        if self.n_rep > 1:
-            k = k.repeat_interleave(self.n_rep, dim=1)  # Repeat elements of the tensor along the head dim
-            v = v.repeat_interleave(self.n_rep, dim=1)
-
         # In the prefill phase attend only to the tokens in the prompt
         if input_pos is None:
             k = k[:, :, :T, :]
@@ -436,6 +431,11 @@ class CausalSelfAttention(nn.Module):
             current_seq_len = input_pos.max() + 1
             k = k[:, :, :current_seq_len, :]
             v = v[:, :, :current_seq_len, :]
+
+        # GQA: repeat K and V heads
+        if self.n_rep > 1:
+            k = k.repeat_interleave(self.n_rep, dim=1)  # Repeat elements of the tensor along the head dim
+            v = v.repeat_interleave(self.n_rep, dim=1)
 
         # Scaled Dot-Product Attention
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)

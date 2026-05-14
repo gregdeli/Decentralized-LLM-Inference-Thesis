@@ -208,7 +208,7 @@ class Server:
             self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
             self.chain.update_all_layers_loaded()
 
-    def _unload_llm(self, update_on_dht: bool = True):
+    def _unload_llm(self):
         """Helper to unload the model with explicit GC"""
         if self.model:
             self.model.clear_all_kv_caches()
@@ -220,10 +220,10 @@ class Server:
             torch.cuda.empty_cache()
 
         self._update_memory_usage()
-        if update_on_dht:
-            self.chain.update_layers(None)
-            self.chain.update_layers_loaded(False)
-            self.chain.update_output_layer_loaded(False)
+        # if update_on_dht:
+        #     self.chain.update_layers(None)
+        #     self.chain.update_layers_loaded(False)
+        #     self.chain.update_output_layer_loaded(False)
 
     def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
@@ -513,7 +513,7 @@ class Server:
             if profiling_time >= profiling_duration_s:
                 break
         
-        self._unload_llm(update_on_dht=False)
+        self._unload_llm()
 
         # ---------- Output Layer Profiling ---------------
         self._load_llm(load_output_layer=True, update_on_dht=False)
@@ -541,7 +541,7 @@ class Server:
             if profiling_time >= profiling_duration_s:
                 break
         
-        self._unload_llm(update_on_dht=False)
+        self._unload_llm()
 
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
         self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
@@ -819,16 +819,22 @@ class Server:
         logger.info(f"Ideal TLE Count: {ideal_tle_count}")
 
         # Unload llm to start allocation from the begining
-        self._unload_llm()
+        # self._unload_llm()
 
-        max_num_layers = self._mem_to_num_layers()
+        current_num_layers = self.model.num_layers
+        if self.model.output_layer_loaded:
+            current_num_layers += self.output_layer_memory_tle
+
+        max_extra_num_layers = self._mem_to_num_layers()
+
+        max_num_layers = current_num_layers + max_extra_num_layers
         logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
 
         target_layer_count = min(ideal_tle_count, max_num_layers)
         logger.info(f"Target Transformer Layer Count: {target_layer_count}")
 
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
-        if target_layer_count == max_num_layers:
+        if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers:
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
             # total_system_rate = remaining_rate + effective_rate
@@ -862,7 +868,7 @@ class Server:
         logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
 
         # Load Layers
-        self._load_llm(layers_to_load=new_layers, load_output_layer=load_output_layer)
+        self._reload_llm(layers=new_layers, load_output_layer=load_output_layer)
         self.chain.update_layers(new_layers)
 
         next_start_index = end_layer_index + 1
@@ -1054,15 +1060,20 @@ class Server:
         weak_node_was_tail = self.chain.node_is_tail(weak_node_info.get("id"))
         weak_node_was_head = self.chain.node_is_head(weak_node_info.get("id"))
         logger.info(
-            f"Node: {self.chain.node_id} attempting to takeover layers {layers_to_takeover}."
+            f"Node: {self.chain.node_id[:DIGITS_SHOW]} attempting to takeover layers {layers_to_takeover}."
         )
 
         if self._can_load(layers=layers_to_takeover, output_layer=weak_node_output_layer_loaded):
+
+            if self.llm is not None and self.llm.layers_loaded is not None:
+                new_layers = (self.llm.layers_loaded[0], layers_to_takeover[1]) if layers_to_takeover else self.llm.layers_loaded
+            else:
+                new_layers = layers_to_takeover
             
-            self._reload_llm(layers_to_takeover, load_output_layer=weak_node_output_layer_loaded)
+            self._reload_llm(new_layers, load_output_layer=weak_node_output_layer_loaded)
             
             self.chain.repair(
-                layers_to_takeover,
+                new_layers,
                 replacement_info=self.chain.get_self_info(),
                 # replacement_load_output_layer=weak_node_output_layer_loaded,
                 replacee_info=weak_node_info,
@@ -1233,7 +1244,7 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node.chain.republish_keys()
             server_node._update_memory_usage()
-            server_node.chain.update_all_layers_loaded()
+            # server_node.chain.update_all_layers_loaded()
 
     def _chain_health_monitor_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
@@ -1287,6 +1298,16 @@ def serve():
                             f"A gRPC error occurred during health check: {e.code().name}"
                         )
                         server_node.successor_stub = None
+
+            # Active Node Successor Opportunistic Takeover
+            if server_node.chain.get_chain_status() == ChainStatus.READY:
+                succ_info = server_node.chain.get_successor_info()
+                if not succ_info:
+                    continue
+
+                successor_proc_rate = succ_info.get("processing_rate")
+                if server_node.processing_rate > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD:
+                    server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""

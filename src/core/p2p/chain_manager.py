@@ -681,12 +681,13 @@ class ChainManager:
         if client_nodes:
             self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
+        # Update the all_layers_loaded and chain_status keys
         self.update_all_layers_loaded()
 
         # Republish chain_status
-        current_status = self.get_chain_status()
-        if current_status:
-            self.update_chain_status(current_status)
+        # current_status = self.get_chain_status()
+        # if current_status:
+        #     self.update_chain_status(current_status)
 
         # Republish backup nodes list
         backup_nodes = self.get_backup_nodes()
@@ -797,6 +798,8 @@ class ChainManager:
                         current_chain_status = self.get_chain_status()
                         if current_chain_status in (ChainStatus.UNREADY, ChainStatus.RUNNING):
                             self.update_chain_status(ChainStatus.READY)
+                        else:
+                            self.update_chain_status(current_chain_status)
                         break
 
                     # If the tail doesn't have the final layer loaded
