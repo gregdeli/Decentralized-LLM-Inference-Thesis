@@ -530,8 +530,6 @@ class Server:
 
             output_layer_delay = time.perf_counter() - start
 
-            # self._calculate_processing_rate(transformer_layer_delay)
-
             logger.info(
                 f"Profiling: Output Layer: "
                 f"Delay: {output_layer_delay}s "
@@ -552,10 +550,6 @@ class Server:
         self._update_memory_usage()
 
         self.chain.update_chain_status(ChainStatus.UNREADY)
-
-        # if self.chain.is_backup():
-        #     logger.info(f"Backup Node Profiling Complete")
-        #     self._unload_llm()
 
     @torch.no_grad()
     def run_local_layers(
@@ -768,42 +762,8 @@ class Server:
         #                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
         #                 return nodeservice_pb2.ReallocateResponse(success=False)
 
-        #     # If this node's processing rate is much greater than the processing rate of its successor
-        #     # it should take its layers and make it a backup
-        #     elif self.processing_rate > successor_proc_rate * REALLOC_TAKEOVER_MULT_THRESHOLD:
-        #         logger.info(
-        #             f"Attempting to takeover layers: {succ_layers} from successor {succ_info.get('id')[:DIGITS_SHOW]}..."
-        #         )
-
-        #         if self._can_load(layers=succ_layers, output_layer=succ_output_layer_loaded):
-        #             layers_to_load = (self.llm.layers_loaded[0], succ_layers[1])
-        #             logger.info(f"Taking over layers {succ_layers}. New range: {layers_to_load}. Load Output Layer: {succ_output_layer_loaded}")
-
-        #             self._reload_llm(layers_to_load, load_output_layer=succ_output_layer_loaded)
-
-        #             self.chain.repair(
-        #                 new_layers=layers_to_load,
-        #                 replacement_info=self.chain.get_self_info(),
-        #                 replacee_info=succ_info,
-        #                 # replacement_load_output_layer=succ_output_layer_loaded,
-        #                 make_replacee_backup=True,
-        #                 replacee_was_tail=self.chain.node_is_tail(succ_info.get("id")),
-        #             )
-
-        #             # Send GRPC request to the weak node to unload its layers
-        #             self.successor_stub.UnloadLayers(nodeservice_pb2.Empty())
-
-        #             self._connect_to_successor()
-
-        #             total_system_rate -= successor_proc_rate
-
-        #         else:
-        #             logger.info("Cannot load layers. Continuing with the layer reallocation...")
-
         # ---- Reallocation ----
         num_total_layers = self.config.get("num_hidden_layers")
-        # transformer_layer_params = self.config.get("transformer_layer_params")
-        # final_output_params = self.config.get("final_output_params")
 
         tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
 
@@ -812,14 +772,9 @@ class Server:
             # Epic equation
             ideal_tle_count = (num_total_layers + tail_output_temporal_tle) * (self.processing_rate / total_system_rate)
         else:
-            # ideal_param_count = 0
             ideal_tle_count = 0
 
-        # logger.info(f"Ideal Parameter Count: {ideal_param_count}")
         logger.info(f"Ideal TLE Count: {ideal_tle_count}")
-
-        # Unload llm to start allocation from the begining
-        # self._unload_llm()
 
         current_num_layers = self.model.num_layers
         if self.model.output_layer_loaded:
@@ -837,7 +792,7 @@ class Server:
         if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers:
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
-            # total_system_rate = remaining_rate + effective_rate
+        
             logger.warning(f"Memory limit hit. Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
             self.processing_rate = effective_rate
             self.chain.update_processing_rate(effective_rate)
@@ -858,7 +813,6 @@ class Server:
 
         # Check if the lm_head should be loaded
         load_output_layer = False
-        # if (self.chain.is_tail() and max_num_params >= final_output_params):# or target_param_count>=final_output_params:
         if self.chain.is_tail() and max_num_layers >= (target_layer_count + self.output_layer_memory_tle) and end_layer_index == num_total_layers - 1:
             load_output_layer = True
         
@@ -948,9 +902,6 @@ class Server:
                     replacee_info=dead_successor_info,
                     replacee_was_tail=dead_succ_was_tail,
                 )
-
-                # if self.llm.output_layer_loaded:
-                #     self.chain.update_load_output_layer(False)
 
                 self._connect_to_successor()
 
@@ -1075,7 +1026,6 @@ class Server:
             self.chain.repair(
                 new_layers,
                 replacement_info=self.chain.get_self_info(),
-                # replacement_load_output_layer=weak_node_output_layer_loaded,
                 replacee_info=weak_node_info,
                 make_replacee_backup=True,
                 replacee_was_head=weak_node_was_head,
@@ -1244,7 +1194,6 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node.chain.republish_keys()
             server_node._update_memory_usage()
-            # server_node.chain.update_all_layers_loaded()
 
     def _chain_health_monitor_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
