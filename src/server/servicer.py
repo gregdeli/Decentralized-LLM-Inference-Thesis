@@ -107,3 +107,18 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
                 logger.error(f"Failed to forward Client Removal Request to successor: {e}")
 
         return nodeservice_pb2.Empty()
+    
+    def JoinChain(self, request, context):
+        self.server_node.chain.join_chain(
+            self_info=self.server_node.chain.get_self_info(),
+            max_num_layers=self.server_node._mem_to_num_layers(),
+            max_num_params=self.server_node._mem_to_num_params(),
+            num_total_layers=self.server_node.config.get("num_hidden_layers"),
+            num_total_params=self.server_node.config.get("num_total_params"),
+            transformer_layer_params=self.server_node.config.get("transformer_layer_params"),
+            final_output_params=self.server_node.config.get("final_output_params")
+        )
+
+        self.server_node._load_llm()
+
+        return nodeservice_pb2.Empty()

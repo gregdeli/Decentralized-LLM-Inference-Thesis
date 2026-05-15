@@ -789,7 +789,8 @@ class Server:
         logger.info(f"Target Transformer Layer Count: {target_layer_count}")
 
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
-        if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers:
+        # A node shouldnt restart the reallocation if its both the head and tail
+        if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
         
@@ -990,6 +991,27 @@ class Server:
                             )
                         
                         current_node_id = next_node_id
+                
+                # Make the new Backup Nodes Join the Chain 
+                logger.info(f"Attempting to rebuild the chain with backup nodes...")
+                backup_nodes = self.chain.get_backup_nodes()
+                if backup_nodes:
+                    # Find backup node with enough memory
+                    for backup_id in backup_nodes:
+                        backup_info = self.chain.get_server_info(backup_id)
+                        
+                        backup_addr = backup_info.get("address")
+                        if not backup_addr:
+                            continue
+
+                        try:
+                            channel = create_grpc_channel(backup_addr)
+                            backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                            backup_stub.JoinChain(nodeservice_pb2.Empty())
+                        except grpc.RpcError as e:
+                            logger.error(
+                                f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
+                            )
                 
 
     def opportunistic_takeover(
@@ -1201,25 +1223,25 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
                 # If the TAIL doesn't have the final layer loaded the backup node can join the chain
-                if (
-                    not server_node.chain.get_all_layers_loaded()
-                    and server_node.chain.get_chain_status() == ChainStatus.UNREADY
-                ):
-                    max_num_layers = server_node._mem_to_num_layers()
-                    if max_num_layers > 0:
-                        # Join chain
-                        server_node.chain.join_chain(
-                            self_info=server_node.chain.get_self_info(),
-                            max_num_layers=server_node._mem_to_num_layers(),
-                            max_num_params=server_node._mem_to_num_params(),
-                            num_total_layers=server_node.config.get("num_hidden_layers"),
-                            num_total_params=server_node.config.get("num_total_params"),
-                            transformer_layer_params=server_node.config.get("transformer_layer_params"),
-                            final_output_params=server_node.config.get("final_output_params")
-                        )
-                        server_node._load_llm()
+                # if (
+                #     not server_node.chain.get_all_layers_loaded()
+                #     and server_node.chain.get_chain_status() == ChainStatus.UNREADY
+                # ):
+                #     max_num_layers = server_node._mem_to_num_layers()
+                #     if max_num_layers > 0:
+                #         # Join chain
+                #         server_node.chain.join_chain(
+                #             self_info=server_node.chain.get_self_info(),
+                #             max_num_layers=server_node._mem_to_num_layers(),
+                #             max_num_params=server_node._mem_to_num_params(),
+                #             num_total_layers=server_node.config.get("num_hidden_layers"),
+                #             num_total_params=server_node.config.get("num_total_params"),
+                #             transformer_layer_params=server_node.config.get("transformer_layer_params"),
+                #             final_output_params=server_node.config.get("final_output_params")
+                #         )
+                #         server_node._load_llm()
 
-                # Opportunistic Takeover
+                # --- Backup Opportunistic Takeover---
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
                 if weak_node_info and server_node.chain.get_chain_status() == ChainStatus.READY:
@@ -1248,7 +1270,7 @@ def serve():
                         )
                         server_node.successor_stub = None
 
-            # Active Node Successor Opportunistic Takeover
+            # ---Active Node Successor Opportunistic Takeover---
             if server_node.chain.get_chain_status() == ChainStatus.READY:
                 succ_info = server_node.chain.get_successor_info()
                 if not succ_info:

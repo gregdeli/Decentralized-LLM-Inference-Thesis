@@ -371,10 +371,32 @@ class Client:
                 # Reallocate among the remaining nodes
                 self.trigger_reallocation()
             else:
-                # Its over make the HEAD None and a backup will take its place
-                # or a new node will join
+                # Its over make the HEAD None 
                 self.chain.dht.store(HEAD_KEY, None, EXPIRATION_S)
-                self.chain.update_chain_status(ChainStatus.UNREADY)
+                self.chain.update_all_layers_loaded()
+            
+            # Use backup nodes to rebuild the chain 
+            logger.info(f"Attempting to rebuild the chain with backup nodes...")
+            backup_nodes = self.chain.get_backup_nodes()
+            if backup_nodes:
+                # Find backup node with enough memory
+                for backup_id in backup_nodes:
+                    backup_info = self.chain.get_server_info(backup_id)
+                    
+                    backup_addr = backup_info.get("address")
+                    if not backup_addr:
+                        continue
+
+                    try:
+                        channel = create_grpc_channel(backup_addr)
+                        backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                        backup_stub.JoinChain(nodeservice_pb2.Empty())
+                    except grpc.RpcError as e:
+                        logger.error(
+                            f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
+                        )
+
+            
 
     def trigger_reallocation(self):
         """

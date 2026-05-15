@@ -75,6 +75,11 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
+        self.JoinChain = channel.unary_unary(
+                '/nodeservice.NodeService/JoinChain',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class NodeServiceServicer(object):
@@ -138,6 +143,13 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def JoinChain(self, request, context):
+        """Make a node join the Active Chain
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -179,6 +191,11 @@ def add_NodeServiceServicer_to_server(servicer, server):
             'RemoveClientKVCache': grpc.unary_unary_rpc_method_handler(
                     servicer.RemoveClientKVCache,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'JoinChain': grpc.unary_unary_rpc_method_handler(
+                    servicer.JoinChain,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
@@ -398,6 +415,33 @@ class NodeService(object):
             target,
             '/nodeservice.NodeService/RemoveClientKVCache',
             core_dot_remote_dot_nodeservice__pb2.RemoveClientKVCacheRequest.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def JoinChain(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/JoinChain',
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,

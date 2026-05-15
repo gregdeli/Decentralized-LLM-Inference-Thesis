@@ -28,6 +28,9 @@ service NodeService {
   // Makes the server node remove the client's kv cache from memory
   // Also triggers a rebalancing of the memory allocated to the rest of the nodes' kv caches
   rpc RemoveClientKVCache(RemoveClientKVCacheRequest) returns (Empty) {}
+
+  // Make a node join the Active Chain
+  rpc JoinChain(Empty) returns (Empty) {}
 }
 
 // The service definition for a client node that receives inference responses form the TAIL node.
