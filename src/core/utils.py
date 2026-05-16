@@ -151,52 +151,50 @@ def can_load(
     config: Dict[str, Any],
     avail_mem: float,
     avail_vram: float,
+    output_layer_memory_tle: float,
     num_layers: Optional[int] = None,
     layers: Optional[Tuple[int, int]] = None,
     output_layer: Optional[bool] = None,
 ) -> bool:
         """Checks if a node can load a certain number of transformer layers based on avail_mem or avail_vram"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
-        max_num_params = mem_to_num_params(config, avail_mem, avail_vram)
+        max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram)
 
         if num_layers > 0:
-            max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram)
-
             if max_num_layers < num_layers:
                 return False
             
             if output_layer:
-                max_num_params -= num_layers * config.get("transformer_layer_params")
-                
-                return max_num_params >= config.get("final_output_params")
+                max_num_layers -= num_layers
+                return max_num_layers >= output_layer_memory_tle
             
             return True
-        
-        return max_num_params >= config.get("final_output_params")
 
-def mem_to_num_params(
-    config: Dict[str, Any],
-    avail_mem: Optional[float],
-    avail_vram: Optional[float],
-) -> int:
-    """
-    Calculates how many model parameters fit in the available Memory/VRAM
-    """
-    total_params = config.get("num_total_params")
+        return max_num_layers >= output_layer_memory_tle
 
-    if avail_vram:
-        available = avail_vram - RESERVED_MEM_MB
-    else:
-        available = avail_mem - RESERVED_MEM_MB
+# def mem_to_num_params(
+#     config: Dict[str, Any],
+#     avail_mem: Optional[float],
+#     avail_vram: Optional[float],
+# ) -> int:
+#     """
+#     Calculates how many model parameters fit in the available Memory/VRAM
+#     """
+#     total_params = config.get("num_total_params")
 
-    if available <= 0:
-        return 0
+#     if avail_vram:
+#         available = avail_vram - RESERVED_MEM_MB
+#     else:
+#         available = avail_mem - RESERVED_MEM_MB
+
+#     if available <= 0:
+#         return 0
     
-    param_dtype = get_dtype_from_config(config)
-    bytes_per_param = param_dtype.itemsize
+#     param_dtype = get_dtype_from_config(config)
+#     bytes_per_param = param_dtype.itemsize
 
-    max_num_params = available / (bytes_per_param / (1024 * 1024)) 
-    return min(max_num_params, total_params)
+#     max_num_params = available / (bytes_per_param / (1024 * 1024)) 
+#     return min(max_num_params, total_params)
 
 def mem_to_num_layers(
     config: Dict[str, Any],
@@ -225,6 +223,6 @@ def mem_to_num_layers(
     if available <= 0:
         return 0
 
-    max_num_layers = int(available // layer_mem_size_mb)
+    max_num_layers = int(round(available / layer_mem_size_mb))
     return min(max_num_layers, config.get("num_hidden_layers"))
 

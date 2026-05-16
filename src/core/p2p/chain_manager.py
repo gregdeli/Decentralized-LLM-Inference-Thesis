@@ -57,11 +57,9 @@ class ChainManager:
         self, 
         self_info: Dict[str, Any], 
         max_num_layers: int, 
-        max_num_params: int,
+        output_layer_memory_tle,
         num_total_layers: int, 
         num_total_params: int,
-        transformer_layer_params: int,
-        final_output_params: int,
     ) -> None:
         """
         Main entry point for a server node to join or form the inference chain.
@@ -81,11 +79,9 @@ class ChainManager:
             self._form_initial_chain(
                 self_info, 
                 max_num_layers, 
-                max_num_params, 
+                output_layer_memory_tle,
                 num_total_layers, 
                 num_total_params,
-                transformer_layer_params,
-                final_output_params
             )
         else:
             logger.info(
@@ -94,10 +90,8 @@ class ChainManager:
             self._join_existing_chain(
                 self_info, 
                 max_num_layers, 
-                max_num_params,
+                output_layer_memory_tle,
                 num_total_layers,
-                transformer_layer_params,
-                final_output_params
             )
 
         logger.info(f"Self Info: {self.get_self_info()}")
@@ -106,11 +100,9 @@ class ChainManager:
         self, 
         self_info: Dict[str, Any], 
         max_num_layers: int, 
-        max_num_params: int,
+        output_layer_memory_tle: float,
         num_total_layers: int, 
         num_total_params: int,
-        transformer_layer_params: int,
-        final_output_params: int,
     ):
         """Logic for the first server to establish the chain."""
         # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
@@ -136,8 +128,10 @@ class ChainManager:
 
         self_info["successor"] = None
 
+        target_num_layers = max_num_layers
+
         # Don't exceed the the maximum layer index
-        end_idx = max_num_layers - 1
+        end_idx = target_num_layers - 1
         if end_idx >= num_total_layers:
             end_idx = num_total_layers - 1
 
@@ -145,10 +139,11 @@ class ChainManager:
 
         # If all the transformer layers fit on this node
         if end_idx == num_total_layers - 1:
-            max_num_params -= max_num_layers * transformer_layer_params
+            target_num_layers = end_idx + 1
+            remaining_num_layers = max_num_layers - target_num_layers
 
             # Check if the final output layer can be loaded as well
-            if max_num_params >= final_output_params:
+            if remaining_num_layers >= output_layer_memory_tle:
                 self_info["load_output_layer"] = True
 
 
@@ -168,11 +163,9 @@ class ChainManager:
     def _join_existing_chain(
         self, 
         self_info: Dict[str, Any], 
-        max_num_layers: int, 
-        max_num_params: int,
+        max_num_layers: int,
+        output_layer_memory_tle: float, 
         num_total_layers: int, 
-        transformer_layer_params: int,
-        final_output_params: int,
     ):
         """Logic for a new server to join an existing chain."""
         # Find the current tail
@@ -188,7 +181,6 @@ class ChainManager:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
 
         # Make it a Backup Node, if all layers loaded
-        # if start_idx >= num_total_layers:
         if tail_info.get("output_layer_loaded") or tail_info.get("load_output_layer"):
             logger.warning("All the layers have already been loaded on the the previous tail")
             logger.warning("Setting this node as a backup node...")
@@ -203,18 +195,23 @@ class ChainManager:
         self_layers = None
         end_idx = num_total_layers - 1
 
+        target_num_layers = 0
+
         # If transformer layers are left unloaded
         if start_idx < num_total_layers:
             end_idx = start_idx + max_num_layers - 1
+
             if end_idx >= num_total_layers:
                 end_idx = num_total_layers - 1
-                max_num_layers = end_idx - start_idx + 1
+            
+            target_num_layers = end_idx - start_idx + 1
 
-            max_num_params -= max_num_layers * transformer_layer_params
             self_layers = (start_idx, end_idx)
 
+        remaining_num_layers = max_num_layers - target_num_layers
+
         # Check if the final output layer can be loaded 
-        if (end_idx == num_total_layers - 1) and (max_num_params >= final_output_params):
+        if (end_idx == num_total_layers - 1) and remaining_num_layers >= output_layer_memory_tle:  #and (max_num_params >= final_output_params):
             self_info["load_output_layer"] = True
 
         # If at this point the node is not supposed to load any layers make it a backup
@@ -856,6 +853,11 @@ class ChainManager:
     def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float):
         self_info = self.get_self_info()
         self_info["output_layer_temporal_tle"] = output_layer_temporal_tle
+        self._update_server_info(self.node_id, self_info)
+    
+    def update_output_layer_memory_tle(self, output_layer_memory_tle: float):
+        self_info = self.get_self_info()
+        self_info["output_layer_memory_tle"] = output_layer_memory_tle
         self._update_server_info(self.node_id, self_info)
 
     def update_device(self, device: str):

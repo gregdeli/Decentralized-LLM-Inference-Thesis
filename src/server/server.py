@@ -119,7 +119,7 @@ class Server:
         self.output_layer_memory_tle = 1
 
         # Determine Model Parameter Load Capacity
-        max_num_params = self._mem_to_num_params()
+        self._set_config_param_counts()
 
         # Determine Layer Load Capacity
         self._update_memory_usage(update_on_dht=False)
@@ -147,13 +147,11 @@ class Server:
         self.chain.join_chain(
             server_info,
             max_num_layers=num_layers,
-            max_num_params=max_num_params,
+            output_layer_memory_tle=self.output_layer_memory_tle,
             num_total_layers=self.config.get("num_hidden_layers"),
             num_total_params=self.config.get("num_total_params"),
-            transformer_layer_params=self.config.get("transformer_layer_params"),
-            final_output_params=self.config.get("final_output_params")
-
         )
+        self.chain.update_output_layer_memory_tle(self.output_layer_memory_tle)
 
         # Metrics 
         self.inference_delay = 0.0
@@ -254,23 +252,22 @@ class Server:
         with open(self.model_path / "config.json", "r") as f:
             self.config = json.load(f)
 
-    def _mem_to_num_params(self) -> int:
+    def _set_config_param_counts(self) -> None:
         """
-        Calculates how many model parameters fit in the available Memory/VRAM
+        Calculates the transformer_layer_params, final_output_params, and num_total_params of the model and updates the config file
         """
         self._update_memory_usage(update_on_dht=False)
 
-        # Get the number of total model parameters from the model config 
-        # or add it if it doesnt exist
         total_params = self.config.get("num_total_params")
+        layer_params = self.config.get("transformer_layer_params")
+        final_output_params = self.config.get("final_output_params")
+        
         if total_params is None:
-            layer_params = self.config.get("transformer_layer_params")
             if layer_params is None:
                 layer_params = calculate_transformer_params(self.model_path)
                 update_config_layer_param_count(self.model_path, layer_params)
                 self._reload_config()
             
-            final_output_params = self.config.get("final_output_params")
             if final_output_params is None:
                 final_output_params = calculate_final_output_params(self.model_path)
                 update_config_final_output_param_count(self.model_path, final_output_params)
@@ -280,19 +277,19 @@ class Server:
             update_config_total_param_count(self.model_path, total_params)
             self._reload_config()
 
-        if self.device == "cuda":
-            available = self.available_vram_mb - RESERVED_MEM_MB
-        else:
-            available = self.available_memory_mb - RESERVED_MEM_MB
+        # Also set self.output_layer_memory_tle
+        if "head_dim" not in self.config:
+            self.config["head_dim"] = self.config["hidden_size"] // self.config["num_attention_heads"]
 
-        if available <= 0:
-            return 0
-        
         param_dtype = get_dtype_from_config(self.config)
         bytes_per_param = param_dtype.itemsize
 
-        max_num_params = available / (bytes_per_param / (1024 * 1024)) 
-        return min(max_num_params, total_params)
+        layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+        layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+
+        # Set the output layer's equivilance to a transformer layer in memory
+        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
 
 
     def _mem_to_num_layers(self) -> int:
@@ -312,13 +309,7 @@ class Server:
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
         layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
         layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
-
-        # Set the output layer's equivilance to a transformer layer in memory
-        final_output_params = self.config.get("final_output_params")
         
-        
-        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
-
         if self.device == "cuda":
             available = self.available_vram_mb - RESERVED_MEM_MB
         else:
@@ -327,7 +318,6 @@ class Server:
         if available <= 0:
             return 0
 
-        # max_num_layers = int(available // layer_mem_size_mb)
         max_num_layers = int(round(available / layer_mem_size_mb))
         return min(max_num_layers, self.config.get("num_hidden_layers"))
 
@@ -339,21 +329,19 @@ class Server:
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
-        max_num_params = self._mem_to_num_params()
+        max_num_layers = self._mem_to_num_layers()
 
         if num_layers > 0:
-            max_num_layers = self._mem_to_num_layers()
-
             if max_num_layers < num_layers:
                 return False
             
             if output_layer:
-                max_num_params -= num_layers * self.config.get("transformer_layer_params")
-                return max_num_params >= self.config.get("final_output_params")
+                max_num_layers -= num_layers
+                return max_num_layers >= self.output_layer_memory_tle
             
             return True
         
-        return max_num_params >= self.config.get("final_output_params")
+        return max_num_layers >= self.output_layer_memory_tle
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -899,7 +887,6 @@ class Server:
                 self.chain.repair(
                     layers_to_load,
                     replacement_info=self_info,
-                    # replacement_load_output_layer=dead_succ_output_loaded,
                     replacee_info=dead_successor_info,
                     replacee_was_tail=dead_succ_was_tail,
                 )
@@ -929,6 +916,7 @@ class Server:
                                 config=self.config,
                                 avail_mem=avail_mem,
                                 avail_vram=avail_vram,
+                                output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
                                 layers=orphaned_layers,
                                 output_layer=dead_succ_output_loaded
                             ):
@@ -1222,26 +1210,7 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
-                # If the TAIL doesn't have the final layer loaded the backup node can join the chain
-                # if (
-                #     not server_node.chain.get_all_layers_loaded()
-                #     and server_node.chain.get_chain_status() == ChainStatus.UNREADY
-                # ):
-                #     max_num_layers = server_node._mem_to_num_layers()
-                #     if max_num_layers > 0:
-                #         # Join chain
-                #         server_node.chain.join_chain(
-                #             self_info=server_node.chain.get_self_info(),
-                #             max_num_layers=server_node._mem_to_num_layers(),
-                #             max_num_params=server_node._mem_to_num_params(),
-                #             num_total_layers=server_node.config.get("num_hidden_layers"),
-                #             num_total_params=server_node.config.get("num_total_params"),
-                #             transformer_layer_params=server_node.config.get("transformer_layer_params"),
-                #             final_output_params=server_node.config.get("final_output_params")
-                #         )
-                #         server_node._load_llm()
-
-                # --- Backup Opportunistic Takeover---
+                # --- Backup Opportunistic Takeover ---
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
                 if weak_node_info and server_node.chain.get_chain_status() == ChainStatus.READY:
@@ -1270,7 +1239,7 @@ def serve():
                         )
                         server_node.successor_stub = None
 
-            # ---Active Node Successor Opportunistic Takeover---
+            # --- Active Node Successor Opportunistic Takeover ---
             if server_node.chain.get_chain_status() == ChainStatus.READY:
                 succ_info = server_node.chain.get_successor_info()
                 if not succ_info:

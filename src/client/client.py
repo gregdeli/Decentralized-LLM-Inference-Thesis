@@ -279,6 +279,7 @@ class Client:
                     output_layer=dead_head_info.get("output_layer_loaded"),
                     avail_mem=head_succ_avail_mem,
                     avail_vram=head_succ_avail_vram,
+                    output_layer_memory_tle=head_succ_info.get("output_layer_memory_tle")
                 ):
                     new_layers = (orphaned_layers[0], head_succ_info.get("layers")[1])
                     self.chain.repair(
@@ -326,7 +327,9 @@ class Client:
                             config=self.config,
                             avail_mem=backup_avail_mem,
                             avail_vram=backup_avail_vram,
-                            layers=orphaned_layers
+                            output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
+                            layers=orphaned_layers,
+                            output_layer=dead_head_info.get("output_layer_loaded"),
                         ):
                             self.chain.repair(
                                 orphaned_layers,
