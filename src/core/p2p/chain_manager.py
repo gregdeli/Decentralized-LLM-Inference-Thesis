@@ -25,10 +25,10 @@ THROUGHPUT_KEY = "chain_throughput"
 
 # EXPIRATION_S = 30.0
 EXPIRATION_S = 7200.0
-THROUGHPUT_EXPIRATION_S = 7200.0
 # HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
 HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
+THROUGHPUT_EXPIRATION_S = 7200.0
 
 DIGITS_SHOW = 12
 
@@ -795,8 +795,8 @@ class ChainManager:
                         current_chain_status = self.get_chain_status()
                         if current_chain_status in (ChainStatus.UNREADY, ChainStatus.RUNNING):
                             self.update_chain_status(ChainStatus.READY)
-                        else:
-                            self.update_chain_status(current_chain_status)
+                        # else:
+                        #     self.update_chain_status(current_chain_status)
                         break
 
                     # If the tail doesn't have the final layer loaded

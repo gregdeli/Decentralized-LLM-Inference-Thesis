@@ -112,13 +112,13 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         self.server_node.chain.join_chain(
             self_info=self.server_node.chain.get_self_info(),
             max_num_layers=self.server_node._mem_to_num_layers(),
-            max_num_params=self.server_node._mem_to_num_params(),
+            output_layer_memory_tle=self.server_node.output_layer_memory_tle,
             num_total_layers=self.server_node.config.get("num_hidden_layers"),
-            num_total_params=self.server_node.config.get("num_total_params"),
-            transformer_layer_params=self.server_node.config.get("transformer_layer_params"),
-            final_output_params=self.server_node.config.get("final_output_params")
+            num_total_params=self.server_node.config.get("num_total_params")
         )
 
+        # threading.Thread(target=self.server_node._load_llm, daemon=True).start()
         self.server_node._load_llm()
+        self.server_node._connect_to_successor()
 
         return nodeservice_pb2.Empty()

@@ -292,7 +292,7 @@ class Server:
         self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
 
 
-    def _mem_to_num_layers(self) -> int:
+    def _mem_to_num_layers(self, round_it: bool = True) -> int:
         """
         Calculates how many transformer layers fit in the available Memory/VRAM taking into account the KV Cache 
         """
@@ -318,7 +318,10 @@ class Server:
         if available <= 0:
             return 0
 
-        max_num_layers = int(round(available / layer_mem_size_mb))
+        max_num_layers = available / layer_mem_size_mb
+        if round_it:
+            max_num_layers = int(round(max_num_layers))
+
         return min(max_num_layers, self.config.get("num_hidden_layers"))
 
     def _can_load(
@@ -754,6 +757,7 @@ class Server:
         num_total_layers = self.config.get("num_hidden_layers")
 
         tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
+        logger.info(f"Tail Output Temporal TLE: {tail_output_temporal_tle}")
 
         # Calculate share
         if total_system_rate > 0:
@@ -768,7 +772,7 @@ class Server:
         if self.model.output_layer_loaded:
             current_num_layers += self.output_layer_memory_tle
 
-        max_extra_num_layers = self._mem_to_num_layers()
+        max_extra_num_layers = self._mem_to_num_layers(round_it=False)
 
         max_num_layers = current_num_layers + max_extra_num_layers
         logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
@@ -778,7 +782,8 @@ class Server:
 
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
-        if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
+        # if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
+        if ideal_tle_count > max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
         

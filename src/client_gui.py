@@ -58,7 +58,7 @@ state = AppState()
 # GPRC_PORT = 5001
 
 
-async def initialize_client():
+def _sync_initialize_client():
     load_dotenv()
 
     model_path_str = os.getenv("MODEL_PATH")
@@ -85,13 +85,20 @@ async def initialize_client():
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
 
-    state.client = Client(
+    return Client(
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
     )
-    logger.info("Client initialized.")
+    # logger.info("Client initialized.")
+
+async def initialize_client():
+    try:
+        state.client = await run.io_bound(_sync_initialize_client)
+        logger.info("Client initialized.")
+    except Exception as e:
+        logger.error(f"Error initializing client: {e}")
 
 
 # ----- UI Components -----
