@@ -758,11 +758,13 @@ class Server:
 
         tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
         logger.info(f"Tail Output Temporal TLE: {tail_output_temporal_tle}")
+        # num_total_tle = num_total_layers + tail_output_temporal_tle
+        num_total_tle = num_total_layers + self.output_layer_memory_tle
 
         # Calculate share
         if total_system_rate > 0:
             # Epic equation
-            ideal_tle_count = (num_total_layers + tail_output_temporal_tle) * (self.processing_rate / total_system_rate)
+            ideal_tle_count = num_total_tle * (self.processing_rate / total_system_rate)
         else:
             ideal_tle_count = 0
 
@@ -785,7 +787,7 @@ class Server:
         # if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
         if ideal_tle_count > max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
             remaining_rate = total_system_rate - self.processing_rate
-            effective_rate = max_num_layers * remaining_rate / ((num_total_layers + tail_output_temporal_tle) - max_num_layers)
+            effective_rate = max_num_layers * remaining_rate / ((num_total_tle) - max_num_layers)
         
             logger.warning(f"Memory limit hit. Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
             self.processing_rate = effective_rate
