@@ -23,10 +23,10 @@ NUM_CLIENTS_KEY = "num_clients"
 TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput"
 
-# EXPIRATION_S = 30.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 15.0
+EXPIRATION_S = 30.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 
@@ -115,8 +115,8 @@ class ChainManager:
 
         self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
 
-        if not self.get_backup_nodes():
-            self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
+        # if not self.get_backup_nodes():
+        #     self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
         
         if not self.get_client_nodes():
             self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
@@ -152,9 +152,10 @@ class ChainManager:
             self_info["is_backup"] = False
 
             # Remove the node from the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(self.node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            # backup_nodes = self.get_backup_nodes()
+            # backup_nodes.remove(self.node_id)
+            # self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            self.dht.store(key=BACKUPS_KEY, subkey=self.node_id, value=False, expiration_s=EXPIRATION_S)
 
         self._update_server_info(self.node_id, self_info)
 
@@ -235,9 +236,10 @@ class ChainManager:
             self_info["is_backup"] = False
 
             # Remove the node from the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(self.node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            # backup_nodes = self.get_backup_nodes()
+            # backup_nodes.remove(self.node_id)
+            # self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            self.dht.store(key=BACKUPS_KEY, subkey=self.node_id, value=False, expiration_s=EXPIRATION_S)
 
         self._update_server_info(self.node_id, self_info)
 
@@ -307,7 +309,16 @@ class ChainManager:
         return self.dht.get(ALL_LAYERS_KEY)
 
     def get_backup_nodes(self) -> Optional[List[str]]:
-        return self.dht.get(BACKUPS_KEY)
+        backups_dict = self.dht.get(BACKUPS_KEY)
+        if backups_dict is None:
+            return None
+
+        backups_list = []
+        for backup_id, is_backup in backups_dict.items():
+            if is_backup.value:
+                backups_list.append(backup_id)
+        
+        return backups_list
 
     def get_client_nodes(self) -> Optional[List[str]]:
         return self.dht.get(CLIENTS_KEY)
@@ -390,7 +401,7 @@ class ChainManager:
         total_layers = self.dht.get(TOTAL_LAYERS_KEY)
         total_params = self.dht.get(TOTAL_PARAMS_KEY)
         all_loaded = self.dht.get(ALL_LAYERS_KEY)
-        backup_nodes = self.dht.get(BACKUPS_KEY)
+        backup_nodes = self.get_backup_nodes()
         current_status = self.get_chain_status()
         current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
         client_nodes = self.get_client_nodes()
@@ -686,10 +697,12 @@ class ChainManager:
         # if current_status:
         #     self.update_chain_status(current_status)
 
-        # Republish backup nodes list
-        backup_nodes = self.get_backup_nodes()
-        if backup_nodes is not None:
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+        # Republish backup nodes 
+        # backup_nodes = self.get_backup_nodes()
+        # if backup_nodes is not None:
+        #     self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+        if self.is_backup():
+            self.dht.store(key=BACKUPS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
 
         # If this node is the head
         if self.is_head():
@@ -911,9 +924,9 @@ class ChainManager:
         """Turn an active server node into a backup."""
         if node_id:
             server_info = self.get_server_info(node_id)
-            node_id = server_info.get("id")
         else:
             node_id = server_info.get("id")
+        
         server_info["is_backup"] = True
         server_info["successor"] = None
         server_info["layers"] = None
@@ -923,9 +936,10 @@ class ChainManager:
 
         self._update_server_info(node_id, server_info)
 
-        backups_list = self.get_backup_nodes()
-        backups_list.append(node_id)
-        self.dht.store(BACKUPS_KEY, backups_list, EXPIRATION_S)
+        # backups_list = self.get_backup_nodes()
+        # backups_list.append(node_id)
+        # self.dht.store(BACKUPS_KEY, backups_list, EXPIRATION_S)
+        self.dht.store(key=BACKUPS_KEY, subkey=node_id, value=True, expiration_s=EXPIRATION_S)
 
         logger.info(
             f"Node: {node_id[:DIGITS_SHOW]} was removed from the active chain and became a backup."
@@ -943,9 +957,10 @@ class ChainManager:
             # self._update_server_info(backup_node_id, backup_info)
 
             # Remove the node from the backup_nodes list
-            backup_nodes = self.get_backup_nodes()
-            backup_nodes.remove(backup_node_id)
-            self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            # backup_nodes = self.get_backup_nodes()
+            # backup_nodes.remove(backup_node_id)
+            # self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
+            self.dht.store(key=BACKUPS_KEY, subkey=backup_node_id, value=False, expiration_s=EXPIRATION_S)
             return
 
         logger.info(f"Node: {backup_node_id[:DIGITS_SHOW]} was not a backup")

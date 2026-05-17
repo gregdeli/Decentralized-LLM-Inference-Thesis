@@ -785,7 +785,7 @@ class Server:
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
         # if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
-        if ideal_tle_count > max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
+        if round(ideal_tle_count, 2) > round(max_num_layers, 2) and not (self.chain.is_head() and self.chain.is_tail()):
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_tle) - max_num_layers)
         
