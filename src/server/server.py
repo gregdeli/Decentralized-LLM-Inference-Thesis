@@ -454,6 +454,7 @@ class Server:
             time.sleep(profiling_duration_s)
             other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
 
+        self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.PROFILING)
 
         # ------ Transformer Layer Profiling ------
@@ -540,7 +541,10 @@ class Server:
         
         self._update_memory_usage()
 
-        self.chain.update_chain_status(ChainStatus.UNREADY)
+        if self.chain.get_all_layers_loaded():
+            self.chain.update_chain_status(ChainStatus.READY)
+        else:    
+            self.chain.update_chain_status(ChainStatus.UNREADY)
 
     @torch.no_grad()
     def run_local_layers(
@@ -555,7 +559,7 @@ class Server:
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
         # Set chain status
-        self.chain.update_chain_status(ChainStatus.RUNNING)
+        # self.chain.update_chain_status(ChainStatus.RUNNING)
 
         if not self.llm:
             return nodeservice_pb2.InferenceResponse(
@@ -578,7 +582,7 @@ class Server:
                 nodeservice_pb2.InferenceResponse(error_message="KV Caches have been reallocated!")
             )
             return
-        
+
         # Set KV Cache and Process Layers
         with self._inference_lock:
             self._ensure_kv_cache(client_id=response_address)
@@ -611,13 +615,13 @@ class Server:
         h = h.cpu()
 
         # To prevent nonesense output when a node fails during inference
-        if not self.chain.get_all_layers_loaded():
-            self.chain.update_chain_status(ChainStatus.UNREADY)
-            self._connect_to_client(response_address)
-            self.client_stub.ReceiveResponse(
-                nodeservice_pb2.InferenceResponse(error_message="Inference requested without all the layers being loaded!")
-            )
-            return
+        # if not self.chain.get_all_layers_loaded():
+        #     # self.chain.update_chain_status(ChainStatus.UNREADY)
+        #     self._connect_to_client(response_address)
+        #     self.client_stub.ReceiveResponse(
+        #         nodeservice_pb2.InferenceResponse(error_message="Inference requested without all the layers being loaded!")
+        #     )
+        #     return
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail() and self.chain.get_output_layer_loaded():
@@ -647,7 +651,7 @@ class Server:
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
-
+        
             return 
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
@@ -872,7 +876,9 @@ class Server:
             dead_succ_output_loaded = dead_successor_info.get("output_layer_loaded", False)
 
             self.successor_stub = None
+
             self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self.chain.become_chain_leader()
             self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             # Repair
@@ -902,6 +908,8 @@ class Server:
 
                 if self.chain.get_all_layers_loaded():
                     self.chain.update_chain_status(ChainStatus.READY)
+                else:
+                    self.chain.update_chain_status(ChainStatus.UNREADY)
                 return
 
             # Else, try to find a backup node to take over
@@ -943,6 +951,8 @@ class Server:
 
                                     if self.chain.get_all_layers_loaded():
                                         self.chain.update_chain_status(ChainStatus.READY)
+                                    else:
+                                        self.chain.update_chain_status(ChainStatus.UNREADY)
                                     return
                                 except grpc.RpcError as e:
                                     logger.error(
@@ -957,9 +967,10 @@ class Server:
 
                 # If no backup node is found or the backup cant load the orphaned layers, set this node as the TAIL
                 self.chain.update_chain_tail(self.chain.node_id)
+                self.chain.update_is_tail(True)
                 self.chain.update_successor(new_successor_data=None)
-                self.chain.update_all_layers_loaded()
-                self.chain.update_chain_status(ChainStatus.UNREADY)
+                # self.chain.update_all_layers_loaded()
+                
 
                 # Also make every node that succeeded the dead node a backup
                 succ_data = dead_successor_info.get("successor")
@@ -1008,6 +1019,11 @@ class Server:
                                 f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                             )
                 
+                if self.chain.get_all_layers_loaded():
+                    self.chain.update_chain_status(ChainStatus.READY)
+                else:
+                    self.chain.update_chain_status(ChainStatus.UNREADY)
+                
 
     def opportunistic_takeover(
         self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
@@ -1019,8 +1035,6 @@ class Server:
         3. It sends a grpc request to its predecessor to update its successor_stub attribute.
         3. It sends a grpc request to the weak node, to unload its layers.
         """
-        self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-        self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
         layers_to_takeover = weak_node_info.get("layers")
         weak_node_output_layer_loaded = weak_node_info.get("output_layer_loaded", False)
@@ -1032,6 +1046,10 @@ class Server:
         )
 
         if self._can_load(layers=layers_to_takeover, output_layer=weak_node_output_layer_loaded):
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+
+            self.chain.become_chain_leader()
+            self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
             if self.llm is not None and self.llm.layers_loaded is not None:
                 new_layers = (self.llm.layers_loaded[0], layers_to_takeover[1]) if layers_to_takeover else self.llm.layers_loaded
@@ -1295,7 +1313,10 @@ def serve():
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
     # Profile the node to get processing rate measurements
-    server_node._profile_node(dummy_seq_length=50, profiling_runs=50, profiling_duration_s=PROFILING_DURATION)
+    profile_node_str = os.getenv("PROFILE")
+    profile_node = int(profile_node_str) if profile_node_str is not None else 1
+    if profile_node:
+        server_node._profile_node(dummy_seq_length=50, profiling_runs=50, profiling_duration_s=PROFILING_DURATION)
 
     # Load the server's assigned layers
     if not server_node.chain.is_backup():

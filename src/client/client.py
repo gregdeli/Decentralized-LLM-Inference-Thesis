@@ -241,8 +241,6 @@ class Client:
                 return
             
             self.head_server_stub = None
-            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-            self.chain.update_chain_status(ChainStatus.REPAIRING)
             
             # Only one client has to do the repair
             client_nodes = self.chain.get_client_nodes()
@@ -255,6 +253,10 @@ class Client:
                 
                 self._connect_to_head()
                 return
+
+            self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+            self.chain.become_chain_leader()
+            self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             head_succ_info = None
             head_succ_data = dead_head_info.get("successor")
@@ -398,6 +400,11 @@ class Client:
                         logger.error(
                             f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                         )
+            
+            if self.chain.get_all_layers_loaded():
+                self.chain.update_chain_status(ChainStatus.READY)
+            else:
+                self.chain.update_chain_status(ChainStatus.UNREADY)
 
             
 
@@ -406,10 +413,13 @@ class Client:
         Triggers the layer reallocation process starting from the HEAD.
         """
         # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation
+        # self.chain.update_chain_status(ChainStatus.REALLOCATING)
+        self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
         requires_restart = True
         while requires_restart:
+            self.chain.become_chain_leader()
             self.total_rate = self.chain.gather_total_rate()
 
             if self.total_rate <= 0:
@@ -450,6 +460,11 @@ class Client:
                 logger.error(f"Failed to trigger reallocation: {e}")
                 self.chain.update_chain_status(ChainStatus.UNREADY)
                 break
+        
+        if self.chain.get_all_layers_loaded():
+            self.chain.update_chain_status(ChainStatus.READY)
+        else:
+            self.chain.update_chain_status(ChainStatus.UNREADY)
 
     @torch.no_grad()
     def generate(
@@ -599,6 +614,9 @@ class Client:
         top_p: float = 0.9,
         time_it: bool = False,
     ) -> Iterator[str]:
+        self.chain.become_chain_leader()
+        self.chain.update_chain_status(ChainStatus.RUNNING)
+
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
@@ -606,6 +624,8 @@ class Client:
         start_time = time.perf_counter()
         tokens_generated = 0
         for i in range(max_new_tokens):
+            self.chain.become_chain_leader()
+
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
             self.initial_inference_delay = time.perf_counter() - start_token_gen
@@ -639,6 +659,7 @@ class Client:
                     self.head_server_stub = None
 
                 yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
+                self.chain.update_chain_status(ChainStatus.UNREADY)
                 return
             
 
@@ -647,10 +668,11 @@ class Client:
 
             if not is_set:
                 logger.error("Timeout waiting for response from Tail server.")
-                if self.chain.get_all_layers_loaded():
-                    self.chain.update_chain_status(ChainStatus.READY)
+                # if self.chain.get_all_layers_loaded():
+                #     self.chain.update_chain_status(ChainStatus.READY)
 
                 yield f'<br><span style="color:red">Error: Timeout'
+                self.chain.update_chain_status(ChainStatus.UNREADY)
                 return
 
             self.inference_response_event.clear()
@@ -661,10 +683,11 @@ class Client:
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
 
-                if self.chain.get_all_layers_loaded():
-                    self.chain.update_chain_status(ChainStatus.READY)
+                # if self.chain.get_all_layers_loaded():
+                #     self.chain.update_chain_status(ChainStatus.READY)
 
                 yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
+                self.chain.update_chain_status(ChainStatus.UNREADY)
                 return
 
             # Capture the TOTAL PROCESSING RATE
@@ -703,4 +726,8 @@ class Client:
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
         self.last_inference_stats = {"num_tokens_generated": tokens_generated, "latency": elapsed_time, "throughput": throughput}
-        self.chain.update_chain_status(ChainStatus.READY)
+        # self.chain.update_chain_status(ChainStatus.READY)
+        if self.chain.get_all_layers_loaded():
+            self.chain.update_chain_status(ChainStatus.READY)
+        else:
+            self.chain.update_chain_status(ChainStatus.UNREADY)

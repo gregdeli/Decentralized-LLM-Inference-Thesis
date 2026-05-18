@@ -469,6 +469,9 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
 
 def refresh_client_stats(client_stats_container: ui.column):
+    if state.client is None:
+        return
+
     client_stats_container.clear()
     with client_stats_container:
         ui.label("Client").classes("text-lg font-bold")
@@ -502,6 +505,9 @@ def clear_chain_throughput(chain_throughput_container: ui.column):
         ui.plotly(state.ui.throughput_fig).classes('w-full')
 
 async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_btn: ui.button):
+    if state.client is None:
+        return
+
     chain_throughput = await run.io_bound(state.client.chain.get_chain_throughput)
 
     if not chain_throughput:

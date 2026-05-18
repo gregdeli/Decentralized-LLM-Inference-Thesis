@@ -10,6 +10,7 @@ services:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
       - NUM_LAYERS=8
+      - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
@@ -38,10 +39,11 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=10
+      # - NUM_LAYERS=3
+      - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-A:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-A:5001
     volumes:
       - ./models:/models:ro 
     deploy:
@@ -69,9 +71,10 @@ services:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
       # - NUM_LAYERS=18
+      - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-B:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-B:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -101,9 +104,10 @@ services:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
       # - NUM_LAYERS=4
+      - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-C:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-C:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -131,9 +135,10 @@ services:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
       # - NUM_LAYERS=4
+      - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-D:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-D:5001
     volumes:
       - ./models:/models:ro
     deploy:

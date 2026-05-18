@@ -13,4 +13,4 @@ PROFILING_DURATION = 4 # seconds
 """----- GRPC Constants -----"""
 GRPC_MAX_MSG_SIZE = 100 * 1024 * 1024  # 100 MB
 
-GPRC_MAX_WORKERS = 2
+GPRC_MAX_WORKERS = 4
