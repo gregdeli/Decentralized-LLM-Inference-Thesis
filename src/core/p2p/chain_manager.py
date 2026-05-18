@@ -1,11 +1,19 @@
 import logging
 from typing import Dict, Any, Optional, Tuple, Union, List
 import time
+import random
+from functools import partial
+import grpc
 from enum import Enum
+
 from hivemind.utils import ValueWithExpiration
+from hivemind.dht import DHTID, DHT, DHTNode
 
 from core.constants import *
 from core.p2p.dht_manager import DHTManager
+
+from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
+from core.remote.utils import create_grpc_channel
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +47,8 @@ STATUS_KEY = "chain_status"
 class ChainStatus(str, Enum):
     READY = "READY"  # all layers loaded is true
     UNREADY = "UNREADY"  # not all layers loaded
-    IDLE = "IDLE"
-    RUNNING = "RUNNING"  # while inference is running
+    RUNNING = "RUNNING"
+    NONE = "NONE"  # while inference is running
     PROFILING = "PROFILING"
     REPAIRING = "REPAIRING"
     REALLOCATING = "REALLOCATING"
@@ -73,6 +81,14 @@ class ChainManager:
           num_total_layers: The number of total Transformer Layers of the LLM.
         :return: The updated info dictionary for this server.
         """
+        # chain_leader = self.get_chain_leader()
+        # while chain_leader is None or chain_leader != self.node_id:
+        #     sleep_time = random.uniform(0.5, 3.0)
+        #     time.sleep(sleep_time)
+        #     logger.info(f"A different chain leader is joining or there is no chain leader. Sleeping for {sleep_time} seconds...")
+        #     # self.become_chain_leader()
+        #     self.dht.store(LEADER_KEY, self.node_id, EXPIRATION_S)
+
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} attempting to join the chain...")
         head_id = self.dht.get(HEAD_KEY)
 
@@ -97,6 +113,9 @@ class ChainManager:
             )
 
         logger.info(f"Self Info: {self.get_self_info()}")
+        
+        # Unset the chain leader so that another node can join
+        # self.dht.store(LEADER_KEY, None, EXPIRATION_S)
 
     def _form_initial_chain(
         self, 
@@ -107,12 +126,9 @@ class ChainManager:
         num_total_params: int,
     ):
         """Logic for the first server to establish the chain."""
-        # logger.info(f"store(\"{HEAD_KEY}\":{self.node_id})")
         self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
 
-        # logger.info(f"store(\"{TAIL_KEY}\":{self.node_id})")
         self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
-        self_info["is_tail"] = True
 
         self.dht.store(TOTAL_LAYERS_KEY, num_total_layers, EXPIRATION_S)
 
@@ -186,9 +202,6 @@ class ChainManager:
         if not tail_info:
             raise RuntimeError(f"Could not retrieve info for tail node {tail_id}.")
 
-        # Become the new TAIL
-        self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
-
         # Make it a Backup Node, if all layers loaded
         if tail_info.get("output_layer_loaded") or tail_info.get("load_output_layer"):
             logger.warning("All the layers have already been loaded on the the previous tail")
@@ -230,7 +243,6 @@ class ChainManager:
 
         # Update the old tail to point to the new server node
         tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
-        tail_info["is_tail"] = False
         self._update_server_info(tail_id, tail_info)
         logger.info(
             f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}."
@@ -250,14 +262,45 @@ class ChainManager:
             # self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
             self.dht.store(key=BACKUPS_KEY, subkey=self.node_id, value=False, expiration_s=EXPIRATION_S)
 
-        self_info["is_tail"] = True
 
         self._update_server_info(self.node_id, self_info)
 
-        # self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
+        # Become the new TAIL
+        self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
+
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} has joined as the new tail.")
 
         logger.info(f"Previous Tail Info: {tail_info}")
+
+    @staticmethod
+    async def _find_random_server(
+        dht: DHT, 
+        node: DHTNode, 
+        client_nodes: List[str], 
+        max_attempts: int
+    ) -> Optional[str]:
+        """
+        Static coroutine executed inside the DHT background process.
+        """
+        for _ in range(max_attempts):
+            random_target = DHTID.generate()
+
+            result = await node.find_nearest_nodes(
+                queries=[random_target],
+                k_nearest=5,
+                exclude_self=True
+            )
+
+            if random_target in result and result[random_target]:
+                # Extract peer IDs from the result dictionary
+                nearest_peers = list(result[random_target].values())
+
+                for peer_id in nearest_peers:
+                    peer_id_str = peer_id.to_string()
+
+                    if peer_id_str not in client_nodes:
+                        return peer_id_str
+        return None
 
     # ---- Getters ----
 
@@ -280,7 +323,7 @@ class ChainManager:
             except ValueError:
                 logger.error(f"Unknown status '{status_value}' found on DHT.")
                 return None
-        return ChainStatus("IDLE")
+        return ChainStatus("NONE")
 
     def get_head_server_info(self) -> Optional[Dict[str, Any]]:
         """
@@ -341,6 +384,24 @@ class ChainManager:
         chain_throughput = self.dht.get(THROUGHPUT_KEY)
         return chain_throughput
     
+    def get_random_server_node_id(self, max_attempts: int = 5) -> Optional[str]:
+        """
+        Selects a random server node (non-client) from the DHT
+        """
+        client_nodes = self.get_client_nodes()
+        if client_nodes is None:
+            client_nodes = []
+
+        coro = partial(
+            self._find_random_server,
+            client_nodes=client_nodes,
+            max_attempts=max_attempts
+        )
+        
+        random_server_id = self.dht.dht.run_coroutine(coro)
+
+        return random_server_id
+        
 
     # ----- Server Info Subkeys -----
 
@@ -587,7 +648,6 @@ class ChainManager:
             self.dht.store(HEAD_KEY, replacement_node_id, EXPIRATION_S)
 
         if replacee_was_tail:
-            replacement_info["is_tail"] = True
             self.dht.store(TAIL_KEY, replacement_node_id, EXPIRATION_S)
 
         # If the replacement node was a backup make it active
@@ -685,8 +745,8 @@ class ChainManager:
         self.dht.store(server_key, self_info, EXPIRATION_S)
 
         # Set the chain leader 
-        if self.dht.get(LEADER_KEY) is None:
-            self.become_chain_leader()
+        # if self.dht.get(LEADER_KEY) is None:
+        self.become_chain_leader()
 
         # Republish the num_total_layers key
         num_total_layers = self._get_num_total_layers()
@@ -714,7 +774,7 @@ class ChainManager:
         # Republish chain_status
         current_status = self.get_chain_status()
         if current_status:
-            if current_status in (ChainStatus.UNREADY, ChainStatus.READY) and self.get_all_layers_loaded():
+            if current_status in (ChainStatus.UNREADY, ChainStatus.READY, ChainStatus.NONE) and self.get_all_layers_loaded():
                 self.update_chain_status(ChainStatus.READY)
             # else:
             #     self.update_chain_status(current_status)
@@ -730,12 +790,12 @@ class ChainManager:
         if self.is_head():
             # Republish the head key
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
+            logger.info("HEAD Node Key republished.")
 
         # If this node is the tail, republish the tail key
-        # if self.is_tail():
-        if self_info.get("is_tail"):
+        if self.is_tail():
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
-            logger.info("Tail Node republished.")
+            logger.info("HEAD Node Key republished.")
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
 
@@ -755,9 +815,6 @@ class ChainManager:
 
 
     # ---- Global key update methods ----
-    def become_chain_leader(self):
-        self.dht.store(LEADER_KEY, self.node_id, EXPIRATION_S)
-        logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the leader of the chain.")
 
     def increment_num_clients(self):
         """Called by a client when in joins the DHT"""
@@ -788,11 +845,56 @@ class ChainManager:
             client_nodes.append(client_node_id)
         
         self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+    
+    def become_chain_leader(self, force: bool = False):
+        logger.info("Attempting to become the chain leader...")
+        if self.get_chain_leader() is None or force:
+            self.dht.store(LEADER_KEY, self.node_id, EXPIRATION_S)
+            logger.info(f"Node {self.node_id[:DIGITS_SHOW]} is now the leader of the chain.")
+            return 
+        logger.info(f"A node is already the chain leader.")
 
     def update_chain_status(self, status: ChainStatus):
-        if self.dht.get(LEADER_KEY) == self.node_id:
+        logger.info(f"Attempting to update chain status to {status.value}...")
+        leader_id = self.dht.get(LEADER_KEY)
+        if leader_id is not None and leader_id == self.node_id:
             self.dht.store(STATUS_KEY, status.value, 2 * EXPIRATION_S)
             logger.info(f"Chain status updated to: {status.name}")
+            return
+        elif leader_id is None:
+            logger.info("No chain leader found.")
+            if not self.is_client:
+                self.become_chain_leader(force=True)
+                self.update_chain_status(status)
+            return            
+        else:
+            # If a different node is the chain leader send an update chain status request
+            logger.info("A different node is the chain leader. Sending a request to update the chain status...")
+            leader_info = self.get_server_info(leader_id)
+            leader_addr = leader_info.get("address")
+            
+            if leader_info is not None and leader_addr is not None:
+                try:
+                    channel = create_grpc_channel(leader_addr)
+                    leader_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+
+                    request = nodeservice_pb2.UpdateChainStatusRequest(status=status.value)
+                    leader_stub.UpdateChainStatus(request, timeout=5)
+                    return
+                except grpc.RpcError as e:
+                    if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                        logger.warning("Leader failure during Update Chain Status request.")
+            else:
+                logger.info("Leader address not foud.")
+            
+            if not self.is_client:
+                logger.info("Becoming chain leader...")
+                self.become_chain_leader(force=True)
+                self.update_chain_status(status)
+            else:
+                server_id = self.get_random_server_node_id()
+                self.dht.store(LEADER_KEY, server_id, EXPIRATION_S)
+                self.update_chain_status(status)
 
     def update_chain_tail(self, node_id: str):
         """Updates the chain_tail key with the given node id"""
@@ -818,6 +920,13 @@ class ChainManager:
             server_info = self.get_server_info(current_node_id)
             if not server_info:
                 break
+            
+            # Check if the HEAD is assigned the first layer
+            if self.node_is_head(current_node_id):
+                head_layers = server_info.get("layers")
+                if head_layers[0] != 0:
+                    self.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
+                    return
 
             layers_loaded = server_info.get("layers_loaded", False)
             output_layer_loaded = server_info.get("output_layer_loaded", False)
@@ -870,11 +979,6 @@ class ChainManager:
         """Helper that updates the server_info_(node_id) key of a specific node."""
         server_key = f"{SERVER_INFO_PREFIX}{node_id}"
         self.dht.store(server_key, updated_server_info, EXPIRATION_S)
-
-    def update_is_tail(self, is_tail: bool):
-        self_info = self.get_self_info()
-        self_info["is_tail"] = is_tail
-        self._update_server_info(self.node_id, self_info)
 
     def update_layers(self, new_layers: Tuple[int, int]):
         self_info = self.get_self_info()

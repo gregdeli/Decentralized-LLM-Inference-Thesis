@@ -11,6 +11,8 @@ from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import request_to_tensor
 from core.constants import GLOBAL_MAX_SEQ_LEN
 
+from core.p2p.chain_manager import ChainStatus
+
 if TYPE_CHECKING:
     from .server import Server
 
@@ -120,5 +122,12 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # threading.Thread(target=self.server_node._load_llm, daemon=True).start()
         self.server_node._load_llm()
         self.server_node._connect_to_successor()
+
+        return nodeservice_pb2.Empty()
+    
+    def UpdateChainStatus(self, request, context):
+        status_str = request.status
+        chain_status = ChainStatus(status_str)
+        self.server_node.chain.update_chain_status(chain_status)
 
         return nodeservice_pb2.Empty()

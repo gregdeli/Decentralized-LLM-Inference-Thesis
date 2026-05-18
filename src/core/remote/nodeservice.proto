@@ -31,6 +31,9 @@ service NodeService {
 
   // Make a node join the Active Chain
   rpc JoinChain(Empty) returns (Empty) {}
+
+  // Make the chain leader update the chain status
+  rpc UpdateChainStatus(UpdateChainStatusRequest) returns (Empty) {}
 }
 
 // The service definition for a client node that receives inference responses form the TAIL node.
@@ -92,5 +95,9 @@ message ReallocateResponse {
 message RemoveClientKVCacheRequest {
   string client_id = 1; // The client's address
   int64 new_max_seq_length = 2;
+}
+
+message UpdateChainStatusRequest {
+  string status = 1;
 }
 

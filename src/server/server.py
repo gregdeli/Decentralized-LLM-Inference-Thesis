@@ -142,7 +142,11 @@ class Server:
             "address": grpc_addr,
             "hostname": socket.gethostname(),
             "processing_rate": 0.0,
+            "is_client": False
         }
+
+        # Become the chain leader to join the chain 
+        # self.chain.become_chain_leader()
 
         self.chain.join_chain(
             server_info,
@@ -446,7 +450,7 @@ class Server:
     ):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
 
-        time.sleep(random.uniform(0.5, 3.0))
+        # time.sleep(random.uniform(0.5, 3.0))
 
         other_node_profiling =  self.chain.get_chain_status() == ChainStatus.PROFILING
         while other_node_profiling:
@@ -454,7 +458,7 @@ class Server:
             time.sleep(profiling_duration_s)
             other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
 
-        self.chain.become_chain_leader()
+        # self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.PROFILING)
 
         # ------ Transformer Layer Profiling ------
@@ -967,7 +971,6 @@ class Server:
 
                 # If no backup node is found or the backup cant load the orphaned layers, set this node as the TAIL
                 self.chain.update_chain_tail(self.chain.node_id)
-                self.chain.update_is_tail(True)
                 self.chain.update_successor(new_successor_data=None)
                 # self.chain.update_all_layers_loaded()
                 
@@ -1245,7 +1248,7 @@ def serve():
                 continue
 
             # Perform the health check on the successor
-            if server_node.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY):
+            if server_node.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY, ChainStatus.NONE):
                 try:
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:

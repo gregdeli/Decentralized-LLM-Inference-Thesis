@@ -43,16 +43,16 @@ services:
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-A:5001
+      - BOOTSTRAP_NODE_ADDR=worker-A:5001
     volumes:
       - ./models:/models:ro 
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 5G # 2.2
           # cpus: '1.0'
@@ -74,7 +74,7 @@ services:
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-B:5001
+      - BOOTSTRAP_NODE_ADDR=worker-B:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -107,7 +107,7 @@ services:
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-C:5001
+      - BOOTSTRAP_NODE_ADDR=worker-C:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -138,7 +138,7 @@ services:
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-D:5001
+      - BOOTSTRAP_NODE_ADDR=worker-D:5001
     volumes:
       - ./models:/models:ro
     deploy:

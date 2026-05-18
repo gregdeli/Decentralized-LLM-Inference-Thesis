@@ -268,8 +268,10 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
 
         # Global Keys
         if "total_params" in state.ui.global_labels:
+            total_params = chain_info.get(TOTAL_PARAMS_KEY)
+            total_params = round(total_params / 1000000000, 2) if total_params is not None else None
             state.ui.global_labels["total_params"].text = (
-                f"Total Params: {chain_info.get(TOTAL_PARAMS_KEY) / 1000000000:.2f}B"
+                f"Total Params: {total_params}B"
             )
 
         if "total_layers" in state.ui.global_labels:

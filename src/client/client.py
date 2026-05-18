@@ -255,7 +255,7 @@ class Client:
                 return
 
             self.chain.dht.store(ALL_LAYERS_KEY, False, EXPIRATION_S)
-            self.chain.become_chain_leader()
+            # self.chain.become_chain_leader()
             self.chain.update_chain_status(ChainStatus.REPAIRING)
 
             head_succ_info = None
@@ -384,6 +384,7 @@ class Client:
             logger.info(f"Attempting to rebuild the chain with backup nodes...")
             backup_nodes = self.chain.get_backup_nodes()
             if backup_nodes:
+                self.chain.update_chain_status(ChainStatus.REPAIRING)
                 # Find backup node with enough memory
                 for backup_id in backup_nodes:
                     backup_info = self.chain.get_server_info(backup_id)
@@ -400,6 +401,8 @@ class Client:
                         logger.error(
                             f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                         )
+                
+                self._connect_to_head()
             
             if self.chain.get_all_layers_loaded():
                 self.chain.update_chain_status(ChainStatus.READY)
@@ -413,13 +416,13 @@ class Client:
         Triggers the layer reallocation process starting from the HEAD.
         """
         # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation
+        # self.chain.become_chain_leader()
         # self.chain.update_chain_status(ChainStatus.REALLOCATING)
-        self.chain.become_chain_leader()
-        self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
         requires_restart = True
         while requires_restart:
-            self.chain.become_chain_leader()
+            self.chain.update_chain_status(ChainStatus.REALLOCATING)
+
             self.total_rate = self.chain.gather_total_rate()
 
             if self.total_rate <= 0:
@@ -443,22 +446,16 @@ class Client:
 
                 if response.success:
                     self.chain.update_all_layers_loaded()
-                    if self.chain.get_all_layers_loaded():
-                        self.chain.update_chain_status(ChainStatus.READY)
-                    else:
-                        self.chain.update_chain_status(ChainStatus.UNREADY)
                     
                     logger.info("Reallocation completed successfully.")
                     break
                 
                 else:
                     logger.error("Reallocation failed without a restart request.")
-                    self.chain.update_chain_status(ChainStatus.UNREADY)
                     break
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
-                self.chain.update_chain_status(ChainStatus.UNREADY)
                 break
         
         if self.chain.get_all_layers_loaded():
@@ -614,7 +611,7 @@ class Client:
         top_p: float = 0.9,
         time_it: bool = False,
     ) -> Iterator[str]:
-        self.chain.become_chain_leader()
+        # self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.RUNNING)
 
         input_tensor = input_ids
@@ -624,7 +621,7 @@ class Client:
         start_time = time.perf_counter()
         tokens_generated = 0
         for i in range(max_new_tokens):
-            self.chain.become_chain_leader()
+            # self.chain.become_chain_leader()
 
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)

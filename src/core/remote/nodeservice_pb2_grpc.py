@@ -80,6 +80,11 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
                 _registered_method=True)
+        self.UpdateChainStatus = channel.unary_unary(
+                '/nodeservice.NodeService/UpdateChainStatus',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.UpdateChainStatusRequest.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class NodeServiceServicer(object):
@@ -150,6 +155,13 @@ class NodeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UpdateChainStatus(self, request, context):
+        """Make the chain leader update the chain status
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_NodeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -196,6 +208,11 @@ def add_NodeServiceServicer_to_server(servicer, server):
             'JoinChain': grpc.unary_unary_rpc_method_handler(
                     servicer.JoinChain,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            ),
+            'UpdateChainStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateChainStatus,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.UpdateChainStatusRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
     }
@@ -442,6 +459,33 @@ class NodeService(object):
             target,
             '/nodeservice.NodeService/JoinChain',
             core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateChainStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/UpdateChainStatus',
+            core_dot_remote_dot_nodeservice__pb2.UpdateChainStatusRequest.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
