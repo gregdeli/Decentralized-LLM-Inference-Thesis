@@ -14,7 +14,7 @@ import torch
 
 from client.servicer import ClientServicer
 from core.llm_loader import LLM
-from core.utils import can_load
+from core.utils import can_load, calculate_model_size_mb
 from core.constants import *
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import get_ip_address, create_grpc_channel
@@ -424,6 +424,15 @@ class Client:
             self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
             self.total_rate = self.chain.gather_total_rate()
+            
+            # Check if the model can be loaded on the available active server nodes
+            model_mem_size, layer_mem_size, output_layer_mem_size = calculate_model_size_mb(self.config)
+            total_chain_memory = self.chain.gather_total_memory(layer_mem_size, output_layer_mem_size)
+
+            load_max = False
+            if total_chain_memory < model_mem_size:
+                load_max = True
+                logger.info("The nodes in the active chain can't load the full model. Loading the maximum number of layers...")
 
             if self.total_rate <= 0:
                 logger.error("Total Rate is 0 or less, cannot reallocate.")
@@ -434,7 +443,9 @@ class Client:
             )
 
             request = nodeservice_pb2.ReallocateRequest(
-                total_rate=self.total_rate, start_layer_index=0
+                total_rate=self.total_rate, 
+                start_layer_index=0,
+                load_max=load_max
             )
 
             try:

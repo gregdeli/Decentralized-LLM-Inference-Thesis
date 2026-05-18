@@ -147,6 +147,31 @@ def update_config_total_param_count(model_path: Path, param_count: int) -> None:
     logger.info(f"Updated {model_path}/config.json with num_total_params: {param_count}")
 
 
+def calculate_model_size_mb(config: Dict[str, Any]) -> Tuple[float, float, float]:
+    """Calculates the total size of the model when loaded in MB"""
+    if "head_dim" not in config:
+        config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
+
+    layer_params = config.get("transformer_layer_params")
+    final_output_params = config.get("final_output_params")
+
+    param_dtype = get_dtype_from_config(config)
+    bytes_per_param = param_dtype.itemsize
+    
+    # Transformer Layer size
+    layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
+    layer_kv_cache_mem_size_mb = (2 * config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+    layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+
+    # Final Output Layer size
+    output_mem_size_mb = final_output_params * bytes_per_param / (1024 * 1024)
+
+    num_total_layers = config.get("num_hidden_layers")
+    model_size = num_total_layers * layer_mem_size_mb + output_mem_size_mb
+    
+    return (model_size, layer_mem_size_mb, output_mem_size_mb)
+
+
 def can_load(
     config: Dict[str, Any],
     avail_mem: float,
@@ -171,30 +196,6 @@ def can_load(
             return True
 
         return max_num_layers >= output_layer_memory_tle
-
-# def mem_to_num_params(
-#     config: Dict[str, Any],
-#     avail_mem: Optional[float],
-#     avail_vram: Optional[float],
-# ) -> int:
-#     """
-#     Calculates how many model parameters fit in the available Memory/VRAM
-#     """
-#     total_params = config.get("num_total_params")
-
-#     if avail_vram:
-#         available = avail_vram - RESERVED_MEM_MB
-#     else:
-#         available = avail_mem - RESERVED_MEM_MB
-
-#     if available <= 0:
-#         return 0
-    
-#     param_dtype = get_dtype_from_config(config)
-#     bytes_per_param = param_dtype.itemsize
-
-#     max_num_params = available / (bytes_per_param / (1024 * 1024)) 
-#     return min(max_num_params, total_params)
 
 def mem_to_num_layers(
     config: Dict[str, Any],

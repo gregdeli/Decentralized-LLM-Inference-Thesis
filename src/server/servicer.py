@@ -56,13 +56,20 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def Reallocate(self, request, context):
         total_rate = request.total_rate
         start_layer_index = request.start_layer_index
+        load_max = request.load_max
         predecessor_info = (
             json.loads(request.predecessor_info.decode("utf-8"))
             if request.predecessor_info
             else None
         )
 
-        response = self.server_node.reallocate_layers(total_rate, start_layer_index, predecessor_info)
+        response = self.server_node.reallocate_layers(
+            total_rate, 
+            start_layer_index, 
+            load_max, 
+            predecessor_info
+        )
+
         return response
 
     def UpdateSuccessorStub(self, request, context):

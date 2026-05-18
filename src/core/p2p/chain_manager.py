@@ -550,6 +550,52 @@ class ChainManager:
                 current_node_id = None  # End of chain
 
         return total_rate
+
+    def gather_total_memory(
+            self,
+            layer_mem_size: float,
+            output_layer_mem_size: float,
+        ) -> float:
+        """Add the availbale memory sizes of all active nodes"""
+        head_id = self.dht.get(HEAD_KEY)
+
+        total_memory = 0
+        current_node_id = head_id
+        while current_node_id:
+            server_info = self.get_server_info(current_node_id)
+            if not server_info:
+                break
+
+            available_vram = server_info.get("availbale_vram")
+            available_memory = server_info.get("available_memory")
+            available = available_vram if available_vram is not None else available_memory
+
+            # vram_usage = server_info.get("vram_usage")
+            # memory_usage = server_info.get("memory_usage")
+            # in_use = vram_usage if vram_usage is not None else memory_usage
+            
+            # Calculate the memory used by any layers that are currently loaded
+            layers = server_info.get("layers")
+            layers_loaded = server_info.get("layers_loaded", False)
+            output_layer_loaded = server_info.get("output_layer_loaded", False)
+
+            current_num_layers = 0
+            if layers is not None and layers_loaded:
+                current_num_layers = layers[1] - layers[0] + 1
+            
+            in_use = current_num_layers * layer_mem_size
+            if output_layer_loaded:
+                in_use += output_layer_mem_size
+
+            total_memory += in_use + available - RESERVED_MEM_MB
+
+            successor_data = server_info.get("successor")
+            if successor_data:
+                current_node_id = successor_data.get("id")
+            else:
+                current_node_id = None  # End of chain
+
+        return total_memory
     
     def get_tail_output_temporal_tle(self):
         tail_id = self.get_tail_id()
@@ -759,14 +805,14 @@ class ChainManager:
             self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
         
         # Republish the num_clients key
-        num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        if num_clients:
-            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
+        # num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        # if num_clients:
+        #     self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
 
         # Republish the client_nodes list
-        client_nodes = self.get_client_nodes()
-        if client_nodes:
-            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+        # client_nodes = self.get_client_nodes()
+        # if client_nodes:
+        #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
         # Update the all_layers_loaded and chain_status keys
         self.update_all_layers_loaded()
@@ -841,6 +887,10 @@ class ChainManager:
     def add_node_to_clients(self, client_node_id: str):
         """Appends a client_node id to the client_nodes list"""
         client_nodes = self.get_client_nodes()
+
+        if client_nodes is None:
+            client_nodes = []
+
         if client_node_id not in client_nodes:
             client_nodes.append(client_node_id)
         

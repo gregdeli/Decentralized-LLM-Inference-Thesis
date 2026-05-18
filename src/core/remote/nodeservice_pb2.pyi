@@ -49,14 +49,16 @@ class InferenceResponse(_message.Message):
     def __init__(self, tensor_data: _Optional[bytes] = ..., tensor_shape: _Optional[_Iterable[int]] = ..., dtype: _Optional[str] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class ReallocateRequest(_message.Message):
-    __slots__ = ("total_rate", "start_layer_index", "predecessor_info")
+    __slots__ = ("total_rate", "start_layer_index", "load_max", "predecessor_info")
     TOTAL_RATE_FIELD_NUMBER: _ClassVar[int]
     START_LAYER_INDEX_FIELD_NUMBER: _ClassVar[int]
+    LOAD_MAX_FIELD_NUMBER: _ClassVar[int]
     PREDECESSOR_INFO_FIELD_NUMBER: _ClassVar[int]
     total_rate: float
     start_layer_index: int
+    load_max: bool
     predecessor_info: bytes
-    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, total_rate: _Optional[float] = ..., start_layer_index: _Optional[int] = ..., load_max: bool = ..., predecessor_info: _Optional[bytes] = ...) -> None: ...
 
 class ReallocateResponse(_message.Message):
     __slots__ = ("success", "requires_restart", "bottleneck_node")

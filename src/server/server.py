@@ -700,6 +700,7 @@ class Server:
         self,
         total_system_rate: float,
         start_layer_index: int,
+        load_max: bool,
         predecessor_info: Optional[Dict[str, Any]],
     ) -> nodeservice_pb2.ReallocateResponse:
         """
@@ -793,7 +794,7 @@ class Server:
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
         # if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
-        if round(ideal_tle_count, 2) > round(max_num_layers, 2) and not (self.chain.is_head() and self.chain.is_tail()):
+        if round(ideal_tle_count, 2) > round(max_num_layers, 2) and not (self.chain.is_head() and self.chain.is_tail()) and not load_max:
             remaining_rate = total_system_rate - self.processing_rate
             effective_rate = max_num_layers * remaining_rate / ((num_total_tle) - max_num_layers)
         
@@ -838,6 +839,7 @@ class Server:
             request = nodeservice_pb2.ReallocateRequest(
                 total_rate=total_system_rate,
                 start_layer_index=next_start_index,
+                load_max=load_max,
                 predecessor_info=serialized_pred_info,
             )
             try:

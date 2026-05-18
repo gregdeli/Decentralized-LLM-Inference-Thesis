@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=8
+      # - NUM_LAYERS=8
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -23,7 +23,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 5G
+          memory: 4G
         #   cpus: '16.0'
     ports:
       - "5671:5678"
@@ -54,7 +54,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 5G # 2.2
+          memory: 4G # 2.2
           # cpus: '1.0'
     ports:
       - "5672:5678"  
@@ -97,8 +97,8 @@ services:
   worker-D:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -128,8 +128,8 @@ services:
   worker-E:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-E
     environment:
       - MODEL_PATH=/${MODEL_PATH}
