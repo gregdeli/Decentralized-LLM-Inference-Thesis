@@ -6,7 +6,7 @@ from functools import partial
 import grpc
 from enum import Enum
 
-from hivemind.utils import ValueWithExpiration
+from hivemind.utils import ValueWithExpiration, get_dht_time
 from hivemind.dht import DHTID, DHT, DHTNode
 
 from core.constants import *
@@ -26,11 +26,12 @@ TOTAL_PARAMS_KEY = "num_total_params"
 ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 CLIENTS_KEY = "client_nodes"
-SERVER_INFO_PREFIX = "server_info_"
+SERVER_INFO_PREFIX = "server_info_" # "server_info_(node_id)"
 NUM_CLIENTS_KEY = "num_clients"
 
 TOKENS_GENERATED_KEY = "global_tokens_generated"
-THROUGHPUT_KEY = "chain_throughput"
+THROUGHPUT_KEY = "chain_throughput_" # "chain_throughput_1", "chain_throughput_2"
+THROUGHPUT_VERSION_KEY ="chain_throughput_version" 
 
 # EXPIRATION_S = 30.0
 EXPIRATION_S = 7200.0
@@ -38,6 +39,7 @@ EXPIRATION_S = 7200.0
 HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
+# THROUGHPUT_EXPIRATION_S = 60.0
 
 DIGITS_SHOW = 12
 
@@ -146,6 +148,9 @@ class ChainManager:
 
         if not self.dht.get(TOKENS_GENERATED_KEY):
             self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
+        
+        if not self.dht.get(THROUGHPUT_VERSION_KEY):
+            self.dht.store(THROUGHPUT_VERSION_KEY, 0, THROUGHPUT_EXPIRATION_S)  
 
         self_info["successor"] = None
 
@@ -381,7 +386,9 @@ class ChainManager:
         return self.dht.get(CLIENTS_KEY)
 
     def get_chain_throughput(self) -> Optional[Dict[float, ValueWithExpiration]]:
-        chain_throughput = self.dht.get(THROUGHPUT_KEY)
+        version = self.dht.get(THROUGHPUT_VERSION_KEY)
+        key = f"{THROUGHPUT_KEY}{version}"
+        chain_throughput = self.dht.get(key)
         return chain_throughput
     
     def get_random_server_node_id(self, max_attempts: int = 5) -> Optional[str]:
@@ -1017,11 +1024,49 @@ class ChainManager:
         tokens_generated += 1
         self.dht.store(TOKENS_GENERATED_KEY, tokens_generated, THROUGHPUT_EXPIRATION_S)
 
-        self.dht.store(key=THROUGHPUT_KEY, subkey=time.perf_counter(), value=tokens_generated, expiration_s=THROUGHPUT_EXPIRATION_S)
+        version = self.dht.get(THROUGHPUT_VERSION_KEY)
+        key = f"{THROUGHPUT_KEY}{version}"
+        self.dht.store(key=key, subkey=time.perf_counter(), value=tokens_generated, expiration_s=THROUGHPUT_EXPIRATION_S)
+    
+    # @staticmethod
+    # async def _store_many(dht_daemon, dht_node: DHTNode, keys, values, expiration_time, subkeys):
+    #     # This runs inside the background DHT process
+    #     await dht_node.store_many(
+    #         keys=keys,
+    #         values=values,
+    #         expiration_time=expiration_time,
+    #         subkeys=subkeys
+    #     )
+    #     return True
 
     def clear_chain_throughput(self):
-        self.dht.store(TOKENS_GENERATED_KEY, 0, EXPIRATION_S)
-        self.dht.store(key=THROUGHPUT_KEY, value={}, expiration_s=THROUGHPUT_EXPIRATION_S)
+        self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
+
+        current_version = self.dht.get(THROUGHPUT_VERSION_KEY)
+        self.dht.store(THROUGHPUT_VERSION_KEY, current_version + 1, THROUGHPUT_EXPIRATION_S)
+
+        # throughput_dict = self.dht.get(THROUGHPUT_KEY)
+        # if throughput_dict:
+        #     timestamps = list(throughput_dict.keys())
+
+        #     keys=[THROUGHPUT_KEY] * len(timestamps)
+        #     values = [0] * len(timestamps)
+        #     expiration_time = get_dht_time()
+
+        #     subkeys=timestamps
+
+        #     coro_partial = partial(
+        #         self._store_many, 
+        #         keys=keys, 
+        #         values=values, 
+        #         expiration_time=expiration_time, 
+        #         subkeys=subkeys
+        # )
+
+        #     self.dht.dht.run_coroutine(coro_partial)
+        
+        # throughput_dict = self.dht.get(THROUGHPUT_KEY)
+        # pass
 
     # ---- Server info subkey update methods ----
 

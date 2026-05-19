@@ -411,7 +411,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             client_nodes = [c[:DIGITS_SHOW] for c in chain_info.get(CLIENTS_KEY, [])]
 
             state.ui.global_labels["total_params"] = ui.label(
-                f"Total Params: {total_params / 1000000000:.2f}B"
+                f"Total Params: {round(total_params / 1000000000, 2)}B"
             ).classes("text-lg")
 
             state.ui.global_labels["total_layers"] = ui.label(
@@ -739,10 +739,24 @@ async def main_page():
             chat_container = (
                 ui.column()
                 .classes(
-                    "w-full mx-auto flex-grow p-2 items-stretch overflow-y-auto overflow-x-hidden"
+                    "w-full mx-auto flex-grow p-2 items-stretch overflow-y-auto overflow-x-hidden relative"
                 )
                 .props('id="chat-container"')
             )
+
+            # Client Loading Spinner Overlay
+            with chat_container:
+                # Absolute inset forces the column to cover the entire chat_container
+                with ui.column().classes("w-full h-full absolute inset-0 items-center justify-center bg-white z-50") as loading_overlay:
+                    ui.spinner(size='10em', color='primary')
+                    ui.label("Initializing Client & Joining Network...").classes("text-xl mt-6 text-gray-500 font-bold")
+                
+                def _check_client_loaded():
+                    if state.client is not None:
+                        loading_overlay.delete()
+                        spinner_timer.deactivate()
+                    
+                spinner_timer = ui.timer(0.5, _check_client_loaded)
 
             # Input Area
             with ui.row().classes("w-full bg-white p-4 items-center gap-2"):
