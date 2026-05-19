@@ -126,13 +126,13 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                     ui.label(f"Hostname: {info.get('hostname', 'N/A')}")
                     
                     # Layers 
-                    if "layers" in info:
-                        layers = info.get("layers")
-                        if layers:
-                            num_layers = layers[1] - layers[0] + 1
-                            labels["layers"] = ui.label(
-                                f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
-                            ).classes("font-mono text-sm")
+                    layers = info.get("layers", None)
+                    text = "Layers: None"
+                    if layers is not None:
+                        num_layers = layers[1] - layers[0] + 1
+                        text = f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
+                        
+                    labels["layers"] = ui.label(text).classes("font-mono text-sm")
                     
                     # Output Layer Loaded
                     output_layer_loaded = info.get("output_layer_loaded", False)
