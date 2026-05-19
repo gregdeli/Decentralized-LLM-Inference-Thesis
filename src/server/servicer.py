@@ -6,6 +6,8 @@ import torch
 import time
 import json
 import threading
+import gc 
+import ctypes
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import request_to_tensor
@@ -100,6 +102,15 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             dtype=self.server_node.llm.dtype
         )
 
+        # Release freed memory
+        gc.collect()
+        try:
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+        except Exception as e:
+            logger.warning(f"Failed to trim memory: {e}")
+
+        # Update memory usage
         self.server_node._update_memory_usage()
 
         # Forward to successor

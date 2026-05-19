@@ -10,6 +10,7 @@ import socket
 import random
 from dotenv import load_dotenv
 import gc
+import ctypes
 import time
 from concurrent import futures
 from pathlib import Path
@@ -78,6 +79,12 @@ class Server:
         self.device = "cpu"
         if torch.cuda.is_available():
             try:
+                free_bytes, _ = torch.cuda.mem_get_info()
+                free_mb = free_bytes / (1024 * 1024)
+                
+                # Force PyTorch's CUDACachingAllocator to initialize
+                _dummy = torch.empty(1, device="cuda")
+
                 free_bytes, _ = torch.cuda.mem_get_info()
                 free_mb = free_bytes / (1024 * 1024)
                 if free_mb >= RESERVED_MEM_MB:
@@ -217,7 +224,16 @@ class Server:
         self.model = None
         self.llm = None
         self.num_local_params = 0
+
+        # Release freed memory
         gc.collect()
+
+        try:
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+        except Exception as e:
+            logger.warning(f"Failed to trim memory: {e}")
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -315,7 +331,7 @@ class Server:
         layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
         
         if self.device == "cuda":
-            available = self.available_vram_mb - RESERVED_MEM_MB
+            available = self.available_vram_mb - self.memory_usage_mb - RESERVED_MEM_MB
         else:
             available = self.available_memory_mb - RESERVED_MEM_MB
 
