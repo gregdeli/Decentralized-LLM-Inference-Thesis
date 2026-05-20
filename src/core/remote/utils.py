@@ -9,6 +9,22 @@ logger = logging.getLogger(__name__)
 
 """-------------- GRPC Connection Utils --------------"""
 
+class CustomRpcError(grpc.RpcError, grpc.Call):
+    """
+    A custom gRPC error that implements both RpcError and Call interfaces.
+    """
+    def __init__(self, code, details=""):
+        super().__init__(details)
+        self._code = code
+        self._details = details
+
+    def code(self):
+        return self._code
+
+    def details(self):
+        return self._details
+    
+
 def get_free_port() -> int:
     """Finds and returns an available network port on the local machine."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

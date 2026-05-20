@@ -15,6 +15,8 @@ from core.p2p.dht_manager import DHTManager
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import create_grpc_channel
 
+from core.utils import mem_to_num_layers
+
 logger = logging.getLogger(__name__)
 
 # Global keys on the DHT
@@ -33,7 +35,7 @@ TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_" # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY ="chain_throughput_version" 
 
-# EXPIRATION_S = 30.0
+# EXPIRATION_S = 50.0
 EXPIRATION_S = 7200.0
 # HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
 HEARTBEAT_INTERVAL_S = 15.0
@@ -536,6 +538,27 @@ class ChainManager:
         chain_info[BACKUPS_KEY] = backup_nodes_info
         return chain_info
 
+    def gather_num_active_chain_nodes(self) -> int:
+        """"Traverse the chain and increment num_nodes each time."""
+        head_id = self.dht.get(HEAD_KEY)
+
+        num_nodes = 0
+        current_node_id = head_id
+        while current_node_id:
+            server_info = self.get_server_info(current_node_id)
+            if not server_info:
+                break
+
+            num_nodes += 1
+
+            successor_data = server_info.get("successor")
+            if successor_data:
+                current_node_id = successor_data.get("id")
+            else:
+                current_node_id = None  # End of chain
+
+        return num_nodes
+
     def gather_total_rate(self) -> float:
         """Add the partial processing rates of all server nodes"""
         head_id = self.dht.get(HEAD_KEY)
@@ -560,7 +583,10 @@ class ChainManager:
 
     def gather_total_memory(
             self,
-            layer_mem_size: float,
+            config: Dict[str, Any],
+            layer_mem_size_mb: float,
+            # layer_param_mem_size_mb: float,
+            # layer_kv_cache_mem_size_mb: float,
             output_layer_mem_size: float,
         ) -> float:
         """Add the availbale memory sizes of all active nodes"""
@@ -575,26 +601,49 @@ class ChainManager:
 
             available_vram = server_info.get("availbale_vram")
             available_memory = server_info.get("available_memory")
-            available = available_vram if available_vram is not None else available_memory
+            # available = available_vram if available_vram is not None else available_memory
 
-            # vram_usage = server_info.get("vram_usage")
-            # memory_usage = server_info.get("memory_usage")
-            # in_use = vram_usage if vram_usage is not None else memory_usage
+            vram_usage = server_info.get("vram_usage")
+            memory_usage = server_info.get("memory_usage")
+            usage = vram_usage if vram_usage is not None else memory_usage
             
             # Calculate the memory used by any layers that are currently loaded
             layers = server_info.get("layers")
             layers_loaded = server_info.get("layers_loaded", False)
+            
+            # kv_cache_memories = server_info.get("kv_cache_memories")
+            # kv_cache_loaded = False if not kv_cache_memories else True
+            
             output_layer_loaded = server_info.get("output_layer_loaded", False)
 
             current_num_layers = 0
             if layers is not None and layers_loaded:
                 current_num_layers = layers[1] - layers[0] + 1
             
-            in_use = current_num_layers * layer_mem_size
-            if output_layer_loaded:
-                in_use += output_layer_mem_size
+            theoretical_in_use = current_num_layers * layer_mem_size_mb + RESERVED_MEM_MB
 
-            total_memory += in_use + available - RESERVED_MEM_MB
+            if output_layer_loaded:
+                theoretical_in_use += output_layer_mem_size
+
+            in_use = theoretical_in_use if theoretical_in_use > usage else usage
+
+            # expected_avail = usage + available - in_use
+            if available_vram:
+                available_vram = usage + available_vram - in_use
+            else:
+                available_memory = usage + available_memory - in_use
+
+            max_extra_num_layers = mem_to_num_layers(
+                config=config,
+                avail_mem=available_memory,
+                avail_vram=available_vram,
+                mem_usage=memory_usage
+                # round_it=False
+            )
+
+            extra_usable = max_extra_num_layers * layer_mem_size_mb
+
+            total_memory += in_use + extra_usable
 
             successor_data = server_info.get("successor")
             if successor_data:
@@ -604,11 +653,11 @@ class ChainManager:
 
         return total_memory
     
-    def get_tail_output_temporal_tle(self):
-        tail_id = self.get_tail_id()
-        tail_info = self.get_server_info(tail_id)
+    # def get_tail_output_temporal_tle(self):
+    #     tail_id = self.get_tail_id()
+    #     tail_info = self.get_server_info(tail_id)
 
-        return tail_info.get("output_layer_temporal_tle")
+    #     return tail_info.get("output_layer_temporal_tle")
 
     def is_head(self) -> Optional[bool]:
         """Check if this node is the head of the server chain"""

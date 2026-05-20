@@ -424,10 +424,12 @@ class Client:
             self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
             self.total_rate = self.chain.gather_total_rate()
+
+            num_active_chain_nodes = self.chain.gather_num_active_chain_nodes()
             
             # Check if the model can be loaded on the available active server nodes
-            model_mem_size, layer_mem_size, output_layer_mem_size = calculate_model_size_mb(self.config)
-            total_chain_memory = self.chain.gather_total_memory(layer_mem_size, output_layer_mem_size)
+            model_mem_size, layer_mem_size_mb, output_layer_mem_size = calculate_model_size_mb(self.config, num_active_chain_nodes)
+            total_chain_memory = self.chain.gather_total_memory(self.config, layer_mem_size_mb, output_layer_mem_size)
 
             load_max = False
             if total_chain_memory < model_mem_size:

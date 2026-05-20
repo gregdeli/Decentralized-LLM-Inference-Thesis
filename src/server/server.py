@@ -36,13 +36,7 @@ from core.utils import (
     update_config_total_param_count,
     can_load
 )
-from core.remote.utils import (
-    get_bootstrap_peer_address,
-    get_ip_address,
-    discover_bootstrap_node_address,
-    create_grpc_channel,
-    get_free_port
-)
+from core.remote.utils import *
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.serialization import *
 from core.p2p.dht_manager import DHTManager
@@ -124,6 +118,7 @@ class Server:
         self.num_local_params = 0
         self.output_layer_temporal_tle = 1 # Transformer Layer Equivilant 
         self.output_layer_memory_tle = 1
+        self.layer_mem_size_mb = 0
 
         # Determine Model Parameter Load Capacity
         self._set_config_param_counts()
@@ -210,7 +205,8 @@ class Server:
         # Update DHT and Chain Status
         self.chain.update_device(self.llm.device)
         self._update_memory_usage()
-        if not self.chain.is_backup() and update_on_dht:
+        # if not self.chain.is_backup() and update_on_dht:
+        if update_on_dht:
             self.chain.update_layers_loaded(self.model.num_layers>0)
             if self.llm.output_layer_loaded:
                 self.chain.update_load_output_layer(False)
@@ -306,15 +302,22 @@ class Server:
 
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
         layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
-        layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+        self.layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
         # Set the output layer's equivilance to a transformer layer in memory
-        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (layer_mem_size_mb * 1024 * 1024)
+        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (self.layer_mem_size_mb * 1024 * 1024)
 
 
-    def _mem_to_num_layers(self, round_it: bool = True) -> int:
+    def _mem_to_num_layers(
+            self, 
+            available_vram: Optional[float] = None,
+            available_memory: Optional[float] = None,
+            round_it: bool = True
+        ) -> int:
         """
         Calculates how many transformer layers fit in the available Memory/VRAM taking into account the KV Cache 
+        
+        Arguements avail_vram, avail_memory are used in reallocation.
         """
         self._update_memory_usage(update_on_dht=False)
 
@@ -329,11 +332,14 @@ class Server:
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
         layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
         layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+
+        available_vram = available_vram if available_vram is not None else self.available_vram_mb
+        available_memory = available_memory if available_memory is not None else self.available_memory_mb
         
         if self.device == "cuda":
-            available = self.available_vram_mb - self.memory_usage_mb - RESERVED_MEM_MB
+            available = available_vram - self.memory_usage_mb - RESERVED_MEM_MB
         else:
-            available = self.available_memory_mb - RESERVED_MEM_MB
+            available = available_memory - RESERVED_MEM_MB
 
         if available <= 0:
             return 0
@@ -781,9 +787,10 @@ class Server:
         # ---- Reallocation ----
         num_total_layers = self.config.get("num_hidden_layers")
 
-        tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
-        logger.info(f"Tail Output Temporal TLE: {tail_output_temporal_tle}")
-        # num_total_tle = num_total_layers + tail_output_temporal_tle
+        # tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
+        # logger.info(f"Tail Output Temporal TLE: {tail_output_temporal_tle}")
+        logger.info(f"Output Layer Memory TLE: {self.output_layer_memory_tle}")
+        
         num_total_tle = num_total_layers + self.output_layer_memory_tle
 
         # Calculate share
@@ -795,24 +802,57 @@ class Server:
 
         logger.info(f"Ideal TLE Count: {ideal_tle_count}")
 
+
+        # Calculate the max number of tle this node can load
         current_num_layers = self.model.num_layers
         if self.model.output_layer_loaded:
             current_num_layers += self.output_layer_memory_tle
 
-        max_extra_num_layers = self._mem_to_num_layers(round_it=False)
+        theoretical_mem_in_use = current_num_layers * self.layer_mem_size_mb + RESERVED_MEM_MB
+        usage = self.vram_usage_mb if self.vram_usage_mb > 0 else self.memory_usage_mb
+
+        mem_in_use = theoretical_mem_in_use if theoretical_mem_in_use > usage else usage
+
+        available_vram = None
+        if self.available_vram_mb > 0:
+            available_vram = usage + self.available_vram_mb - mem_in_use
+        else:
+            available_memory = usage + self.available_memory_mb - mem_in_use
+
+        max_extra_num_layers = self._mem_to_num_layers(
+            available_vram=available_vram,
+            available_memory=available_memory,
+            round_it=False,
+        )
 
         max_num_layers = current_num_layers + max_extra_num_layers
         logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
 
-        target_layer_count = min(ideal_tle_count, max_num_layers)
-        logger.info(f"Target Transformer Layer Count: {target_layer_count}")
+        
+        target_tle_count = min(ideal_tle_count, max_num_layers)
+        logger.info(f"Target TLE Count: {target_tle_count}")
 
+        
+        tail_cant_load_remaining = False
+        if self.chain.is_tail():
+            remaining_num_trans_layers = num_total_layers - start_layer_index
+            target_transformer_layer_count = target_tle_count - self.output_layer_memory_tle
+
+            if target_transformer_layer_count < remaining_num_trans_layers:
+                # adjust rate, restart realloc
+                tail_cant_load_remaining = True
+            
+        
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
-        # if target_layer_count == max_num_layers and int(round(ideal_tle_count)) != max_num_layers and not (self.chain.is_head() and self.chain.is_tail()):
-        if round(ideal_tle_count, 2) > round(max_num_layers, 2) and not (self.chain.is_head() and self.chain.is_tail()) and not load_max:
+        memory_limit_exceeded = round(ideal_tle_count, 2) > round(max_num_layers, 2)
+        is_isolated_node = not (self.chain.is_head() and self.chain.is_tail())
+
+        if ((memory_limit_exceeded and is_isolated_node) or tail_cant_load_remaining) and not load_max:
             remaining_rate = total_system_rate - self.processing_rate
-            effective_rate = max_num_layers * remaining_rate / ((num_total_tle) - max_num_layers)
+            effective_num_layers = max_num_layers if memory_limit_exceeded else remaining_num_trans_layers + self.output_layer_memory_tle
+
+            effective_rate = effective_num_layers * remaining_rate / ((num_total_tle) - effective_num_layers)
         
             logger.warning(f"Memory limit hit. Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
             self.processing_rate = effective_rate
@@ -824,10 +864,10 @@ class Server:
             )
 
         # Start with transformer layers
-        target_layer_count = int(round(target_layer_count))
+        target_layer_count = int(round(target_tle_count))
         
         end_layer_index = start_layer_index + target_layer_count - 1
-        if end_layer_index >= num_total_layers:# or (self.chain.is_tail() and end_layer_indexand max_num_layers >= ideal_tle_count):
+        if end_layer_index >= num_total_layers:
             end_layer_index = num_total_layers - 1
             target_layer_count = end_layer_index - start_layer_index + 1 
         
@@ -1149,9 +1189,16 @@ class Server:
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.successor_stub_addr = successor_addr
             logger.info(f"Connection to successor: {successor_addr} established.")
+        
         except grpc.FutureTimeoutError:
             logger.error(f"Connection to {successor_addr} timed out.")
             self.successor_stub = None
+
+            raise CustomRpcError(
+                code=grpc.StatusCode.DEADLINE_EXCEEDED,
+                details="Connection to successor timed."
+            )
+
         except grpc.RpcError as e:
             logger.error(
                 f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}"
@@ -1248,8 +1295,11 @@ def serve():
         """Background task to keep DHT keys alive."""
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
-            server_node.chain.republish_keys()
             server_node._update_memory_usage()
+            if server_node.llm is not None and hasattr(server_node.llm, "output_layer_loaded"):
+                server_node.chain.update_layers_loaded(server_node.model.num_layers>0)
+                server_node.chain.update_output_layer_loaded(server_node.llm.output_layer_loaded)
+            server_node.chain.republish_keys()
 
     def _chain_health_monitor_task(server_node: Server):
         """Backgroud task to check on the node's successor status"""
@@ -1340,8 +1390,8 @@ def serve():
         server_node._profile_node(dummy_seq_length=50, profiling_runs=50, profiling_duration_s=PROFILING_DURATION)
 
     # Load the server's assigned layers
-    if not server_node.chain.is_backup():
-        server_node._load_llm()
+    # if not server_node.chain.is_backup():
+    server_node._load_llm()
 
     grpc_server.wait_for_termination()
 

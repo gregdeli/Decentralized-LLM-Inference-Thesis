@@ -48,11 +48,11 @@ services:
       - ./models:/models:ro 
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 4G # 2.2
           # cpus: '1.0'
@@ -85,7 +85,7 @@ services:
         #         count: 1
         #         capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 5G
           # cpus: '1.0'
     depends_on:
       - worker-A
@@ -97,8 +97,8 @@ services:
   worker-D:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    command: sleep infinity
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    # command: sleep infinity
     hostname: worker-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -128,8 +128,8 @@ services:
   worker-E:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    command: sleep infinity
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    # command: sleep infinity
     hostname: worker-E
     environment:
       - MODEL_PATH=/${MODEL_PATH}

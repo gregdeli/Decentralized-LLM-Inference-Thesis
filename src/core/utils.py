@@ -147,7 +147,10 @@ def update_config_total_param_count(model_path: Path, param_count: int) -> None:
     logger.info(f"Updated {model_path}/config.json with num_total_params: {param_count}")
 
 
-def calculate_model_size_mb(config: Dict[str, Any]) -> Tuple[float, float, float]:
+def calculate_model_size_mb(
+        config: Dict[str, Any],
+        num_nodes: int,
+    ) -> Tuple[float, float, float]:
     """Calculates the total size of the model when loaded in MB"""
     if "head_dim" not in config:
         config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
@@ -168,6 +171,7 @@ def calculate_model_size_mb(config: Dict[str, Any]) -> Tuple[float, float, float
 
     num_total_layers = config.get("num_hidden_layers")
     model_size = num_total_layers * layer_mem_size_mb + output_mem_size_mb
+    model_size += num_nodes * RESERVED_MEM_MB # Add the reserved memory for each node in the chain
     
     return (model_size, layer_mem_size_mb, output_mem_size_mb)
 
@@ -199,8 +203,10 @@ def can_load(
 
 def mem_to_num_layers(
     config: Dict[str, Any],
-    avail_mem: Optional[float],
-    avail_vram: Optional[float],
+    avail_mem: float,
+    avail_vram: float,
+    mem_usage: float,
+    round_it: bool = True
 ) -> int:
     """Calculates how many transformer layers fit in the given available Memory/VRAM"""
     
@@ -217,13 +223,15 @@ def mem_to_num_layers(
     layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
 
     if avail_vram:
-        available = avail_vram - RESERVED_MEM_MB
+        available = avail_vram - mem_usage - RESERVED_MEM_MB
     else:
         available = avail_mem - RESERVED_MEM_MB
 
     if available <= 0:
         return 0
 
-    max_num_layers = int(round(available / layer_mem_size_mb))
+    max_num_layers = available / layer_mem_size_mb
+    if round_it:
+        max_num_layers = int(round(available / layer_mem_size_mb))
     return min(max_num_layers, config.get("num_hidden_layers"))
 
