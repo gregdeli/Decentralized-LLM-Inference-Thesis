@@ -26,7 +26,6 @@ from core.p2p.chain_manager import (
     HEAD_KEY,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
-    NUM_CLIENTS_KEY,
     EXPIRATION_S,
     DIGITS_SHOW,
 )
@@ -59,8 +58,9 @@ class Client:
         self.dht = DHTManager(host_maddrs=host_maddrs, initial_peers=initial_peers)
         self.dht.start()
         self.chain = ChainManager(self.dht, is_client=True)
-        self.chain.increment_num_clients()
-        self.chain.add_node_to_clients(self.chain.node_id)
+        # self.chain.increment_num_clients()
+        # self.chain.add_node_to_clients(self.chain.node_id)
+        self.chain.join_client_nodes()
 
         # Load Config
         config_path = model_path / "config.json"
@@ -124,14 +124,15 @@ class Client:
         self._stop_dht_heartbeat_task.set()
 
         # Decrement the num_clients DHT key
-        self.chain.decrement_num_clients()
+        # self.chain.decrement_num_clients()
 
         # Remove form client_nodes list
-        self.chain.remove_node_from_clients(self.chain.node_id)
+        # self.chain.remove_node_from_clients(self.chain.node_id)
+        self.chain.leave_client_nodes()
 
         # Remove this client's kv cache from the server nodes
-        num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
-        max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
+        num_clients = self.chain.get_num_clients()
+        max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients > 0 else GLOBAL_MAX_SEQ_LEN
 
         request = nodeservice_pb2.RemoveClientKVCacheRequest(
             client_id=self.grpc_addr,
@@ -274,6 +275,7 @@ class Client:
 
                 head_succ_avail_mem = head_succ_info.get("available_memory")
                 head_succ_avail_vram = head_succ_info.get("available_vram")
+                head_succ_mem_usage = head_succ_info.get("memory_usage")
 
                 if can_load(
                     config=self.config,
@@ -281,6 +283,7 @@ class Client:
                     output_layer=dead_head_info.get("output_layer_loaded"),
                     avail_mem=head_succ_avail_mem,
                     avail_vram=head_succ_avail_vram,
+                    mem_usage=head_succ_mem_usage,
                     output_layer_memory_tle=head_succ_info.get("output_layer_memory_tle")
                 ):
                     new_layers = (orphaned_layers[0], head_succ_info.get("layers")[1])
@@ -321,6 +324,7 @@ class Client:
                     if backup_info:
                         backup_avail_mem = backup_info.get("available_memory")
                         backup_avail_vram = backup_info.get("available_vram")
+                        backup_mem_usage = backup_info.get("memory_usage")
                         logger.info(
                             f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {backup_avail_mem} MB and Available VRAM: {backup_avail_vram} MB"
                         )
@@ -329,6 +333,7 @@ class Client:
                             config=self.config,
                             avail_mem=backup_avail_mem,
                             avail_vram=backup_avail_vram,
+                            mem_usage=backup_mem_usage,
                             output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
                             layers=orphaned_layers,
                             output_layer=dead_head_info.get("output_layer_loaded"),
@@ -507,7 +512,7 @@ class Client:
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
-        num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
+        num_clients = self.chain.get_num_clients()
         if max_returned_tokens > GLOBAL_MAX_SEQ_LEN // num_clients:
             return (
                 f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds this client's max sequence length of {GLOBAL_MAX_SEQ_LEN//num_clients} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."

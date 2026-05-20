@@ -24,7 +24,6 @@ from core.p2p.chain_manager import (
     ALL_LAYERS_KEY,
     BACKUPS_KEY,
     STATUS_KEY,
-    NUM_CLIENTS_KEY,
     CLIENTS_KEY,
     DIGITS_SHOW,
 )
@@ -281,7 +280,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         
         if "num_clients" in state.ui.global_labels:
             state.ui.global_labels["num_clients"].text = (
-                f"Num Clients: {chain_info.get(NUM_CLIENTS_KEY)}"
+                f"Num Clients: {chain_info.get('num_clients')}"
             )
         
         if "client_nodes" in state.ui.global_labels:
@@ -406,7 +405,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
             total_params = chain_info.get(TOTAL_PARAMS_KEY)
             current_status = chain_info.get(STATUS_KEY)
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
-            num_clients = chain_info.get(NUM_CLIENTS_KEY)
+            num_clients = chain_info.get("num_clients")
             # client_nodes = chain_info.get(CLIENTS_KEY, [])
             client_nodes = [c[:DIGITS_SHOW] for c in chain_info.get(CLIENTS_KEY, [])]
 

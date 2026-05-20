@@ -180,6 +180,7 @@ def can_load(
     config: Dict[str, Any],
     avail_mem: float,
     avail_vram: float,
+    mem_usage: float,
     output_layer_memory_tle: float,
     num_layers: Optional[int] = None,
     layers: Optional[Tuple[int, int]] = None,
@@ -187,7 +188,7 @@ def can_load(
 ) -> bool:
         """Checks if a node can load a certain number of transformer layers based on avail_mem or avail_vram"""
         num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
-        max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram)
+        max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram, mem_usage)
 
         if num_layers > 0:
             if max_num_layers < num_layers:

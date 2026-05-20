@@ -29,16 +29,16 @@ ALL_LAYERS_KEY = "all_layers_loaded"
 BACKUPS_KEY = "backup_nodes"
 CLIENTS_KEY = "client_nodes"
 SERVER_INFO_PREFIX = "server_info_" # "server_info_(node_id)"
-NUM_CLIENTS_KEY = "num_clients"
+# NUM_CLIENTS_KEY = "num_clients"
 
 TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_" # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY ="chain_throughput_version" 
 
-# EXPIRATION_S = 50.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 15.0
+EXPIRATION_S = 50.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 # THROUGHPUT_EXPIRATION_S = 60.0
@@ -143,8 +143,8 @@ class ChainManager:
         # if not self.get_backup_nodes():
         #     self.dht.store(BACKUPS_KEY, [], EXPIRATION_S)
         
-        if not self.get_client_nodes():
-            self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
+        # if not self.get_client_nodes():
+        #     self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
 
         self.update_chain_status(ChainStatus.UNREADY)
 
@@ -385,7 +385,28 @@ class ChainManager:
         return backups_list
 
     def get_client_nodes(self) -> Optional[List[str]]:
-        return self.dht.get(CLIENTS_KEY)
+        clients_dict = self.dht.get(CLIENTS_KEY)
+        if clients_dict is None:
+            return None
+        
+        clients_list = []
+        for client_id, is_client in clients_dict.items():
+            if is_client.value:
+                clients_list.append(client_id)
+            
+        return clients_list
+
+    def get_num_clients(self) -> int:
+        clients_dict = self.dht.get(CLIENTS_KEY)
+        if clients_dict is None:
+            return 0
+        
+        num_clients = 0
+        for is_client in clients_dict.values():
+            if is_client.value:
+                num_clients += 1
+        
+        return num_clients
 
     def get_chain_throughput(self) -> Optional[Dict[float, ValueWithExpiration]]:
         version = self.dht.get(THROUGHPUT_VERSION_KEY)
@@ -487,7 +508,7 @@ class ChainManager:
         all_loaded = self.dht.get(ALL_LAYERS_KEY)
         backup_nodes = self.get_backup_nodes()
         current_status = self.get_chain_status()
-        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+        current_num_clients = self.get_num_clients()
         client_nodes = self.get_client_nodes()
 
         # if not head_id:
@@ -500,7 +521,7 @@ class ChainManager:
             TOTAL_PARAMS_KEY: total_params,
             ALL_LAYERS_KEY: all_loaded,
             STATUS_KEY: current_status,
-            NUM_CLIENTS_KEY: current_num_clients,
+            "num_clients": current_num_clients,
             CLIENTS_KEY: client_nodes
         }
 
@@ -859,11 +880,6 @@ class ChainManager:
         num_total_params = self._get_num_total_params()
         if num_total_params:
             self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
-        
-        # Republish the num_clients key
-        # num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        # if num_clients:
-        #     self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
 
         # Republish the client_nodes list
         # client_nodes = self.get_client_nodes()
@@ -903,54 +919,59 @@ class ChainManager:
 
     
     def republish_client_keys(self):
-        # Republish the num_clients key
-        num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        if num_clients:
-            self.dht.store(NUM_CLIENTS_KEY, num_clients, EXPIRATION_S)
-
         # Republish the client_nodes list
-        client_nodes = self.get_client_nodes()
-        if client_nodes:
-            self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+        # client_nodes = self.get_client_nodes()
+        # if client_nodes:
+        #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+        self.dht.store(key=CLIENTS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
+
         
-        logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished the client keys.")
+        logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its existance in the client_nodes key")
 
 
     # ---- Global key update methods ----
 
-    def increment_num_clients(self):
-        """Called by a client when in joins the DHT"""
-        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        if current_num_clients:
-            new_num_clients = current_num_clients + 1
-            self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
-            logger.info(f"Num Clientes updated to {new_num_clients}...")
-        else:
-            # This is the first client
-            self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
+    # def increment_num_clients(self):
+    #     """Called by a client when in joins the DHT"""
+    #     current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+    #     if current_num_clients:
+    #         new_num_clients = current_num_clients + 1
+    #         self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
+    #         logger.info(f"Num Clientes updated to {new_num_clients}...")
+    #     else:
+    #         # This is the first client
+    #         self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
 
-    def decrement_num_clients(self):
-        """Called by a client when in leaves the DHT"""
-        current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
-        if current_num_clients:
-            new_num_clients = current_num_clients - 1
-            self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
-            logger.info(f"Num Clientes updated to {new_num_clients}...")
-        else:
-            # This is the first client
-            self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
+    # def decrement_num_clients(self):
+    #     """Called by a client when in leaves the DHT"""
+    #     current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
+    #     if current_num_clients:
+    #         new_num_clients = current_num_clients - 1
+    #         self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
+    #         logger.info(f"Num Clientes updated to {new_num_clients}...")
+    #     else:
+    #         # This is the first client
+    #         self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
     
-    def add_node_to_clients(self, client_node_id: str):
-        """Appends a client_node id to the client_nodes list"""
-        client_nodes = self.get_client_nodes()
+    # def add_node_to_clients(self, client_node_id: str):
+    #     """Appends a client_node id to the client_nodes list"""
+    #     client_nodes = self.get_client_nodes()
 
-        if client_nodes is None:
-            client_nodes = []
+    #     if client_nodes is None:
+    #         client_nodes = []
 
-        if client_node_id not in client_nodes:
-            client_nodes.append(client_node_id)
+    #     if client_node_id not in client_nodes:
+    #         client_nodes.append(client_node_id)
         
-        self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+    #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+
+    def join_client_nodes(self):
+        self.dht.store(key=CLIENTS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
+        logger.info(f"Num Clients updated to {self.get_num_clients()}.")
+    
+    def leave_client_nodes(self):
+        self.dht.store(key=CLIENTS_KEY, subkey=self.node_id, value=False, expiration_s=EXPIRATION_S)
+        logger.info(f"Num Clients updated to {self.get_num_clients()}.")
     
     def become_chain_leader(self, force: bool = False):
         logger.info("Attempting to become the chain leader...")

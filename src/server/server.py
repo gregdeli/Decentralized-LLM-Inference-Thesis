@@ -45,7 +45,6 @@ from core.p2p.chain_manager import (
     ChainStatus,
     HEARTBEAT_INTERVAL_S,
     ALL_LAYERS_KEY,
-    NUM_CLIENTS_KEY,
     EXPIRATION_S,
     DIGITS_SHOW,
 )
@@ -428,7 +427,7 @@ class Server:
         """Ensures the KV cache is initialized and large enough for the request."""
         # Initialize the client's kv cache if necessary
         if not self.model.client_has_cache(client_id):
-            num_clients = self.chain.dht.get(NUM_CLIENTS_KEY)
+            num_clients = self.chain.get_num_clients()
             max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
 
             self.model.add_client_cache(
@@ -813,6 +812,7 @@ class Server:
 
         mem_in_use = theoretical_mem_in_use if theoretical_mem_in_use > usage else usage
 
+        available_memory = None
         available_vram = None
         if self.available_vram_mb > 0:
             available_vram = usage + self.available_vram_mb - mem_in_use
@@ -985,6 +985,7 @@ class Server:
                         if backup_info:
                             avail_mem = backup_info.get("available_memory")
                             avail_vram = backup_info.get("available_vram")
+                            mem_usage = backup_info.get("memory_usage")
                             logger.info(
                                 f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
                             )
@@ -993,6 +994,7 @@ class Server:
                                 config=self.config,
                                 avail_mem=avail_mem,
                                 avail_vram=avail_vram,
+                                mem_usage=mem_usage,
                                 output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
                                 layers=orphaned_layers,
                                 output_layer=dead_succ_output_loaded
