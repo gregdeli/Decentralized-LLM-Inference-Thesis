@@ -31,9 +31,7 @@ from core.utils import (
     get_dtype_from_config,
     calculate_transformer_params,
     calculate_final_output_params,
-    update_config_layer_param_count,
-    update_config_final_output_param_count,
-    update_config_total_param_count,
+    update_model_config,
     can_load
 )
 from core.remote.utils import *
@@ -280,16 +278,19 @@ class Server:
         if total_params is None:
             if layer_params is None:
                 layer_params = calculate_transformer_params(self.model_path)
-                update_config_layer_param_count(self.model_path, layer_params)
+                # update_config_layer_param_count(self.model_path, layer_params)
+                update_model_config(self.model_path, "transformer_layer_params", layer_params)
                 self._reload_config()
             
             if final_output_params is None:
                 final_output_params = calculate_final_output_params(self.model_path)
-                update_config_final_output_param_count(self.model_path, final_output_params)
+                # update_config_final_output_param_count(self.model_path, final_output_params)
+                update_model_config(self.model, "final_output_params", final_output_params)
                 self._reload_config()
             
             total_params = self.config.get("num_hidden_layers") * layer_params + final_output_params
-            update_config_total_param_count(self.model_path, total_params)
+            # update_config_total_param_count(self.model_path, total_params)
+            update_model_config(self.model_path, "num_total_params", total_params)
             self._reload_config()
 
         # Also set self.output_layer_memory_tle
@@ -302,9 +303,15 @@ class Server:
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
         layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
         self.layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+        if self.config.get("layer_mem_size_mb") is None:
+            update_model_config(self.model_path, "layer_mem_size_mb", self.layer_mem_size_mb)
+            self._reload_config()
 
         # Set the output layer's equivilance to a transformer layer in memory
         self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (self.layer_mem_size_mb * 1024 * 1024)
+        if self.config.get("output_layer_memory_tle") is None:
+            update_model_config(self.model_path, "output_layer_memory_tle", self.output_layer_memory_tle)
+            self._reload_config()
 
 
     def _mem_to_num_layers(
@@ -320,18 +327,6 @@ class Server:
         """
         self._update_memory_usage(update_on_dht=False)
 
-        if "head_dim" not in self.config:
-            self.config["head_dim"] = self.config["hidden_size"] // self.config["num_attention_heads"]
-
-        layer_params = self.config.get("transformer_layer_params")
-
-        param_dtype = get_dtype_from_config(self.config)
-        bytes_per_param = param_dtype.itemsize
-        
-        layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
-        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
-        layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
-
         available_vram = available_vram if available_vram is not None else self.available_vram_mb
         available_memory = available_memory if available_memory is not None else self.available_memory_mb
         
@@ -343,11 +338,11 @@ class Server:
         if available <= 0:
             return 0
 
-        max_num_layers = available / layer_mem_size_mb
+        max_num_layers = available / self.layer_mem_size_mb
         if round_it:
             max_num_layers = int(round(max_num_layers))
 
-        return min(max_num_layers, self.config.get("num_hidden_layers"))
+        return min(max_num_layers, self.config.get("num_hidden_layers") + self.output_layer_memory_tle)
 
     def _can_load(
         self,
@@ -356,20 +351,44 @@ class Server:
         output_layer: Optional[bool] = False,
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
-        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
-        max_num_layers = self._mem_to_num_layers()
+        # The requested additional number of layers
+        requested_num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
 
-        if num_layers > 0:
-            if max_num_layers < num_layers:
+        # Calculate the memory used currently by layers that are loaded
+        current_num_layers = self.model.num_layers
+        if self.model.output_layer_loaded:
+            current_num_layers += self.output_layer_memory_tle
+
+        theoretical_mem_in_use = current_num_layers * self.layer_mem_size_mb + RESERVED_MEM_MB
+        usage = self.vram_usage_mb if self.vram_usage_mb > 0 else self.memory_usage_mb
+
+        mem_in_use = theoretical_mem_in_use if theoretical_mem_in_use > usage else usage
+
+        true_available_memory = None
+        true_available_vram = None
+        if self.available_vram_mb > 0:
+            true_available_vram = usage + self.available_vram_mb - mem_in_use
+        else:
+            true_available_memory = usage + self.available_memory_mb - mem_in_use
+
+        # Calculate the extra number of layers that can be loaded
+        max_extra_num_layers = self._mem_to_num_layers(
+            available_vram=true_available_vram,
+            available_memory=true_available_memory,
+        )
+
+        # Determine if the requested can be loaded
+        if requested_num_layers > 0:
+            if max_extra_num_layers < requested_num_layers:
                 return False
             
             if output_layer:
-                max_num_layers -= num_layers
-                return max_num_layers >= self.output_layer_memory_tle
+                max_extra_num_layers -= requested_num_layers
+                return max_extra_num_layers >= self.output_layer_memory_tle
             
             return True
         
-        return max_num_layers >= self.output_layer_memory_tle
+        return max_extra_num_layers >= self.output_layer_memory_tle
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
         """Reads the container's memory limit from cgroup files."""
@@ -835,7 +854,7 @@ class Server:
         
         tail_cant_load_remaining = False
         if self.chain.is_tail():
-            remaining_num_trans_layers = num_total_layers - start_layer_index
+            remaining_num_trans_layers = num_total_layers - start_layer_index if start_layer_index > 0 else 0
             target_transformer_layer_count = target_tle_count - self.output_layer_memory_tle
 
             if target_transformer_layer_count < remaining_num_trans_layers:
@@ -985,17 +1004,18 @@ class Server:
                         if backup_info:
                             avail_mem = backup_info.get("available_memory")
                             avail_vram = backup_info.get("available_vram")
-                            mem_usage = backup_info.get("memory_usage")
                             logger.info(
                                 f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {avail_mem} MB and Available VRAM: {avail_vram} MB"
                             )
 
                             if can_load(
                                 config=self.config,
+                                current_layers=backup_info.get("layers"),
+                                output_layer_curr_loaded=backup_info.get("output_layer_loaded"),
                                 avail_mem=avail_mem,
+                                mem_usage=backup_info.get("memory_usage"),
                                 avail_vram=avail_vram,
-                                mem_usage=mem_usage,
-                                output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
+                                vram_usage=backup_info.get("vram_usage"),
                                 layers=orphaned_layers,
                                 output_layer=dead_succ_output_loaded
                             ):
@@ -1322,7 +1342,7 @@ def serve():
                 try:
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:
-                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=5)
                         logger.info(f"Successor is ALIVE.")
                 except grpc.RpcError as e:
                     if (

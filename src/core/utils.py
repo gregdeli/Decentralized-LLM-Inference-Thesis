@@ -109,42 +109,20 @@ def calculate_final_output_params(model_path: Path) -> int:
 
     return final_norm_params + lm_head_params
 
-def update_config_layer_param_count(model_path: Path, param_count: int) -> None:
+def update_model_config(
+    model_path: Path,
+    key: str,
+    value: Any,
+):
     with open(f"{model_path}/config.json", "r") as f:
         config = json.load(f)
-
-    config["transformer_layer_params"] = param_count
-
+    
+    config[key] = value
 
     with open(f"{model_path}/config.json", "w") as f:
         json.dump(config, f, indent=2)
 
-    logger.info(f"Updated {model_path}/config.json with transformer_layer_params: {param_count}")
-
-
-def update_config_final_output_param_count(model_path: Path, param_count: int) -> None:
-    with open(f"{model_path}/config.json", "r") as f:
-        config = json.load(f)
-
-    config["final_output_params"] = param_count
-
-
-    with open(f"{model_path}/config.json", "w") as f:
-        json.dump(config, f, indent=2)
-
-    logger.info(f"Updated {model_path}/config.json with final_output_params: {param_count}")
-
-def update_config_total_param_count(model_path: Path, param_count: int) -> None:
-    with open(f"{model_path}/config.json", "r") as f:
-        config = json.load(f)
-
-    config["num_total_params"] = param_count
-
-
-    with open(f"{model_path}/config.json", "w") as f:
-        json.dump(config, f, indent=2)
-
-    logger.info(f"Updated {model_path}/config.json with num_total_params: {param_count}")
+    logger.info(f"Updated {model_path}/config.json with {key}: {value}")
 
 
 def calculate_model_size_mb(
@@ -175,32 +153,86 @@ def calculate_model_size_mb(
     
     return (model_size, layer_mem_size_mb, output_mem_size_mb)
 
+def get_true_available_memory(
+    current_num_layers: int,
+    output_layer_loaded: bool,
+    output_layer_memory_tle: float,
+    layer_mem_size_mb: float,
+    mem_usage: float,
+    available_mem: float,
+    vram_usage: Optional[float],
+    available_vram: Optional[float],
+) -> Tuple[float, float]:
+    if not current_num_layers:
+        current_num_layers = 0
+    
+    if output_layer_loaded:
+        current_num_layers += output_layer_memory_tle
+    
+    theoretical_mem_in_use = current_num_layers * layer_mem_size_mb + RESERVED_MEM_MB
+    usage = vram_usage if vram_usage is not None else mem_usage
+
+    mem_in_use = theoretical_mem_in_use if theoretical_mem_in_use > usage else usage
+    true_available_memory = None
+    true_available_vram = None
+    if available_vram is not None:
+        true_available_vram = usage + available_vram - mem_in_use
+    else:
+        true_available_memory = usage + available_mem - mem_in_use
+
+    return (true_available_vram, true_available_memory)
+
 
 def can_load(
     config: Dict[str, Any],
+    current_layers: Optional[Tuple[int, int]],
+    output_layer_curr_loaded: bool,
     avail_mem: float,
-    avail_vram: float,
     mem_usage: float,
-    output_layer_memory_tle: float,
+    avail_vram: Optional[float] = None,
+    vram_usage: Optional[float] = None,
     num_layers: Optional[int] = None,
     layers: Optional[Tuple[int, int]] = None,
     output_layer: Optional[bool] = None,
 ) -> bool:
         """Checks if a node can load a certain number of transformer layers based on avail_mem or avail_vram"""
-        num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
-        max_num_layers = mem_to_num_layers(config, avail_mem, avail_vram, mem_usage)
+        requested_num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
 
-        if num_layers > 0:
-            if max_num_layers < num_layers:
+        output_layer_memory_tle = config.get("output_layer_memory_tle")
+        layer_mem_size_mb = config.get("layer_mem_size_mb")
+
+        # Get true available memory
+        current_num_layers = current_layers[1] - current_layers[0] + 1 if current_layers is not None else 0 
+        
+        true_available_vram, true_available_memory = get_true_available_memory(
+            current_num_layers=current_num_layers,
+            output_layer_loaded=output_layer_curr_loaded,
+            output_layer_memory_tle=output_layer_memory_tle,
+            layer_mem_size_mb=layer_mem_size_mb,
+            mem_usage=mem_usage,
+            available_mem=avail_mem,
+            vram_usage=vram_usage,
+            available_vram=avail_vram,
+        )
+        
+        max_extra_num_layers = mem_to_num_layers(
+            config, 
+            true_available_memory, 
+            true_available_vram, 
+            mem_usage
+        )
+
+        if requested_num_layers > 0:
+            if max_extra_num_layers < requested_num_layers:
                 return False
             
             if output_layer:
-                max_num_layers -= num_layers
-                return max_num_layers >= output_layer_memory_tle
+                max_extra_num_layers -= requested_num_layers
+                return max_extra_num_layers >= output_layer_memory_tle
             
             return True
 
-        return max_num_layers >= output_layer_memory_tle
+        return max_extra_num_layers >= output_layer_memory_tle
 
 def mem_to_num_layers(
     config: Dict[str, Any],
@@ -211,17 +243,7 @@ def mem_to_num_layers(
 ) -> int:
     """Calculates how many transformer layers fit in the given available Memory/VRAM"""
     
-    if "head_dim" not in config:
-        config["head_dim"] = config["hidden_size"] // config["num_attention_heads"]
-
-    layer_params = config.get("transformer_layer_params")
-
-    param_dtype = get_dtype_from_config(config)
-    bytes_per_param = param_dtype.itemsize
-    
-    layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
-    layer_kv_cache_mem_size_mb = (2 * config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * config.get("head_dim") * bytes_per_param) / (1024 * 1024)
-    layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
+    layer_mem_size_mb = config.get("layer_mem_size_mb")
 
     if avail_vram:
         available = avail_vram - mem_usage - RESERVED_MEM_MB
@@ -234,5 +256,5 @@ def mem_to_num_layers(
     max_num_layers = available / layer_mem_size_mb
     if round_it:
         max_num_layers = int(round(available / layer_mem_size_mb))
-    return min(max_num_layers, config.get("num_hidden_layers"))
+    return min(max_num_layers, config.get("num_hidden_layers") + config.get("output_layer_memory_tle"))
 

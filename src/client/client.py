@@ -275,18 +275,23 @@ class Client:
 
                 head_succ_avail_mem = head_succ_info.get("available_memory")
                 head_succ_avail_vram = head_succ_info.get("available_vram")
-                head_succ_mem_usage = head_succ_info.get("memory_usage")
 
                 if can_load(
                     config=self.config,
+                    current_layers=head_succ_info.get("layers"),
+                    output_layer_curr_loaded=head_succ_info.get("output_layer_loaded", False),
                     layers=orphaned_layers,
                     output_layer=dead_head_info.get("output_layer_loaded"),
                     avail_mem=head_succ_avail_mem,
+                    mem_usage=head_succ_info.get("memory_usage"),
                     avail_vram=head_succ_avail_vram,
-                    mem_usage=head_succ_mem_usage,
-                    output_layer_memory_tle=head_succ_info.get("output_layer_memory_tle")
+                    vram_usage=head_succ_info.get("vram_usage")
                 ):
-                    new_layers = (orphaned_layers[0], head_succ_info.get("layers")[1])
+                    if head_succ_info.get("layers") is not None:
+                        new_layers = (orphaned_layers[0], head_succ_info.get("layers")[1])
+                    else:
+                        new_layers = orphaned_layers
+                    
                     self.chain.repair(
                         new_layers,
                         replacement_info=head_succ_info,
@@ -324,17 +329,18 @@ class Client:
                     if backup_info:
                         backup_avail_mem = backup_info.get("available_memory")
                         backup_avail_vram = backup_info.get("available_vram")
-                        backup_mem_usage = backup_info.get("memory_usage")
                         logger.info(
                             f"Backup Node {backup_info.get('id')[:DIGITS_SHOW]} found with Available Memory: {backup_avail_mem} MB and Available VRAM: {backup_avail_vram} MB"
                         )
 
                         if can_load(
                             config=self.config,
+                            current_layers=backup_info.get("layers"),
+                            output_layer_curr_loaded=backup_info.get("output_layer_loaded"),
                             avail_mem=backup_avail_mem,
+                            mem_usage=backup_info.get("memory_usage"),
                             avail_vram=backup_avail_vram,
-                            mem_usage=backup_mem_usage,
-                            output_layer_memory_tle=backup_info.get("output_layer_memory_tle"),
+                            vram_usage=backup_info.get("vram_usage"),
                             layers=orphaned_layers,
                             output_layer=dead_head_info.get("output_layer_loaded"),
                         ):
@@ -402,6 +408,10 @@ class Client:
                         channel = create_grpc_channel(backup_addr)
                         backup_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
                         backup_stub.JoinChain(nodeservice_pb2.Empty())
+                        self._connect_to_head()
+
+                        if self.chain.get_all_layers_loaded():
+                            break
                     except grpc.RpcError as e:
                         logger.error(
                             f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"

@@ -146,7 +146,7 @@ class ChainManager:
         # if not self.get_client_nodes():
         #     self.dht.store(CLIENTS_KEY, [], EXPIRATION_S)
 
-        self.update_chain_status(ChainStatus.UNREADY)
+        # self.update_chain_status(ChainStatus.UNREADY)
 
         if not self.dht.get(TOKENS_GENERATED_KEY):
             self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
@@ -171,7 +171,7 @@ class ChainManager:
             remaining_num_layers = max_num_layers - target_num_layers
 
             # Check if the final output layer can be loaded as well
-            if remaining_num_layers >= output_layer_memory_tle:
+            if round(remaining_num_layers, 2) >= round(output_layer_memory_tle, 2):
                 self_info["load_output_layer"] = True
 
 
@@ -197,6 +197,8 @@ class ChainManager:
         num_total_layers: int, 
     ):
         """Logic for a new server to join an existing chain."""
+        logger.info(f"Max Num Layers: {max_num_layers}")
+
         # Find the current tail
         tail_id = self.dht.get(TAIL_KEY)
         if not tail_id:
@@ -908,12 +910,12 @@ class ChainManager:
         if self.is_head():
             # Republish the head key
             self.dht.store(HEAD_KEY, self.node_id, EXPIRATION_S)
-            logger.info("HEAD Node Key republished.")
+            logger.info("HEAD Key republished.")
 
         # If this node is the tail, republish the tail key
         if self.is_tail():
             self.dht.store(TAIL_KEY, self.node_id, EXPIRATION_S)
-            logger.info("HEAD Node Key republished.")
+            logger.info("TAIL Key republished.")
 
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} republished its keys.")
 
