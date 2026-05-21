@@ -244,12 +244,13 @@ class Client:
             self.head_server_stub = None
             
             # Only one client has to do the repair
-            client_nodes = self.chain.get_client_nodes()
+            # client_nodes = self.chain.get_client_nodes()
+            client_leader = self.chain.get_client_leader()
 
-            if client_nodes[0] != self.chain.node_id:
-                logger.info(f"Waiting for client {client_nodes[0][:DIGITS_SHOW]} to finish the HEAD replacement...")
+            if client_leader != self.chain.node_id:
+                logger.info(f"Waiting for client {client_leader[:DIGITS_SHOW]} to finish the HEAD replacement...")
 
-                while self.chain.get_chain_status() == ChainStatus.REPAIRING:
+                while self.chain.get_chain_status() in (ChainStatus.REPAIRING, ChainStatus.REALLOCATING):
                     time.sleep(HEARTBEAT_INTERVAL_S)
                 
                 self._connect_to_head()

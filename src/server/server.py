@@ -860,11 +860,16 @@ class Server:
             if target_transformer_layer_count < remaining_num_trans_layers:
                 # adjust rate, restart realloc
                 tail_cant_load_remaining = True
+        
+        if tail_cant_load_remaining:
+            logger.warning("Tail can't load the Output Layer after Loading the remaining Layers!")
             
         
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
         memory_limit_exceeded = round(ideal_tle_count, 2) > round(max_num_layers, 2)
+        if memory_limit_exceeded:
+            logger.warning(f"Memory Limit Hit!")
         is_isolated_node = not (self.chain.is_head() and self.chain.is_tail())
 
         if ((memory_limit_exceeded and is_isolated_node) or tail_cant_load_remaining) and not load_max:
@@ -873,7 +878,7 @@ class Server:
 
             effective_rate = effective_num_layers * remaining_rate / ((num_total_tle) - effective_num_layers)
         
-            logger.warning(f"Memory limit hit. Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
+            logger.warning(f"Effective Num Layers: {effective_num_layers} | Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
             self.processing_rate = effective_rate
             self.chain.update_processing_rate(effective_rate)
             return nodeservice_pb2.ReallocateResponse(

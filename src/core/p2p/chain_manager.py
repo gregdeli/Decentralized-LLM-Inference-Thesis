@@ -410,6 +410,17 @@ class ChainManager:
         
         return num_clients
 
+    def get_client_leader(self) -> str:
+        """
+        Elects a client leader deterministically from the list of client node IDs.
+        """
+        client_nodes_list = self.get_client_nodes()
+
+        sorted_clients = sorted(client_nodes_list)
+
+        return sorted_clients[0]
+
+
     def get_chain_throughput(self) -> Optional[Dict[float, ValueWithExpiration]]:
         version = self.dht.get(THROUGHPUT_VERSION_KEY)
         key = f"{THROUGHPUT_KEY}{version}"
@@ -622,7 +633,7 @@ class ChainManager:
             if not server_info:
                 break
 
-            available_vram = server_info.get("availbale_vram")
+            available_vram = server_info.get("available_vram")
             available_memory = server_info.get("available_memory")
             # available = available_vram if available_vram is not None else available_memory
 
