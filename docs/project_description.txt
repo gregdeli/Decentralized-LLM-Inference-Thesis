@@ -1,0 +1,55 @@
+Title: Dynamic and Fault Tolerant Collaborative LLM Inference on Heterogenious Devices
+
+This project allows for execution of LLMs by distributing the models transformer layers and the final output layer among a number of server nodes.
+
+It is dynamic meaning there isnt a central node that handles layer allocation.
+
+When server nodes join they take on as many layers as they can fit in memory, until all layers are served. If all layers are served they become backups.
+
+Server Node: Active server node: It can load a number of transformer layers and/or the final output layer. 
+             It is responsible for running inference on its assigned layers, Repairing the inference chain if its successor fails, it can take over its successors layers if it has a much larger processing rate and enough memory, 
+             Each active server node can only "see" its successor.
+             
+             Backup server node: if a node joins the network after all the layers have been loaded, it remains on stanby and it is used by other nodes for chain repairs. A backup can also takeover the layers of a weaker node (in terms of processing rate) in the active chain if it has enough memory (opportunistic takeover)
+
+Client Node: The client node loads the embedding layer of the model and can use the inference chain to generate text. The client is also responsible for reapiring the chain when the HEAD of the chain fails. It can also trigger layer reallocation on each node, which attempts to make the chain balanced meaning that each active server node takes on a number of layers proportional to its processing rate if its memory allows it which makes the inference delay of each node roughly equal.
+             I have also created a GUI for the client where the user can see information about the inference chain and can generate text on a chatbot interface.
+
+Rotating KV Caches:
+    Each server nodes maintains seperate kv caches for the different clients that use the active chain for text generation and the active one is seletcetd based on the client address from which the inference request is coming from. 
+    In order to keep the memory used caused by the kv caches to expand out of control a global max sequence length is defined. And is divided among the clients equally. If only one client has joined the network its max seq length is for example 8192 tokens, if 4 clients have joined the network each client has a max seq length of 2048
+
+The inference chain consists of a HEAD server, a number of intermidiate servers and a TAIL server. The TAIL server should hold the final output layer and it is responsible for calulating the logits and sampling them to get the next token.
+
+DHT: A DHT is used to made up of all the nodes to store and share metadata about the network. The python library hivemind is used for this. The dht allows the network to be repairable beacause a failed nodes information (like the layers it was serving) remains stored on the dht until it expires. Allowing a different node to make the necessary repairs.
+
+GRPC: the python gprc library is used for rpc operations. Mainly it is used during inference to transmit intermidiate activations between nodes.
+
+Main fetures and Operations:
+Repair: Active node failure -> repair by its predecessor. HEAD failure -> repair by a client.
+Opportunistic Takeover: Backup Node Takeover and Active Node Successor Takeover.
+Reallocation.
+Running Inference.
+Profiling: Each node is profiled when it joins to determine its processing rate (transformer layer equivilant / sec). And to also determine the output_layers temporal equivilant to a transformer layer, beacause output_layer_delay = output_layer_temporal_tle * transformer_layer_delay. This wight is important to mentain a consistent processing rate measurement on the tail server that holds the final output layer.
+
+
+LLMs: The Llama 3 modes can be used on this project, specifically Llama 3.2 1B, 3B and Llama 3.1 8B. A custom implementation of this llms architecture has been implemented in order to allow dynamic loading of a certain range of transformer layers and/or the final output layer.
+      The inference engine used is pytorch. Devices cpu and cuda are supported.
+
+Optimizations: 1. To reduce network latency when transmitting intermidiate activations, 8-bit blockwise quantization is used before sending them.
+               2. Pipelining: the active chain essentially creates an execution pipeline. If multiple clients use the chain to generate text at the same time, the chain is balanced and the pipeline is full, there are no idle nodes and the overall chain throughput is maximized.
+
+Main strengths:
+* This project can allow you to use an LLM by taking advantage of multiple devices and their respective limited resources. Even if you could run inference on a single device perhaps you want to save some resources. 
+  or maybe you couldnt load the full model on any of your available computers. You can leverage multiple computers to spread the workload on multiple devices.
+* The system is designed to be dynamic and repairable, without a single point of failure. 
+  It is dynamic because nodes can join and leave as they please and the system will always be at a stable state. Also because of the Opportunistic takeover and Reallocation features the system is always at an optimal state to maximize its throughput.
+  Chain repairs can be handled be all the active server nodes or by a client if the head server fails. There is not a central organizing node responsible for this. 
+* Heterogeneity: Both nodes with cpus and gpus can be used to make up the inference chain. 
+
+Important: 
+* This sytem should be used in a local network with a high bandwidth to avoid throughput reduction due to network latency.
+
+Future Work:
+* In takeovers or repairs the replacement node could try to load the number of layers it can from the replacee not try to only load all the orphaned layers and then use a backup if it cant.
+* In chain repairs and takeovers the nodes network latency could be taken into account, though in a local network perhaps it wouldnt make much of a difference.

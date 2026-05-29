@@ -1,0 +1,309 @@
+src/
+    client/
+        client.py:
+            This Python script (client.py) implements the client-side application logic for a decentralized, pipeline-parallel Large Language Model (LLM) inference system. It coordinates local preprocessing, peer-to-peer (P2P) network discovery, gRPC-based communication with a distributed chain of server nodes, and fault tolerance mechanisms.
+
+            Here is a factual summary of the script's architecture and primary functionalities:
+
+            1. Initialization and Local Execution
+            Hardware Detection: The client automatically detects available hardware, defaulting to CPU but allocating a CUDA context if sufficient VRAM (RESERVED_MEM_MB) is available.
+
+            Partial Model Loading: It uses an LLM loader class to initialize only the initial embedding/pre-computation layers (load_initial_layer=True, load_output_layer=False). This minimizes the client's memory footprint.
+
+            P2P Setup: Initializes a DHTManager (Distributed Hash Table) for node discovery and a ChainManager to track the state of the distributed inference chain.
+
+            2. Networking and Communication (gRPC)
+            Local gRPC Server: A background thread starts a local gRPC server (_run_grpc_server) to listen for incoming inference responses. This enables asynchronous communication where the final node in the distributed chain (the Tail) can send tokens directly back to the client.
+
+            Head Server Connection: The client connects to the "Head" server—the entry point of the server chain—by retrieving its IP address from the DHT and establishing a gRPC channel.
+
+            3. Distributed Inference Workflow (generate, _generate_fn, _generate_stream)
+            Local Forward Pass: Upon receiving a prompt, the client encodes the text and computes the initial forward pass locally using forward_client_initial.
+
+            Tensor Transmission: The resulting intermediate tensor is serialized and sent to the Head server node via the RunLayers gRPC method. The request includes the client's gRPC address for the return trip.
+
+            Asynchronous Waiting: The client waits on a threading.Event (inference_response_event). Once the Tail node completes the final network layer, it sends the computed token back to the client, triggering the event.
+
+            Loop and Stream: This process loops for max_new_tokens or until an End-of-Sequence (EOS) token is detected. The script supports both batch generation (returning the full text) and token-by-token streaming via Python generators.
+
+            4. Fault Tolerance and Auto-Healing
+            Health Monitoring: A dedicated background thread (_head_health_monitor_task) continuously pings the Head server to verify its availability.
+
+            Head Replacement (replace_head_server): If the Head server fails, the client uses the DHT to find a replacement. It evaluates the Head's successor node or available backup nodes to check if they have sufficient memory (can_load) to adopt the orphaned model layers.
+
+            Layer Reallocation (trigger_reallocation): If the chain topology changes due to node failures, the client initiates a reallocation request. It calculates the total active chain memory and throughput rate, prompting the Head node to dynamically re-partition the LLM layers across the remaining healthy server nodes.
+
+            5. Resource Management
+            Background Heartbeats: The script maintains _dht_heartbeat_task to ensure the client's keys remain active in the DHT.
+
+            Shutdown Protocol: Upon termination, the client deregisters itself from the DHT, commands the server chain to clear its specific KV cache (RemoveClientKVCacheRequest), and safely terminates the local gRPC server.
+
+    core/
+        p2p/
+            chain_manager.py:
+                This Python script, chain_manager.py, serves as the orchestration layer for a decentralized Large Language Model (LLM) inference system. It utilizes the hivemind library's Distributed Hash Table (DHT) to maintain and synchronize the state of a distributed computational pipeline (a "chain") across multiple independent server nodes without relying on a centralized master node.
+
+                Core Functionality
+                1. Chain Formation and Node Joining
+                The ChainManager class dictates how server nodes participate in the distributed pipeline. When a node attempts to join, the script checks the DHT for an existing chain head:
+
+                Forming an Initial Chain: If no head exists, the node registers itself as both the head and tail. It evaluates its own hardware memory limits, computes how many Transformer layers it can hold, and assigns itself the starting sequential layers.
+
+                Joining an Existing Chain: If a chain already exists, the new node appends itself to the current tail. It evaluates the previous node's assigned layers and claims the subsequent block of unloaded layers up to its maximum capacity.
+
+                Backup Assignment: If all layers of the LLM are already loaded by the active chain, subsequent joining nodes automatically default to "backup" status.
+
+                2. Global State & Metadata Management
+                The script defines numerous string keys to track the global state of the network on the DHT. Key tracked metrics include:
+
+                HEAD_KEY and TAIL_KEY: Identifiers for the start and end of the sequential pipeline.
+
+                ALL_LAYERS_KEY: A boolean flag indicating if the distributed network has successfully loaded the entire LLM.
+
+                STATUS_KEY: Tracks the operational phase of the chain via the ChainStatus enum (e.g., READY, UNREADY, RUNNING, REPAIRING, TAKEOVER).
+
+                Server Info Profiles: Each node periodically publishes a dictionary containing its IP address, loaded layers, hardware device type, memory limits, and processing rate.
+
+                3. Fault Tolerance and Dynamic Reallocation
+                The ChainManager includes self-healing mechanisms to handle node failures and optimize hardware efficiency:
+
+                Repair Logic: The repair method allows the network to substitute a dropped node with a replacement node. It safely updates the layer assignments and re-links the predecessor and successor pointers in the pipeline.
+
+                Opportunistic Takeover: Backup nodes continuously execute the evaluate_takeover_eligibility method to monitor the processing_rate and memory capabilities of active nodes. If a backup node calculates that it is significantly faster (based on an internal threshold multiplier) and has equal or greater memory capacity, it can preemptively replace a weaker active node in the chain.
+
+                4. Distributed Metrics Tracking
+                The script aggregates telemetry across the network to calculate total system capacity and inference performance:
+
+                Memory Tracking (gather_total_memory): Traverses the active chain to calculate total VRAM/RAM usage and remaining available memory across all participating nodes.
+
+                Throughput (update_chain_throughput): Maintains a global counter for generated tokens (TOKENS_GENERATED_KEY) and publishes timestamped logs (THROUGHPUT_KEY) to continuously measure the distributed pipeline's generation speed.
+
+                5. Client Coordination
+                The script manages external end-users (clients) interacting with the LLM through a registry (CLIENTS_KEY). Clients are tracked to maintain a concurrent user count, and a deterministic client leader election is implemented (get_client_leader). The DHT also allows clients to dynamically discover active server nodes (get_head_server_info, get_random_server_node_id) to submit their inference requests.
+        
+        remote/
+            nodeservice.proto:
+                This file defines the remote procedure calls (RPCs) and data structures used for network communication.
+
+                Services:
+
+                NodeService (Server Nodes): Handles the core responsibilities of a node in the inference chain.
+
+                Inference Execution: RunLayers passes the tensor data through the node's assigned model layers.
+
+                Topology Management: Check (health checks), UpdateSuccessorStub (reconnecting to the next node in the chain), GetPeerMultiaddr, JoinChain, and UpdateChainStatus.
+
+                Dynamic Load Balancing: Reallocate, LoadLayers, and UnloadLayers allow the system to dynamically shift model layers between nodes to prevent bottlenecks.
+
+                Memory Management: RemoveClientKVCache clears specific client KV caches to free up VRAM.
+
+                ClientService (Client Node): Exposes a single ReceiveResponse endpoint for the client to receive the final output from the tail node of the chain.
+
+                Key Data Structures:
+
+                InferenceRequest: Carries the forward-pass data. It includes the raw tensor bytes, shape, data type, and inference metadata (e.g., seq_length, input_pos, max_returned_tokens). It also includes block_scales to support block-wise quantization.
+
+                InferenceResponse: Carries the computed tensor back to the client.
+            
+            serialization.py:
+                This script bridges the gap between PyTorch's in-memory tensors and the byte-based gRPC messages defined in the proto file.
+
+                Key Mechanisms:
+
+                Serialization/Deserialization: Functions like tensor_to_request and request_to_tensor convert PyTorch tensors into InferenceRequest protobuf messages and vice versa. It maps PyTorch datatypes to string representations (e.g., torch.float16 to "float16").
+
+                Block-wise Quantization (Network Optimization): * To reduce network bandwidth latency during the forward pass, tensor_to_request utilizes quantize_blockwise.
+
+                It flattens the tensor, splits it into blocks of 1024 elements, and compresses the float values into 8-bit integers (int8).
+
+                It calculates and stores the absolute maximum (absmax) for each block. These scales are sent alongside the data (block_scales in the proto) so the receiving node can reconstruct the float tensor using dequantize_blockwise.
+
+                Response Handling Distinction: Based on the current code, tensor_to_response bypasses quantization. The quantization logic is commented out, meaning the final inference response is sent back to the client using raw bytes of the original data type (e.g., float16), rather than being compressed to int8.
+
+            utils.py:
+                The script src/core/remote/utils.py provides networking and gRPC utility functions designed to facilitate node discovery and communication in a distributed system.
+
+                Here is a factual breakdown of its primary components:
+
+                1. Local Network Configuration
+
+                get_free_port(): Binds a temporary socket to port 0 to ask the operating system for an available network port, which it then returns.
+
+                get_ip_address(): Determines the local machine's primary IP address by establishing a dummy UDP connection. It falls back to localhost (127.0.0.1) if the network is unreachable.
+
+                2. Node Discovery & Connection
+
+                discover_bootstrap_node_address(): Implements a local network discovery mechanism using UDP broadcasts. It sends a "DISCOVER_BOOTSTRAP" message on port 9999 and waits for a response containing the bootstrap node's address. It handles timeout loops differently depending on whether the calling process is a client or a server node.
+
+                get_bootstrap_peer_address(): Connects to the bootstrap node via gRPC to retrieve its underlying P2P multiaddress. It includes a fault-tolerance mechanism that retries the connection up to 5 times (with 5-second delays) in case the bootstrap node is still initializing.
+
+                3. gRPC Communication Utilities
+
+                create_grpc_channel(): Creates and returns an insecure gRPC communication channel pointing to a specified address. It configures the channel to use Gzip compression (medium level) by default to reduce the payload size during inference or node communication.
+
+                CustomRpcError: A custom exception class inheriting from both grpc.RpcError and grpc.Call. It is used to explicitly define and propagate specific gRPC status codes and error details.
+
+
+        llm_loader.py:
+            This Python script, llm_loader.py, provides a high-level API for loading and executing text generation on a Llama 3 model. It is specifically architected to support distributed LLM inference by allowing individual nodes to load only a specific subset of the model's transformer layers, rather than the entire model.Here is a factual summary of its components and mechanics:
+            Core Components
+            1. LLM Class (Main API)Model Loading (load method): Reads the model configuration (config.json) and determines the required data type (e.g., bfloat16 or float32). It loads model weights exclusively from .safetensors files, supporting both single-file and sharded checkpoint formats.Distributed Layer Loading: To facilitate split inference across multiple nodes, the instantiation accepts parameters such as load_initial_layer, layers_to_load, and load_output_layer. The script parses the model.safetensors.index.json file to identify and load only the specific shards containing the weights for the assigned layers.Text Generation: Provides the generate method, which orchestrates the auto-regressive generation loop. It handles token limit validations and routes the process to either a standard block generator (_generate_fn) or a streaming generator (_generate_stream) that yields tokens one by one.KV Cache Management: Initializes and dynamically resizes a Key-Value (KV) cache (set_kv_cache, clear_kv_cache). This stores past attention states to optimize inference speed and prevent redundant calculations during token generation.Decoding Strategy (sample_logits): Implements token selection mechanisms based on the model's output logits. It supports greedy decoding (temperature $\le$ 0), temperature scaling, and top-p (nucleus) sampling.Prompt Formatting: The apply_chat_template method automatically injects Llama 3.2 special tokens (e.g., <|start_header_id|>, <|eot_id|>) to format the input if the loaded checkpoint is an instruction-tuned model.
+            2. Preprocessor ClassActs as a targeted wrapper for the Hugging Face AutoTokenizer.encode: Converts raw text strings into PyTorch tensors of input IDs, applying necessary padding, and maps them to the correct hardware device (CPU/GPU).decode: Converts generated token ID tensors back into human-readable text strings, automatically stripping out special internal tokens.
+            Memory & Performance OptimizationsGarbage Collection: During the model weight loading phase, the script explicitly deletes the state_dict from memory and calls gc.collect() after each .safetensors shard is processed. This prevents RAM spikes when loading large models on hardware with limited memory.In-Place Memory Mapping: By resolving exactly which files correspond to the needed layers (get_relevant_safetensor_files), it avoids loading unnecessary model weights into system memory.
+            In the context of a distributed system, this script serves as the local inference engine for an individual node, managing local memory, tokenizer mapping, and partial forward passes while respecting the layer boundaries assigned by the broader network.
+
+        model.py:
+            The provided Python script implements a custom PyTorch version of the Llama 3 architecture, specifically engineered for distributed and decentralized inference.
+
+            Here is a breakdown of its core components and functionalities:
+
+            1. Distributed Execution & Model Partitioning
+            Unlike standard monolithic LLM implementations, this model is designed to be split across different network nodes (e.g., a client and one or more servers):
+
+            Partial Loading: The Llama3 class constructor accepts parameters (load_initial_layer, layers_to_load, load_output_layer) that allow a specific node to instantiate only the layers it is assigned to compute.
+
+            Segmented Forward Passes: The execution pipeline is divided into distinct methods to support network transmission between layers:
+
+            forward_client_initial: Computes the initial token embeddings. Typically run on the client.
+
+            forward_server: Processes the hidden states through a subset of transformer blocks. Designed to run on remote nodes.
+
+            forward_client_final: Applies the final RMSNorm and linear projection (lm_head) to generate logits.
+
+            2. Multi-Tenant KV Cache Management
+            The script includes robust memory management to allow a server node to handle generation requests from multiple clients concurrently without memory collisions:
+
+            Client-Specific Caches: The CausalSelfAttention class stores a dictionary (kv_caches) that maps a unique client_id to a dedicated KVCache object.
+
+            Dynamic Reallocation: Methods like add_client_cache, remove_client_cache, and reallocate_caches allow the server to dynamically adjust the sequence length allocations for active clients, ensuring that the total memory footprint does not exceed the predefined GLOBAL_MAX_SEQ_LEN.
+
+            Cache Tracking: The class includes utilities (get_kv_cache_memory_sizes) to track and report the memory consumption of each client's cache in megabytes.
+
+            3. Core Llama 3 Architectural Features
+            The script faithfully reproduces the underlying mechanics of Llama 3 to ensure compatibility with standard weights:
+
+            Grouped-Query Attention (GQA): The CausalSelfAttention module uses separate head counts for queries (n_head) versus keys and values (n_kv_head), improving inference efficiency.
+
+            Rotary Positional Embeddings (RoPE): Positional information is injected at each layer during the forward pass using apply_rope and precomputed complex exponentials (build_rope_cache).
+
+            Normalization & Activations: The architecture utilizes Root Mean Square Normalization (RMSNorm) and a standard Multilayer Perceptron (MLP) utilizing the SiLU (Swish) activation function in a gated configuration.
+
+        utils.py:
+            This Python script, src/core/utils.py, provides utility functions for configuring, profiling, and distributing Large Language Models (LLMs) across multiple nodes. Its primary purpose is to calculate memory requirements and determine how many model layers a given piece of hardware can support during distributed inference.
+
+            The functions can be categorized into three core operational areas:
+
+            1. Memory and Node Capacity Planning
+            These functions are essential for the distributed nature of the system, determining how to partition the model across different machines.
+
+            calculate_model_size_mb: Computes the overall memory footprint of the model in megabytes. It accounts for the size of the weights (based on data type), the Key-Value (KV) cache required for the context window, and a reserved memory buffer for each participating node.
+
+            get_true_available_memory: Compares the theoretical memory footprint of the layers a node is supposed to have loaded against the actual system RAM or VRAM usage. This provides an accurate reading of remaining memory.
+
+            can_load: Acts as a gatekeeper function. It checks if a specific node has enough true available memory or VRAM to take on a requested number of additional transformer layers or the final output layer.
+
+            mem_to_num_layers: Calculates the maximum number of transformer layers that can physically fit into a given amount of free RAM or VRAM.
+
+            2. Architecture Parameter Calculations
+            These functions programmatically calculate the exact mathematical size of the model's sub-components, heavily tailored toward Llama-style architectures.
+
+            calculate_transformer_params: Calculates the total number of parameters inside a single transformer block. It sums up the weights for the Attention mechanism (Query, Key, Value, Output projections), the Multi-Layer Perceptron (Gate, Up, Down projections), and the RMSNorm layers.
+
+            calculate_final_output_params: Calculates the parameter count for the components that generate the final token probabilities: the final RMSNorm and the linear output layer (Language Modeling Head).
+
+            3. Model Configuration and State Management
+            These functions handle file parsing and formatting to prepare the LLM weights for PyTorch.
+
+            get_dtype_from_config: Translates string representations of data types found in config files (like "float16" or "bfloat16") into executable PyTorch data types (torch.float16).
+
+            is_instruct_model: Inspects the tokenizer_config.json for a chat_template to determine if the model is base or instruction-tuned.
+
+            remove_model_prefix: Strips the "model." prefix from keys within a PyTorch state dictionary so the weights align with the expected internal variable names of the application.
+
+            update_model_config: A helper function to dynamically modify and save updates to the model's config.json file on disk.
+
+            get_relevant_safetensor_files: Filters a weight map to return a deduplicated list of necessary .safetensors files.
+
+            In summary, this script contains the structural logic required to profile an LLM's architecture, calculate its exact memory requirements during runtime, and safely distribute its layers across a network of devices based on their individual hardware limitations.
+
+
+    server/
+        server.py:
+            Based on the provided Python script and verified via internet search regarding "AR-MDI" (Adaptive and Resilient Model-Distributed Inference), this code implements the main server application logic for a decentralized, distributed Large Language Model (LLM) inference system.Here is an objective summary of its primary components and functions:Core FunctionalityThe Server class in server.py allows an individual machine (node) to participate in a larger "inference chain." Instead of requiring a single machine to hold an entire LLM, this system splits the model's transformer layers across multiple participating nodes. Each node processes its assigned segment of the model and forwards the intermediate results to the next node in the chain.  Key Mechanisms1. Resource Management & Model LoadingMemory Profiling: The script actively monitors system RAM and GPU VRAM (using psutil and torch.cuda). It calculates exactly how many transformer layers the host machine can fit in memory alongside the necessary Key-Value (KV) cache.Dynamic Loading: The _load_llm, _unload_llm, and _reload_llm methods manage swapping layers in and out of memory. It actively forces garbage collection (gc.collect() and malloc_trim) to prevent memory leaks when layers are reallocated.2. Distributed Inference PipelineLayer Execution (run_local_layers): When a request arrives, the node receives intermediate hidden states (tensors), processes them through its locally loaded layers, and forwards the output to the next node (the "successor") via gRPC.Tail Node Responsibilities: If the node is the final one in the chain (the "tail"), it processes the final output layer, samples the next token, and sends the finalized response back directly to the client.3. Load Balancing (AR-MDI Logic)Reallocation (reallocate_layers): The code implements Adaptive and Resilient Model-Distributed Inference (AR-MDI) logic. Nodes continually benchmark their processing rates (layers per second). If one node becomes a bottleneck or if system topology changes, the script recalculates ideal layer distributions. Faster nodes will dynamically take on more layers (measured in "Transformer Layer Equivalents" or TLE) to maximize the total system throughput.4. Fault Tolerance and RepairHealth Monitoring: Background threads continuously ping successor nodes. If a node fails to respond, it is marked as dead.Chain Repair (repair_chain): When a failure is detected, the preceding node attempts to fix the broken chain. It will either load the dead node's "orphaned" layers itself (if it has enough memory) or prompt an idle "backup node" to join the chain and take over those layers.Opportunistic Takeover: Idle backup nodes passively monitor the performance of active nodes. If they detect an active node performing significantly worse than the system average, they can trigger an opportunistic_takeover to replace the slow node.5. Networking & DiscoveryCommunication: Nodes communicate state and sequence via a Distributed Hash Table (DHT) and send the actual tensor data during inference over gRPC. Initial peer discovery is handled via UDP broadcasting.
+
+        servicer.py:
+            This Python script, servicer.py, implements a gRPC service (NodeServicer) for a node operating within a distributed Large Language Model (LLM) inference network. It acts as the networking interface, handling incoming Remote Procedure Calls (RPCs) from other peers and translating them into local operations on the node's server and LLM.
+
+            Here is a summary of its core components and functionalities:
+
+            1. Inference Execution
+            RunLayers: Receives an incoming request containing an input tensor and metadata (e.g., maximum returned tokens, sequence length, and input position). It deserializes the tensor and spawns a daemon thread to process the local LLM layers asynchronously without blocking the gRPC server.
+
+            2. Memory & KV Cache Management
+            RemoveClientKVCache: Frees the Key-Value (KV) cache associated with a specific client ID. After removing the cache, it reallocates the remaining caches. To prevent memory fragmentation and RSS (Resident Set Size) memory bloat, it aggressively forces memory release back to the operating system using Python's gc.collect() and a C-level call to libc.malloc_trim(0). Finally, it recursively forwards this cache-clearing request to the successor node in the chain.
+
+            LoadLayers & UnloadLayers: Endpoints that instruct the node to load or unload its assigned LLM layers into or out of hardware memory.
+
+            3. P2P Topology & Chain Management
+            JoinChain: Computes the node's layer capacity based on available memory and registers the node within the distributed processing chain. It then loads the LLM and establishes a connection with the next node (successor).
+
+            GetPeerMultiaddr: Retrieves and returns the node's visible P2P multiaddress from the Distributed Hash Table (DHT).
+
+            UpdateChainStatus & UpdateSuccessorStub: Utility endpoints to update the current state of the distributed chain and to force the node to reconnect to its successor.
+
+            4. Load Balancing & Health Monitoring
+            Reallocate: Triggers a reallocation of LLM layers across the network. It takes parameters like total processing rate, load maximum, and predecessor information to dynamically balance the computational load.
+
+            Check: A standard health-check endpoint that returns an empty response to confirm the servicer is responsive.
+
+            In summary, the script bridges the network layer (gRPC/Protobuf) and the core application logic, allowing a machine to act as a worker node that receives tensors, processes a subset of an LLM's layers, manages memory aggressively, and forwards data along a decentralized pipeline.
+
+    client_gui.py:
+        The provided client_gui.py script is a graphical user interface (GUI) application built using the nicegui library. It serves as the frontend client for interacting with and monitoring a distributed Large Language Model (LLM) inference system.
+
+        Here is a factual summary of its primary components and functionality:
+
+        1. Initialization & Network Connection
+        Startup Task (initialize_client): Upon launch, the application reads environment variables (such as IP address, model path, and bootstrap node address) and uses them to connect to the peer-to-peer (P2P) network.
+
+        Client Instantiation: It creates a Client object that communicates with other nodes via gRPC and discovers the network structure via a Distributed Hash Table (DHT).
+
+        2. State Management (AppState & UIReferences)
+        The script uses an AppState class to track the connection status, generation state (is_generating), chat settings (e.g., maximum tokens, streaming), and live performance data (chain throughput).
+
+        A UIReferences class stores references to specific UI elements (like node labels and graphs) so they can be dynamically updated without rebuilding the entire interface.
+
+        3. User Interface Layout
+        The GUI is divided into three main columns:
+
+        A. Network Topology & Chain View (Left Sidebar)
+
+        Real-time Polling: A background timer updates this section every second by fetching chain information from the DHT.
+
+        Global Stats: Displays network-wide metrics, including total model parameters, total transformer layers, the number of connected clients, and the overall readiness status of the chain.
+
+        Node Cards (render_server_card): Visualizes the active chain by displaying individual cards for each connected node. It identifies nodes by their role (Head, Tail, Intermediate, or Backup) and lists their assigned neural network layers, memory/VRAM limits, processing rates, and local KV cache size.
+
+        B. Chat Interface (Center Panel)
+
+        Generation Controls: Users can input prompts, set the maximum number of generated tokens, and toggle token streaming.
+
+        Asynchronous Inference (generate): When a prompt is submitted, the script calls the client's generator function. If streaming is enabled, it yields tokens one by one, updating the chat history iteratively.
+
+        Interruption: Includes functionality to stop an ongoing generation process and clear the chat history.
+
+        C. Diagnostics & Performance Stats (Right Sidebar)
+
+        Client Metrics: Breaks down the specific delays encountered during inference, such as serialization/deserialization times, network communication latency with the Head node, and token decoding time.
+
+        Generation Stats: Displays the total tokens generated, overall generation time, and the throughput rate (tokens per second) of the latest request.
+
+        Throughput Graph: Uses plotly to render a live line graph depicting the chain's token generation throughput over time.
+
+        Reallocation Trigger: Provides a manual button that instructs the network to rebalance or reallocate transformer layers among available nodes.
+
+        4. Background Processes & Shutdown
+        The script relies heavily on asynchronous event loops (asyncio) and nicegui timers to ensure the interface remains responsive while handling network requests and model generation.
+
+        Graceful termination logic (app.on_shutdown) is included to close network ports and safely halt active generation loops when the application closes.
+
