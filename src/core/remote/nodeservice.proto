@@ -16,6 +16,9 @@ service NodeService {
   // Triggers the layer re-allocation process
   rpc Reallocate(ReallocateRequest) returns (ReallocateResponse) {}
 
+  // Sent to the HEAD server to trigger the reallocation process
+  rpc TriggerReallocation(Empty) returns (Empty) {}
+
   // Runs server_node._connect_to_successor()
   rpc UpdateSuccessorStub(Empty) returns (Empty) {}
 

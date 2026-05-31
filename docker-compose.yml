@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=6
+      # - NUM_LAYERS=5
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -70,7 +70,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=18
+      # - NUM_LAYERS=7
       - PROFILE=$PROFILE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
@@ -85,7 +85,7 @@ services:
         #         count: 1
         #         capabilities: [gpu]
         limits:
-          memory: 5G
+          memory: 4G
           # cpus: '1.0'
     depends_on:
       - worker-A
@@ -118,7 +118,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 5G
     depends_on:
       - worker-A
       - worker-B
@@ -149,7 +149,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 6G
     depends_on:
       - worker-A
       - worker-B

@@ -55,6 +55,11 @@ class NodeServiceStub(object):
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
                 response_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.FromString,
                 _registered_method=True)
+        self.TriggerReallocation = channel.unary_unary(
+                '/nodeservice.NodeService/TriggerReallocation',
+                request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+                response_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                _registered_method=True)
         self.UpdateSuccessorStub = channel.unary_unary(
                 '/nodeservice.NodeService/UpdateSuccessorStub',
                 request_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
@@ -114,6 +119,13 @@ class NodeServiceServicer(object):
 
     def Reallocate(self, request, context):
         """Triggers the layer re-allocation process
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def TriggerReallocation(self, request, context):
+        """Sent to the HEAD server to trigger the reallocation process
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -184,6 +196,11 @@ def add_NodeServiceServicer_to_server(servicer, server):
                     servicer.Reallocate,
                     request_deserializer=core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.FromString,
                     response_serializer=core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.SerializeToString,
+            ),
+            'TriggerReallocation': grpc.unary_unary_rpc_method_handler(
+                    servicer.TriggerReallocation,
+                    request_deserializer=core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
+                    response_serializer=core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
             ),
             'UpdateSuccessorStub': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateSuccessorStub,
@@ -325,6 +342,33 @@ class NodeService(object):
             '/nodeservice.NodeService/Reallocate',
             core_dot_remote_dot_nodeservice__pb2.ReallocateRequest.SerializeToString,
             core_dot_remote_dot_nodeservice__pb2.ReallocateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TriggerReallocation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/nodeservice.NodeService/TriggerReallocation',
+            core_dot_remote_dot_nodeservice__pb2.Empty.SerializeToString,
+            core_dot_remote_dot_nodeservice__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

@@ -15,7 +15,7 @@ from core.p2p.dht_manager import DHTManager
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import create_grpc_channel
 
-from core.utils import mem_to_num_layers
+from core.utils import mem_to_num_layers, can_load
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,10 @@ TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_" # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY ="chain_throughput_version" 
 
-EXPIRATION_S = 50.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-# HEARTBEAT_INTERVAL_S = 15.0
+# EXPIRATION_S = 50.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 # THROUGHPUT_EXPIRATION_S = 60.0
@@ -74,7 +74,7 @@ class ChainManager:
         output_layer_memory_tle,
         num_total_layers: int, 
         num_total_params: int,
-    ) -> None:
+    ) -> Optional[Dict[str, Any]]:
         """
         Main entry point for a server node to join or form the inference chain.
         It determines if it's the first node or joining an existing chain.
@@ -93,6 +93,8 @@ class ChainManager:
         #     # self.become_chain_leader()
         #     self.dht.store(LEADER_KEY, self.node_id, EXPIRATION_S)
 
+        previous_tail_info = None
+
         logger.info(f"Node {self.node_id[:DIGITS_SHOW]} attempting to join the chain...")
         head_id = self.dht.get(HEAD_KEY)
 
@@ -109,7 +111,7 @@ class ChainManager:
             logger.info(
                 f"Found existing chain with head {head_id[:DIGITS_SHOW]}. Joining at the tail..."
             )
-            self._join_existing_chain(
+            previous_tail_info = self._join_existing_chain(
                 self_info, 
                 max_num_layers, 
                 output_layer_memory_tle,
@@ -117,6 +119,8 @@ class ChainManager:
             )
 
         logger.info(f"Self Info: {self.get_self_info()}")
+
+        return previous_tail_info
         
         # Unset the chain leader so that another node can join
         # self.dht.store(LEADER_KEY, None, EXPIRATION_S)
@@ -195,7 +199,7 @@ class ChainManager:
         max_num_layers: int,
         output_layer_memory_tle: float, 
         num_total_layers: int, 
-    ):
+    ) -> Dict[str, Any]:
         """Logic for a new server to join an existing chain."""
         logger.info(f"Max Num Layers: {max_num_layers}")
 
@@ -281,6 +285,8 @@ class ChainManager:
 
         logger.info(f"Previous Tail Info: {tail_info}")
 
+        return tail_info
+
     @staticmethod
     async def _find_random_server(
         dht: DHT, 
@@ -311,7 +317,7 @@ class ChainManager:
                         return peer_id_str
         return None
 
-    # ---- Getters ----
+    # ------- Getters ------
 
     # ----- Global Keys -----
 
@@ -420,7 +426,6 @@ class ChainManager:
 
         return sorted_clients[0]
 
-
     def get_chain_throughput(self) -> Optional[Dict[float, ValueWithExpiration]]:
         version = self.dht.get(THROUGHPUT_VERSION_KEY)
         key = f"{THROUGHPUT_KEY}{version}"
@@ -446,7 +451,7 @@ class ChainManager:
         return random_server_id
         
 
-    # ----- Server Info Subkeys -----
+    # ----------- Server Info Subkeys -----------
 
     def get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
@@ -498,6 +503,8 @@ class ChainManager:
                 time.sleep(2)
 
         return None
+    
+    # ----------------------------------------------
 
     def get_chain_info(self) -> Optional[Dict[str, Any]]:
         """
@@ -686,12 +693,6 @@ class ChainManager:
                 current_node_id = None  # End of chain
 
         return total_memory
-    
-    # def get_tail_output_temporal_tle(self):
-    #     tail_id = self.get_tail_id()
-    #     tail_info = self.get_server_info(tail_id)
-
-    #     return tail_info.get("output_layer_temporal_tle")
 
     def is_head(self) -> Optional[bool]:
         """Check if this node is the head of the server chain"""
@@ -814,6 +815,88 @@ class ChainManager:
 
         if not self.is_client:
             self.republish_keys()
+    
+    def evaluate_and_trigger_reallocation(self, config: Dict[str, Any]):
+        """Check if a reallocation is necessary and make the chain leader trigger it"""
+        # Get the active node's server infos
+        server_infos = []
+        current_node_id = self.dht.get(HEAD_KEY)
+
+        while current_node_id:
+            server_info = self.get_server_info(current_node_id)
+            if not server_info:
+                break
+
+            if not server_info.get("inference_delay"):
+                if not server_info.get("processing_rate"):
+                    return
+                
+                layers = server_info.get("layers")
+                current_num_layers = layers[1] - layers[0] + 1 if layers else 0
+                current_num_layers += server_info.get("output_layer_temporal_tle") if server_info.get("output_layer_loaded") else 0
+
+                server_info["inference_delay"] = current_num_layers / server_info.get("processing_rate")
+
+            server_infos.append(server_info)
+
+            successor_data = server_info.get("successor")
+
+            if successor_data:
+                current_node_id = successor_data.get("id")
+            else:
+                current_node_id = None  # End of chain
+
+        if len(server_infos) == 0:
+            return 
+        
+        # Identify the node with the highest inference delay
+        bottleneck_node = max(server_infos, key=lambda x: x.get("inference_delay"))
+        fastest_node = min(server_infos, key=lambda x: x.get("inference_delay"))
+        # avg_delay = sum(s.get("inference_delay") for s in server_infos) / len(server_infos)
+
+        # Check imbalance
+        if bottleneck_node.get("inference_delay") > fastest_node.get("inference_delay") * (1 + IMBALANCE_THRESHOLD):
+            # Check if reallocation is possible
+            # If any node with lower delay has memory to spare
+            actionable = False
+            for s in server_infos:
+                if s == bottleneck_node:
+                    continue
+
+                # Check if s has memory to spare for at least 1 layer
+                can_load_one = can_load(
+                    config=config,
+                    current_layers=s.get("layers"),
+                    output_layer_curr_loaded=s.get("output_layer_loaded"),
+                    avail_mem=s.get("available_memory"),
+                    mem_usage=s.get("memory_usage"),
+                    avail_vram=s.get("available_vram"),
+                    vram_usage=s.get("vram_usage"),
+                    num_layers=1
+                )
+
+                if s.get("inference_delay") * (1 + IMBALANCE_THRESHOLD) < bottleneck_node.get("inference_delay") and can_load_one:
+                    actionable = True
+                    break
+            
+            # Trigger the reallocation
+            if actionable:
+                try:
+                    head_server_addr = self.get_head_server_info().get("address")
+                    channel = create_grpc_channel(head_server_addr)
+                    head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+
+                    head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
+                except grpc.RpcError as e:
+                    logger.error("HEAD failed to trigger the reallocation process")
+            else:
+                logger.info("Chain is imbalanced but cant be balanced.")
+        
+        else:
+            logger.info("Chain is balanced!")
+
+
+            
 
     def evaluate_takeover_eligibility(
         self,
@@ -894,11 +977,6 @@ class ChainManager:
         if num_total_params:
             self.dht.store(TOTAL_PARAMS_KEY, num_total_params, EXPIRATION_S)
 
-        # Republish the client_nodes list
-        # client_nodes = self.get_client_nodes()
-        # if client_nodes:
-        #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
-
         # Update the all_layers_loaded and chain_status keys
         self.update_all_layers_loaded()
 
@@ -911,9 +989,6 @@ class ChainManager:
             #     self.update_chain_status(current_status)
 
         # Republish backup nodes 
-        # backup_nodes = self.get_backup_nodes()
-        # if backup_nodes is not None:
-        #     self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
         if self.is_backup():
             self.dht.store(key=BACKUPS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
 
@@ -932,10 +1007,7 @@ class ChainManager:
 
     
     def republish_client_keys(self):
-        # Republish the client_nodes list
-        # client_nodes = self.get_client_nodes()
-        # if client_nodes:
-        #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
+        # Republish the client_node
         self.dht.store(key=CLIENTS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
 
         
@@ -943,40 +1015,6 @@ class ChainManager:
 
 
     # ---- Global key update methods ----
-
-    # def increment_num_clients(self):
-    #     """Called by a client when in joins the DHT"""
-    #     current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
-    #     if current_num_clients:
-    #         new_num_clients = current_num_clients + 1
-    #         self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
-    #         logger.info(f"Num Clientes updated to {new_num_clients}...")
-    #     else:
-    #         # This is the first client
-    #         self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
-
-    # def decrement_num_clients(self):
-    #     """Called by a client when in leaves the DHT"""
-    #     current_num_clients = self.dht.get(NUM_CLIENTS_KEY)
-    #     if current_num_clients:
-    #         new_num_clients = current_num_clients - 1
-    #         self.dht.store(NUM_CLIENTS_KEY, new_num_clients, EXPIRATION_S)
-    #         logger.info(f"Num Clientes updated to {new_num_clients}...")
-    #     else:
-    #         # This is the first client
-    #         self.dht.store(NUM_CLIENTS_KEY, 1, EXPIRATION_S)
-    
-    # def add_node_to_clients(self, client_node_id: str):
-    #     """Appends a client_node id to the client_nodes list"""
-    #     client_nodes = self.get_client_nodes()
-
-    #     if client_nodes is None:
-    #         client_nodes = []
-
-    #     if client_node_id not in client_nodes:
-    #         client_nodes.append(client_node_id)
-        
-    #     self.dht.store(CLIENTS_KEY, client_nodes, EXPIRATION_S)
 
     def join_client_nodes(self):
         self.dht.store(key=CLIENTS_KEY, subkey=self.node_id, value=True, expiration_s=EXPIRATION_S)
@@ -1110,46 +1148,20 @@ class ChainManager:
         version = self.dht.get(THROUGHPUT_VERSION_KEY)
         key = f"{THROUGHPUT_KEY}{version}"
         self.dht.store(key=key, subkey=time.perf_counter(), value=tokens_generated, expiration_s=THROUGHPUT_EXPIRATION_S)
-    
-    # @staticmethod
-    # async def _store_many(dht_daemon, dht_node: DHTNode, keys, values, expiration_time, subkeys):
-    #     # This runs inside the background DHT process
-    #     await dht_node.store_many(
-    #         keys=keys,
-    #         values=values,
-    #         expiration_time=expiration_time,
-    #         subkeys=subkeys
-    #     )
-    #     return True
+
+    def init_chain_thoughput(self):
+        """Executed by the HEAD server when kv cache reallocation occurs"""
+        self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
+
+        version = self.dht.get(THROUGHPUT_VERSION_KEY)
+        key = f"{THROUGHPUT_KEY}{version}"
+        self.dht.store(key=key, subkey=time.perf_counter(), value=0, expiration_s=THROUGHPUT_EXPIRATION_S)
 
     def clear_chain_throughput(self):
         self.dht.store(TOKENS_GENERATED_KEY, 0, THROUGHPUT_EXPIRATION_S)
 
         current_version = self.dht.get(THROUGHPUT_VERSION_KEY)
         self.dht.store(THROUGHPUT_VERSION_KEY, current_version + 1, THROUGHPUT_EXPIRATION_S)
-
-        # throughput_dict = self.dht.get(THROUGHPUT_KEY)
-        # if throughput_dict:
-        #     timestamps = list(throughput_dict.keys())
-
-        #     keys=[THROUGHPUT_KEY] * len(timestamps)
-        #     values = [0] * len(timestamps)
-        #     expiration_time = get_dht_time()
-
-        #     subkeys=timestamps
-
-        #     coro_partial = partial(
-        #         self._store_many, 
-        #         keys=keys, 
-        #         values=values, 
-        #         expiration_time=expiration_time, 
-        #         subkeys=subkeys
-        # )
-
-        #     self.dht.dht.run_coroutine(coro_partial)
-        
-        # throughput_dict = self.dht.get(THROUGHPUT_KEY)
-        # pass
 
     # ---- Server info subkey update methods ----
 
@@ -1269,13 +1281,6 @@ class ChainManager:
 
         logger.info(f"Making Node {backup_node_id[:DIGITS_SHOW]} active...")
         if self.node_is_backup(backup_node_id):
-            # backup_info["is_backup"] = False
-            # self._update_server_info(backup_node_id, backup_info)
-
-            # Remove the node from the backup_nodes list
-            # backup_nodes = self.get_backup_nodes()
-            # backup_nodes.remove(backup_node_id)
-            # self.dht.store(BACKUPS_KEY, backup_nodes, EXPIRATION_S)
             self.dht.store(key=BACKUPS_KEY, subkey=backup_node_id, value=False, expiration_s=EXPIRATION_S)
             return
 

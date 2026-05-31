@@ -10,6 +10,7 @@ import gc
 import ctypes
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
+from core.remote.utils import create_grpc_channel
 from core.remote.serialization import request_to_tensor
 from core.constants import GLOBAL_MAX_SEQ_LEN
 
@@ -74,6 +75,11 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
         return response
 
+    def TriggerReallocation(self, request, context):
+        self.server_node.trigger_reallocation()
+        
+        return nodeservice_pb2.Empty()
+
     def UpdateSuccessorStub(self, request, context):
         self.server_node._connect_to_successor()
         return nodeservice_pb2.Empty()
@@ -129,7 +135,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         return nodeservice_pb2.Empty()
     
     def JoinChain(self, request, context):
-        self.server_node.chain.join_chain(
+        previous_tail_info = self.server_node.chain.join_chain(
             self_info=self.server_node.chain.get_self_info(),
             max_num_layers=self.server_node._mem_to_num_layers(),
             output_layer_memory_tle=self.server_node.output_layer_memory_tle,
@@ -137,9 +143,21 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             num_total_params=self.server_node.config.get("num_total_params")
         )
 
+        # Update the previous TAIL's successor stub
+        if previous_tail_info is not None:
+            try:
+                logger.info(f"Updating the previous tail's successor stub...")
+                channel = create_grpc_channel(previous_tail_info.get("address"))
+                previous_tail_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                previous_tail_stub.UpdateSuccessorStub(nodeservice_pb2.Empty())
+            except grpc.RpcError as e:
+                logger.error(
+                    f"A gRPC error occurred while connecting to {previous_tail_info.get('address')}: {e.code().name}"
+                )
+
         # threading.Thread(target=self.server_node._load_llm, daemon=True).start()
         self.server_node._load_llm()
-        self.server_node._connect_to_successor()
+        # self.server_node._connect_to_successor()
 
         return nodeservice_pb2.Empty()
     

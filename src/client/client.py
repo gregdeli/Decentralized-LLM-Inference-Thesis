@@ -169,7 +169,7 @@ class Client:
                 try:
                     self._connect_to_head()
                     if self.head_server_stub is not None:
-                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=5)
                         logger.info(f"HEAD is ALIVE.")
                 except grpc.RpcError as e:
                     if (
@@ -192,7 +192,7 @@ class Client:
 
         head_server_addr = head_info.get("address")
 
-        # The conneection to the HEAD is fine
+        # The connection to the HEAD is fine
         if self.head_server_stub is not None and self.head_server_stub_addr == head_server_addr:
             return
 
@@ -431,9 +431,6 @@ class Client:
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
-        # Gather the total rate from all the server nodes in case a node has failed in the time between the previous generation and the reallocation
-        # self.chain.become_chain_leader()
-        # self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
         requires_restart = True
         while requires_restart:
