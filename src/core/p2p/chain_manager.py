@@ -35,10 +35,10 @@ TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_" # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY ="chain_throughput_version" 
 
-# EXPIRATION_S = 50.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
-HEARTBEAT_INTERVAL_S = 15.0
+EXPIRATION_S = 50.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# HEARTBEAT_INTERVAL_S = 15.0
 # HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 # THROUGHPUT_EXPIRATION_S = 60.0
@@ -881,6 +881,7 @@ class ChainManager:
             
             # Trigger the reallocation
             if actionable:
+                logger.info("Chain is imbalanced, triggering reallocation...")
                 try:
                     head_server_addr = self.get_head_server_info().get("address")
                     channel = create_grpc_channel(head_server_addr)

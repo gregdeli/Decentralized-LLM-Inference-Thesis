@@ -2,17 +2,20 @@ Title: Dynamic and Fault Tolerant Collaborative LLM Inference on Heterogenious D
 
 This project allows for execution of LLMs by distributing the models transformer layers and the final output layer among a number of server nodes.
 
-It is dynamic meaning there isnt a central node that handles layer allocation.
+It is dynamic and autonomous meaning there isnt a central node that handles layer allocation.
 
 When server nodes join they take on as many layers as they can fit in memory, until all layers are served. If all layers are served they become backups.
 
 Server Node: Active server node: It can load a number of transformer layers and/or the final output layer. 
              It is responsible for running inference on its assigned layers, Repairing the inference chain if its successor fails, it can take over its successors layers if it has a much larger processing rate and enough memory, 
              Each active server node can only "see" its successor.
+             The server nodes also autonomously detect wether the active chain is balanced (the inference delay of each server is rougly equal). If an imbalance is detected the Reallocation process is triggered. 
+             During the reallocation each server takes on a number of layer proportional to its processing rate. If a server cant load its ideal number of layers due to memory constraints then it adjusts its effective processing rate and loads as many layers as it can.
+             The rest of the server nodes will be balanced.
              
-             Backup server node: if a node joins the network after all the layers have been loaded, it remains on stanby and it is used by other nodes for chain repairs. A backup can also takeover the layers of a weaker node (in terms of processing rate) in the active chain if it has enough memory (opportunistic takeover)
+             Backup server node: if a node joins the network after all the layers have been loaded, it remains on stanby and it is used by other nodes for chain repairs. A backup can also Takeover the layers of a weaker node (in terms of processing rate) in the active chain if it has enough memory (opportunistic takeover)
 
-Client Node: The client node loads the embedding layer of the model and can use the inference chain to generate text. The client is also responsible for reapiring the chain when the HEAD of the chain fails. It can also trigger layer reallocation on each node, which attempts to make the chain balanced meaning that each active server node takes on a number of layers proportional to its processing rate if its memory allows it which makes the inference delay of each node roughly equal.
+Client Node: The client node loads the embedding layer of the model and can use the inference chain to generate text. The client is also responsible for reapiring the chain when the HEAD of the chain fails.
              I have also created a GUI for the client where the user can see information about the inference chain and can generate text on a chatbot interface.
 
 Rotating KV Caches:
@@ -25,7 +28,7 @@ DHT: A DHT is used to made up of all the nodes to store and share metadata about
 
 GRPC: the python gprc library is used for rpc operations. Mainly it is used during inference to transmit intermidiate activations between nodes.
 
-Main fetures and Operations:
+Main features and Operations:
 Repair: Active node failure -> repair by its predecessor. HEAD failure -> repair by a client.
 Opportunistic Takeover: Backup Node Takeover and Active Node Successor Takeover.
 Reallocation.
@@ -53,3 +56,4 @@ Important:
 Future Work:
 * In takeovers or repairs the replacement node could try to load the number of layers it can from the replacee not try to only load all the orphaned layers and then use a backup if it cant.
 * In chain repairs and takeovers the nodes network latency could be taken into account, though in a local network perhaps it wouldnt make much of a difference.
+* Use post training quantization to be able to run even larger models at an acceptable speed

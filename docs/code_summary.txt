@@ -41,69 +41,151 @@ src/
     core/
         p2p/
             chain_manager.py:
-                This Python script, chain_manager.py, serves as the orchestration layer for a decentralized Large Language Model (LLM) inference system. It utilizes the hivemind library's Distributed Hash Table (DHT) to maintain and synchronize the state of a distributed computational pipeline (a "chain") across multiple independent server nodes without relying on a centralized master node.
+                    Here is an objective, highly factual summary of chain_manager.py, detailing its architecture and all major methods.
 
-                Core Functionality
-                1. Chain Formation and Node Joining
-                The ChainManager class dictates how server nodes participate in the distributed pipeline. When a node attempts to join, the script checks the DHT for an existing chain head:
+                    Overview
+                    The chain_manager.py file defines a ChainManager class that orchestrates the creation, discovery, and ongoing maintenance of a distributed inference chain for Large Language Models (LLMs). It relies on a Distributed Hash Table (DHT) via the hivemind library to maintain a globally accessible, decentralized state of the network.
 
-                Forming an Initial Chain: If no head exists, the node registers itself as both the head and tail. It evaluates its own hardware memory limits, computes how many Transformer layers it can hold, and assigns itself the starting sequential layers.
+                    Core Concepts & State Management
+                    The system tracks the topology of the inference chain using global DHT keys. These include pointers to the HEAD and TAIL of the chain, a LEADER node responsible for state consensus, lists of CLIENTS and BACKUPS, and metrics like total parameters, total layers, and generated throughput. It uses a ChainStatus enum to track the current operational state of the network (e.g., READY, UNREADY, RUNNING, REPAIRING, REALLOCATING, TAKEOVER).
 
-                Joining an Existing Chain: If a chain already exists, the new node appends itself to the current tail. It evaluates the previous node's assigned layers and claims the subsequent block of unloaded layers up to its maximum capacity.
+                    Major Methods
+                    1. Initialization & Joining the Network
+                    __init__: Initializes the manager with a DHTManager instance and a flag indicating whether the node is a client.
 
-                Backup Assignment: If all layers of the LLM are already loaded by the active chain, subsequent joining nodes automatically default to "backup" status.
+                    join_chain: The main entry point for a server node attempting to join the inference chain. It queries the DHT to check if a head exists. If none exists, it calls _form_initial_chain; otherwise, it calls _join_existing_chain.
 
-                2. Global State & Metadata Management
-                The script defines numerous string keys to track the global state of the network on the DHT. Key tracked metrics include:
+                    _form_initial_chain: Logic for the first node in the network. It registers itself on the DHT as both the HEAD and TAIL, becomes the chain leader, and calculates its optimal layer assignment based on maximum capacity.
 
-                HEAD_KEY and TAIL_KEY: Identifiers for the start and end of the sequential pipeline.
+                    _join_existing_chain: Logic for subsequent nodes. It retrieves the current TAIL node's info, calculates which transformer layers remain unloaded, and appends itself as the new TAIL. If all layers are already hosted by the existing chain, it forces the new node to become a backup.
 
-                ALL_LAYERS_KEY: A boolean flag indicating if the distributed network has successfully loaded the entire LLM.
+                    _find_random_server (static async): A coroutine that queries the DHT to return a random server node (excluding client nodes), useful for distributing tasks or requests.
 
-                STATUS_KEY: Tracks the operational phase of the chain via the ChainStatus enum (e.g., READY, UNREADY, RUNNING, REPAIRING, TAKEOVER).
+                    2. Network Recovery, Repair, & Load Balancing
+                    repair: Reconstructs the chain topology after a node failure or a targeted takeover. It reassigns the failed/replaced node's layers to a replacement node, updates the predecessor's and successor's routing data, and optionally promotes a backup node to an active status.
 
-                Server Info Profiles: Each node periodically publishes a dictionary containing its IP address, loaded layers, hardware device type, memory limits, and processing rate.
+                    evaluate_and_trigger_reallocation: Monitors the chain for computational bottlenecks. It iterates through all active nodes to calculate inference delays. If the imbalance between the slowest and fastest node exceeds a predefined threshold (IMBALANCE_THRESHOLD), and a faster node has spare memory, it issues a gRPC call to the HEAD to trigger a network-wide reallocation.
 
-                3. Fault Tolerance and Dynamic Reallocation
-                The ChainManager includes self-healing mechanisms to handle node failures and optimize hardware efficiency:
+                    evaluate_takeover_eligibility: Executed specifically by backup nodes. It compares the backup node’s processing rate and memory limit against every active node in the chain. If the backup is significantly more powerful (based on OPPRTUNISTIC_TAKEOVER_MULT_THRESHOLD), it identifies the weaker node and its predecessor to initiate an opportunistic takeover.
 
-                Repair Logic: The repair method allows the network to substitute a dropped node with a replacement node. It safely updates the layer assignments and re-links the predecessor and successor pointers in the pipeline.
+                    3. Topology & Metadata Gathering
+                    get_chain_info: Traverses the DHT from the HEAD to the TAIL, compiling a complete dictionary of the network's topology. It gathers the state of all active servers, backup nodes, clients, and global keys.
 
-                Opportunistic Takeover: Backup nodes continuously execute the evaluate_takeover_eligibility method to monitor the processing_rate and memory capabilities of active nodes. If a backup node calculates that it is significantly faster (based on an internal threshold multiplier) and has equal or greater memory capacity, it can preemptively replace a weaker active node in the chain.
+                    gather_total_rate: Iterates sequentially through the active chain nodes to calculate the cumulative processing rate of the entire network.
 
-                4. Distributed Metrics Tracking
-                The script aggregates telemetry across the network to calculate total system capacity and inference performance:
+                    gather_total_memory: Steps through the active chain nodes to calculate the total available unused memory (RAM/VRAM) across the system that could be used for layer loading.
 
-                Memory Tracking (gather_total_memory): Traverses the active chain to calculate total VRAM/RAM usage and remaining available memory across all participating nodes.
+                    gather_num_active_chain_nodes: Traverses the active chain links to count exactly how many nodes are actively participating in inference.
 
-                Throughput (update_chain_throughput): Maintains a global counter for generated tokens (TOKENS_GENERATED_KEY) and publishes timestamped logs (THROUGHPUT_KEY) to continuously measure the distributed pipeline's generation speed.
+                    4. Keep-Alive & Republication
+                    republish_keys / republish_client_keys: DHT entries expire over time (governed by EXPIRATION_S). These methods are called periodically to re-announce the node’s self-info, role (Head, Tail, Leader, Backup), and chain status, ensuring data integrity and preventing node dropouts.
 
-                5. Client Coordination
-                The script manages external end-users (clients) interacting with the LLM through a registry (CLIENTS_KEY). Clients are tracked to maintain a concurrent user count, and a deterministic client leader election is implemented (get_client_leader). The DHT also allows clients to dynamically discover active server nodes (get_head_server_info, get_random_server_node_id) to submit their inference requests.
+                    5. Consensus & State Updaters
+                    become_chain_leader: Attempts to claim the LEADER_KEY on the DHT. The leader handles chain-wide status updates to prevent race conditions.
+
+                    update_chain_status: Changes the global STATUS_KEY on the DHT. If the requesting node is not the leader, it attempts to route the status update request to the leader via gRPC.
+
+                    update_all_layers_loaded: Evaluates whether all necessary Transformer layers and the final output layer have been successfully loaded across the entire chain. If so, it updates the ALL_LAYERS_KEY.
+
+                    make_node_backup: Converts an active node into a standby backup by wiping its assigned layers and updating the DHT BACKUPS_KEY.
+
+                    remove_node_from_backups / remove_node_from_clients: Clean-up methods that erase a node's specific ID from the global backup or client lists.
+
+                    6. Throughput & Metrics Tracking
+                    update_chain_throughput: Increments the globally tracked number of generated tokens and stores a timestamp mapping on the DHT to calculate real-time network throughput.
+
+                    init_chain_thoughput: Resets the throughput counters to zero (typically called by the HEAD during major topology shifts or KV cache reallocation).
+
+                    clear_chain_throughput: Bumps the throughput version key, effectively invalidating old throughput data and starting a fresh metric tracking session.
+
+                    7. Targeted Setters and Getters
+                    DHT Getters: Includes functions for retrieving specific global states (get_head_id, get_tail_id, get_chain_leader, get_chain_status, get_backup_nodes, get_client_nodes, get_num_clients, get_chain_throughput) and node-specific metrics (get_server_info, get_self_info, get_successor_info, get_layers, get_successor_address).
+
+                    DHT Updaters (_update_server_info): A suite of wrapper methods used by individual nodes to update their specific subkeys on the DHT. These include:
+
+                    update_layers, update_layers_loaded, update_load_output_layer, update_output_layer_loaded (Model mapping).
+
+                    update_memory, update_vram, update_device, update_kv_cache_size (Hardware metrics).
+
+                    update_processing_rate, update_inference_delay, update_grpc_overhead (Performance profiling).
+
+                    update_successor (Topology routing).
+
+                    State Booleans: Convenient checks evaluated directly against DHT data: is_head(), is_tail(), is_backup(), node_is_tail(), node_is_head(), and node_is_backup().
         
         remote/
             nodeservice.proto:
-                This file defines the remote procedure calls (RPCs) and data structures used for network communication.
+                This file, nodeservice.proto, is a Protocol Buffers (v3) definition that outlines the gRPC communication interface for a distributed Large Language Model (LLM) inference system. It defines the remote procedure calls (RPCs) and data structures used to pass tensors, manage network topology, and balance computational workloads across distributed nodes.
 
-                Services:
+                Here is a factual breakdown of the components defined in the file:
 
-                NodeService (Server Nodes): Handles the core responsibilities of a node in the inference chain.
+                1. Services
+                The protocol defines two distinct gRPC services to separate the responsibilities of inference servers and clients.
 
-                Inference Execution: RunLayers passes the tensor data through the node's assigned model layers.
+                NodeService (Server Node Interface)
+                This service defines the operations available on a server node participating in the inference chain.
 
-                Topology Management: Check (health checks), UpdateSuccessorStub (reconnecting to the next node in the chain), GetPeerMultiaddr, JoinChain, and UpdateChainStatus.
+                Inference Execution:
 
-                Dynamic Load Balancing: Reallocate, LoadLayers, and UnloadLayers allow the system to dynamically shift model layers between nodes to prevent bottlenecks.
+                RunLayers: Accepts an InferenceRequest containing tensor data and passes it through the specific transformer layers assigned to this node.
 
-                Memory Management: RemoveClientKVCache clears specific client KV caches to free up VRAM.
+                Network & Topology Management:
 
-                ClientService (Client Node): Exposes a single ReceiveResponse endpoint for the client to receive the final output from the tail node of the chain.
+                GetPeerMultiaddr: Retrieves the node's P2P multiaddress (a standard format for distributed network addressing).
 
-                Key Data Structures:
+                Check: A health check mechanism to verify if the node's successor in the chain is alive.
 
-                InferenceRequest: Carries the forward-pass data. It includes the raw tensor bytes, shape, data type, and inference metadata (e.g., seq_length, input_pos, max_returned_tokens). It also includes block_scales to support block-wise quantization.
+                UpdateSuccessorStub: Commands the node to reconnect to its downstream successor.
 
-                InferenceResponse: Carries the computed tensor back to the client.
+                JoinChain: Commands a node to actively join the inference chain.
+
+                UpdateChainStatus: Synchronizes the current status of the chain with the chain leader.
+
+                Dynamic Layer Reallocation:
+
+                Reallocate: Instructs the node to adjust its layer assignment based on network performance metrics.
+
+                TriggerReallocation: Sent to the HEAD node to initiate the cluster-wide layer reallocation process.
+
+                Memory & State Management:
+
+                LoadLayers / UnloadLayers: Triggers the node to load or drop its assigned transformer weights from memory (used for managing standby/backup nodes).
+
+                RemoveClientKVCache: Instructs the node to delete the Key-Value (KV) cache associated with a specific client and rebalance memory allocation for remaining tasks.
+
+                ClientService (Client Interface)
+                This service defines operations for the node initiating the inference request.
+
+                ReceiveResponse: Listens for and accepts the final InferenceResponse from the TAIL node of the chain once the full model forward pass is complete.
+
+                2. Message Structures
+                The file defines the explicit data payloads exchanged between nodes during these RPC calls.
+
+                InferenceRequest & InferenceResponse:
+
+                Carries the core computational data, including the raw tensor_data (in bytes), tensor_shape, and dtype.
+
+                The request includes inference metadata (max_returned_tokens, seq_length, input_pos).
+
+                Both support block_scales in bytes, indicating the system utilizes block-wise quantization for memory and bandwidth reduction.
+
+                The request includes a response_address so the TAIL node knows where to route the final InferenceResponse.
+
+                ReallocateRequest & ReallocateResponse:
+
+                Handles load balancing. The request passes computational metrics like total_rate, start_layer_index, and predecessor information. The response returns a success boolean, flags if a restart is required, and identifies the bottleneck_node.
+
+                RemoveClientKVCacheRequest:
+
+                Specifies the client_id whose cache must be purged and provides a new_max_seq_length to assist in memory rebalancing.
+
+                Utility Messages:
+
+                Empty: Standard empty payload.
+
+                MultiaddrResponse: Contains the P2P address string.
+
+                UpdateChainStatusRequest: Contains a string representing the current cluster state.
             
             serialization.py:
                 This script bridges the gap between PyTorch's in-memory tensors and the byte-based gRPC messages defined in the proto file.
@@ -229,34 +311,94 @@ src/
 
     server/
         server.py:
-            Based on the provided Python script and verified via internet search regarding "AR-MDI" (Adaptive and Resilient Model-Distributed Inference), this code implements the main server application logic for a decentralized, distributed Large Language Model (LLM) inference system.Here is an objective summary of its primary components and functions:Core FunctionalityThe Server class in server.py allows an individual machine (node) to participate in a larger "inference chain." Instead of requiring a single machine to hold an entire LLM, this system splits the model's transformer layers across multiple participating nodes. Each node processes its assigned segment of the model and forwards the intermediate results to the next node in the chain.  Key Mechanisms1. Resource Management & Model LoadingMemory Profiling: The script actively monitors system RAM and GPU VRAM (using psutil and torch.cuda). It calculates exactly how many transformer layers the host machine can fit in memory alongside the necessary Key-Value (KV) cache.Dynamic Loading: The _load_llm, _unload_llm, and _reload_llm methods manage swapping layers in and out of memory. It actively forces garbage collection (gc.collect() and malloc_trim) to prevent memory leaks when layers are reallocated.2. Distributed Inference PipelineLayer Execution (run_local_layers): When a request arrives, the node receives intermediate hidden states (tensors), processes them through its locally loaded layers, and forwards the output to the next node (the "successor") via gRPC.Tail Node Responsibilities: If the node is the final one in the chain (the "tail"), it processes the final output layer, samples the next token, and sends the finalized response back directly to the client.3. Load Balancing (AR-MDI Logic)Reallocation (reallocate_layers): The code implements Adaptive and Resilient Model-Distributed Inference (AR-MDI) logic. Nodes continually benchmark their processing rates (layers per second). If one node becomes a bottleneck or if system topology changes, the script recalculates ideal layer distributions. Faster nodes will dynamically take on more layers (measured in "Transformer Layer Equivalents" or TLE) to maximize the total system throughput.4. Fault Tolerance and RepairHealth Monitoring: Background threads continuously ping successor nodes. If a node fails to respond, it is marked as dead.Chain Repair (repair_chain): When a failure is detected, the preceding node attempts to fix the broken chain. It will either load the dead node's "orphaned" layers itself (if it has enough memory) or prompt an idle "backup node" to join the chain and take over those layers.Opportunistic Takeover: Idle backup nodes passively monitor the performance of active nodes. If they detect an active node performing significantly worse than the system average, they can trigger an opportunistic_takeover to replace the slow node.5. Networking & DiscoveryCommunication: Nodes communicate state and sequence via a Distributed Hash Table (DHT) and send the actual tensor data during inference over gRPC. Initial peer discovery is handled via UDP broadcasting.
+            Here is a factual and structured summary of the server.py file. The code implements the main server application logic for a distributed Large Language Model (LLM) inference system, managing network communication, memory, model layers, and fault tolerance.
+
+            1. Initialization and Setup
+            __init__: Initializes the Server object. It sets up locks, determines the available hardware device (CPU or CUDA/GPU), and calculates memory capacities. It also initializes the Distributed Hash Table (DHT) node and joins the inference chain as an active node or a backup.
+
+            serve (Main Function): The entry point of the script. It loads environment variables, resolves network configurations (like finding the bootstrap node via UDP), instantiates the Server, starts the gRPC server to listen for incoming requests, profiles the node, and launches essential background threads.
+
+            2. Memory and Hardware Management
+            _get_container_memory_limit_mb: Reads the cgroup files to determine if the application is running inside a container with a strict memory limit.
+
+            _update_memory_usage: Calculates and updates the current RAM and VRAM (if CUDA is used) usage, calculating how much space is left.
+
+            _mem_to_num_layers: Calculates how many specific model transformer layers can fit into the currently available memory or VRAM.
+
+            _can_load: Evaluates whether the node has enough available memory to load a requested number of layers or the final output layer.
+
+            3. Model and Layer Management
+            _load_llm: Loads the assigned transformer layers and the final output layer (if applicable) into memory using PyTorch, updating the DHT with the newly loaded state.
+
+            _unload_llm: Clears the currently loaded model and Key-Value (KV) caches from memory and explicitly forces garbage collection to free up RAM/VRAM.
+
+            _reload_llm: A helper method that safely unloads the current model and reloads a new specific set of layers.
+
+            _reload_config & _set_config_param_counts: Read and update the model's config.json to calculate and store the parameter counts and memory footprints of standard transformer layers versus the final output layer.
+
+            4. Inference and Processing
+            run_local_layers: The core inference execution method. It takes an input tensor, ensures KV caches are ready, processes the tensor through the node's loaded layers, and records the inference delay. If the node is the "tail" (last in the chain), it samples the next token and sends the response back to the client. Otherwise, it forwards the hidden states to the successor node via gRPC.
+
+            _ensure_kv_cache: Checks if a KV cache exists for a specific client request and initializes one if it does not.
+
+            _calculate_processing_rate: Maintains a moving average of the node's inference processing speed (measured in layers processed per second).
+
+            _profile_node: Runs a series of dummy inference passes upon startup. This profiles both the transformer layers and the output layer to establish a baseline processing rate before the node officially marks itself "ready" in the chain.
+
+            5. Dynamic Chain Optimization (AR-MDI)
+            trigger_reallocation: Called by the head node to initiate a chain-wide layer reallocation process. It ensures the active nodes have enough capacity to hold the entire model before proceeding.
+
+            reallocate_layers: Executes the mathematical logic to re-distribute layers. It determines the ideal number of layers this node should hold based on its processing rate relative to the entire system's rate. It adjusts its loaded layers accordingly and passes the reallocation request to the next node.
+
+            6. Fault Tolerance and Repair
+            repair_chain: Triggered when a node detects its successor has failed. It attempts to load the dead successor's orphaned layers itself. If it lacks memory, it queries the DHT for an available backup node to take the successor's place. If no backup can load the layers, it truncates the chain and makes itself the new tail.
+
+            opportunistic_takeover: Allows a stronger node (like a backup or an active node with a significantly higher processing rate) to assume the layers of a weaker active node. It coordinates with the weak node to unload its layers and modifies the DHT and predecessor connections to seamlessly insert itself into the chain.
+
+            7. Network and Communication
+            _connect_to_successor: Establishes and verifies a gRPC connection to the next node in the inference chain.
+
+            _connect_to_client: Establishes a gRPC connection directly to the client that originated the request.
+
+            8. Background Monitoring Tasks (Inside serve)
+            _dht_heartbeat_task: Periodically pings the DHT to keep the node's metadata (memory usage, layers loaded) alive and up to date.
+
+            _chain_health_monitor_task: Periodically checks the health of the successor node via gRPC pings. If the successor times out, it triggers repair_chain. It also evaluates if an opportunistic_takeover or layer reallocation should occur based on updated processing metrics.
+
+            _udp_discovery_server: Listens for UDP broadcasts on the local network from peers trying to locate the bootstrap node, responding with the server's gRPC address.
 
         servicer.py:
-            This Python script, servicer.py, implements a gRPC service (NodeServicer) for a node operating within a distributed Large Language Model (LLM) inference network. It acts as the networking interface, handling incoming Remote Procedure Calls (RPCs) from other peers and translating them into local operations on the node's server and LLM.
+            This file defines the NodeServicer class, which acts as the gRPC server interface for a node in your distributed LLM inference system. It receives incoming network requests (Remote Procedure Calls) and translates them into operational commands for the underlying Server instance.
 
-            Here is a summary of its core components and functionalities:
+            Here is a factual breakdown of its primary responsibilities:
 
             1. Inference Execution
-            RunLayers: Receives an incoming request containing an input tensor and metadata (e.g., maximum returned tokens, sequence length, and input position). It deserializes the tensor and spawns a daemon thread to process the local LLM layers asynchronously without blocking the gRPC server.
 
-            2. Memory & KV Cache Management
-            RemoveClientKVCache: Frees the Key-Value (KV) cache associated with a specific client ID. After removing the cache, it reallocates the remaining caches. To prevent memory fragmentation and RSS (Resident Set Size) memory bloat, it aggressively forces memory release back to the operating system using Python's gc.collect() and a C-level call to libc.malloc_trim(0). Finally, it recursively forwards this cache-clearing request to the successor node in the chain.
+            RunLayers: Receives an input tensor and request metadata (like maximum tokens and sequence length). It deserializes the tensor and spawns a background thread to process the node's assigned model layers without blocking the network interface.
 
-            LoadLayers & UnloadLayers: Endpoints that instruct the node to load or unload its assigned LLM layers into or out of hardware memory.
+            2. Distributed Chain Management
 
-            3. P2P Topology & Chain Management
-            JoinChain: Computes the node's layer capacity based on available memory and registers the node within the distributed processing chain. It then loads the LLM and establishes a connection with the next node (successor).
+            JoinChain: Integrates the node into the distributed inference chain. It calculates how many layers the node can hold based on available memory, updates the connection of the previous "tail" node in the chain, and loads the model into memory.
 
-            GetPeerMultiaddr: Retrieves and returns the node's visible P2P multiaddress from the Distributed Hash Table (DHT).
+            UpdateSuccessorStub: Prompts the node to establish or refresh its gRPC connection to the next node in the sequence.
 
-            UpdateChainStatus & UpdateSuccessorStub: Utility endpoints to update the current state of the distributed chain and to force the node to reconnect to its successor.
+            UpdateChainStatus: Updates the local state of the chain (using ChainStatus) to reflect ongoing operations like repairs or active inference.
 
-            4. Load Balancing & Health Monitoring
-            Reallocate: Triggers a reallocation of LLM layers across the network. It takes parameters like total processing rate, load maximum, and predecessor information to dynamically balance the computational load.
+            GetPeerMultiaddr: Retrieves and returns the node's peer-to-peer address from the Distributed Hash Table (DHT).
 
-            Check: A standard health-check endpoint that returns an empty response to confirm the servicer is responsive.
+            Check: Acts as a simple health probe, returning an empty response to confirm the server is responsive.
 
-            In summary, the script bridges the network layer (gRPC/Protobuf) and the core application logic, allowing a machine to act as a worker node that receives tensors, processes a subset of an LLM's layers, manages memory aggressively, and forwards data along a decentralized pipeline.
+            3. Memory and Cache Management
+
+            LoadLayers / UnloadLayers: Instructs the server to load the assigned LLM components into memory or clear them out.
+
+            RemoveClientKVCache: Clears the Key-Value (KV) cache for a specific client to free up memory. It actively reclaims memory using Python's garbage collector and C library memory trimming (libc.malloc_trim). It then forwards this cache removal request to the successor node to ensure the client's memory is freed across the entire inference chain.
+
+            4. Load Balancing and Reallocation
+
+            Reallocate: Executes a layer reallocation protocol based on processing rates and memory limits to optimize the chain's throughput.
+
+            TriggerReallocation: A signal endpoint that commands the server to initiate the layer reallocation process.
 
     client_gui.py:
         The provided client_gui.py script is a graphical user interface (GUI) application built using the nicegui library. It serves as the frontend client for interacting with and monitoring a distributed Large Language Model (LLM) inference system.
