@@ -23,7 +23,7 @@ services:
       #         count: 1
       #         capabilities: [gpu]
         limits:
-          memory: 30G #11657M 
+          memory: 6G #11657M 
         #   cpus: '16.0'
     ports:
       - "5671:5678"

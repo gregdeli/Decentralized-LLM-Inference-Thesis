@@ -14,6 +14,7 @@ from core.utils import (
     get_relevant_safetensor_files,
     get_dtype_from_config,
 )
+from core.constants import *
 
 from transformers import AutoTokenizer
 
@@ -47,7 +48,7 @@ class LLM:
         self.initial_layer_loaded = initial_layer_loaded
         self.layers_loaded = layers_loaded
         self.output_layer_loaded = output_layer_loaded
-        
+
         self.device = device
         self.dtype = dtype
 
@@ -191,30 +192,22 @@ class LLM:
                 f"the model's maximum sequence length of {self.model.max_seq_length}."
             )
 
-        if not self.kv_cache_initialized:
-            if time_it:
-                start = time.perf_counter()
-            # Na allaksw to batch_size otan kanw batched inference
-            self.model.set_kv_cache(
+        # Ensure kv cache
+        if not self.model.client_has_cache(client_id="test"):
+            # if self.chain.is_head():
+            #     self.chain.init_chain_thoughput()
+
+            max_seq_length = GLOBAL_MAX_SEQ_LEN
+
+            self.model.add_client_cache(
+                client_id="test",
                 batch_size=1,
-                max_seq_length=max_returned_tokens,
+                max_seq_length=max_seq_length,
                 device=self.device,
                 dtype=self.dtype,
             )
-            self.kv_cache_initialized = True
-            if time_it:
-                elapsed = time.perf_counter() - start
-                print(f"KV cache initialization time: {elapsed:.5f} seconds")
 
-        # Grow the kv cache size if necessary
-        elif self.prev_max_seq_length < max_returned_tokens:
-            device = self.model.mask_cache.device
-            self.model.clear_kv_cache()
-            self.model.set_kv_cache(
-                batch_size=1, max_seq_length=max_returned_tokens, device=device, dtype=self.dtype
-            )
-
-        self.prev_max_seq_length = max_returned_tokens
+        self.model.set_active_client(client_id="test")
 
         if stream:
             return self._generate_stream(input_ids, max_new_tokens, temperature, top_p)
@@ -312,7 +305,9 @@ class LLM:
         else:
             return prompt
 
-    def sample_logits(self, logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.9) -> torch.Tensor:
+    def sample_logits(
+        self, logits: torch.Tensor, temperature: float = 0.6, top_p: float = 0.9
+    ) -> torch.Tensor:
         """Applies temperature and top-p (nucleus) sampling to logits."""
         logits = logits[:, -1, :]
 
@@ -365,5 +360,3 @@ class Preprocessor:
         # return self.tokenizer.decode(token_ids)
         decoded_texts = self.tokenizer.batch_decode(output, skip_special_tokens=True)
         return decoded_texts[0]
-
-

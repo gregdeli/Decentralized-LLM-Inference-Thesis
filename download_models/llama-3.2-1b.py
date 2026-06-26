@@ -11,6 +11,7 @@ snapshot_download(
     repo_id="meta-llama/Llama-3.2-1B",
     token="",
     local_dir=model_dest,
+    ignore_patterns="original/*",
 )
 
 # Download models with litgpt cli tool

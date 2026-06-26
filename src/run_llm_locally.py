@@ -1,6 +1,6 @@
 from pathlib import Path
 import json
-import time 
+import time
 import logging
 
 from core.llm_loader import LLM
@@ -8,7 +8,7 @@ from core.llm_loader import LLM
 logger = logging.getLogger(__name__)
 
 # model_path = Path("/models/Llama-3.2-3B-Instruct")
-model_path = Path("models/Llama-3.2-1B-Instruct")
+model_path = Path("models/Llama-3.2-1B")
 
 with open(f"{model_path}/config.json", "r") as f:
     config = json.load(f)
@@ -42,6 +42,7 @@ try:
                 tokens_generated += 1
             elapsed_time = time.perf_counter() - start_time
         except KeyboardInterrupt:
+            elapsed_time = time.perf_counter() - start_time
             print("\nStopping text generation...")
 
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
