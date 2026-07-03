@@ -712,7 +712,7 @@ class Server:
             logger.info(f"Forwarding RunLayers request to successor from ({response_address})...")
 
             start = time.perf_counter()
-            self.successor_stub.RunLayers(request, timeout=5)
+            self.successor_stub.RunLayers(request, timeout=GRPC_REQUEST_TIMEOUT)
 
             self.grpc_overhead = time.perf_counter() - start
             self.chain.update_grpc_overhead(self.grpc_overhead)
@@ -973,7 +973,7 @@ class Server:
             # Re-validate the failure. Another thread could have already repaired the chain
             if self.successor_stub is not None:
                 try:
-                    self.successor_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    self.successor_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
                     logger.info("Successor is ALIVE. Aborting unnecessary repair...")
                     return
                 except grpc.RpcError as e:
@@ -1227,7 +1227,7 @@ class Server:
 
         try:
             channel = create_grpc_channel(successor_addr)
-            grpc.channel_ready_future(channel).result(timeout=10)
+            grpc.channel_ready_future(channel).result(timeout=GRPC_CHANNEL_TIMEOUT)
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.successor_stub_addr = successor_addr
             logger.info(f"Connection to successor: {successor_addr} established.")
@@ -1319,7 +1319,7 @@ def serve():
 
     # Start GRPC server
     grpc_server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=GPRC_MAX_WORKERS),
+        futures.ThreadPoolExecutor(max_workers=GRPC_MAX_WORKERS),
         options=[
             ("grpc.max_send_message_length", GRPC_MAX_MSG_SIZE),
             ("grpc.max_receive_message_length", GRPC_MAX_MSG_SIZE),
@@ -1373,7 +1373,7 @@ def serve():
                 try:
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:
-                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=5)
+                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
                         logger.info(f"Successor is ALIVE.")
                 except grpc.RpcError as e:
                     if (

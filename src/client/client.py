@@ -169,7 +169,7 @@ class Client:
                 try:
                     self._connect_to_head()
                     if self.head_server_stub is not None:
-                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=5)
+                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
                         logger.info(f"HEAD is ALIVE.")
                 except grpc.RpcError as e:
                     if (
@@ -205,7 +205,7 @@ class Client:
 
         try:
             channel = create_grpc_channel(head_server_addr)
-            grpc.channel_ready_future(channel).result(timeout=10)
+            grpc.channel_ready_future(channel).result(timeout=GRPC_CHANNEL_TIMEOUT)
             self.head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.head_server_stub_addr = head_server_addr
             logger.info(f"Connection to head: {head_server_addr} established.")
@@ -227,7 +227,7 @@ class Client:
             # Re-validate the failure. Another thread could have already repaired the chain
             if self.head_server_stub is not None:
                 try:
-                    self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=2)
+                    self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
                     logger.info(f"HEAD is ALIVE. Aborting unnecessary repair...")
                     return
                 except grpc.RpcError as e:

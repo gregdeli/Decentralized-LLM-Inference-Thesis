@@ -5,6 +5,8 @@ import socket
 
 from core.remote import nodeservice_pb2_grpc, nodeservice_pb2
 
+from core.constants import *
+
 logger = logging.getLogger(__name__)
 
 """-------------- GRPC Connection Utils --------------"""
@@ -56,7 +58,7 @@ def get_bootstrap_peer_address(address: str, attempts: int = 5) -> str | None:
             )
             with grpc.insecure_channel(address) as channel:
                 stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-                response = stub.GetPeerMultiaddr(nodeservice_pb2.Empty(), timeout=5)
+                response = stub.GetPeerMultiaddr(nodeservice_pb2.Empty(), timeout=GRPC_REQUEST_TIMEOUT)
 
                 if response and response.multiaddr:
                     return response.multiaddr

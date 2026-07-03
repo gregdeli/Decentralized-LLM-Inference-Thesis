@@ -114,7 +114,7 @@ def response_to_tensor(response: nodeservice_pb2.InferenceResponse) -> torch.Ten
 def quantize_blockwise(
     tensor: torch.Tensor, block_size: int = BLOCK_SIZE
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Compresses a tensor to int8 using dynamic block-wise quantization"""
+    """Compresses a tensor to int8 using block-wise quantization"""
     flat_tensor = tensor.flatten()
 
     # Reshape into blocks

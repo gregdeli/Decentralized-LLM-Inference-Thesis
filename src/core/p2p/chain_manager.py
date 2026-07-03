@@ -1058,7 +1058,7 @@ class ChainManager:
                     leader_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
                     request = nodeservice_pb2.UpdateChainStatusRequest(status=status.value)
-                    leader_stub.UpdateChainStatus(request, timeout=5)
+                    leader_stub.UpdateChainStatus(request, timeout=GRPC_REQUEST_TIMEOUT)
                     return
                 except grpc.RpcError as e:
                     if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
