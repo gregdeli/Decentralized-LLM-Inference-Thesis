@@ -1,78 +1,83 @@
-# A Decentralized and Adaptive Framework for Distributed LLM Inference
+# Dynamic and Fault-Tolerant Collaborative LLM Inference on Heterogeneous Devices
 
-This repository contains the work for the undergraduate thesis: **A Decentralized and Adaptive Framework for Distributed LLM Inference on Heterogeneous Edge Devices**.
+This repository contains the implementation for an undergraduate thesis on distributed LLM inference. The project provides a fully decentralized framework for executing Large Language Models (LLMs) across a peer-to-peer network of heterogeneous devices (CPUs and GPUs) by distributing the model's transformer layers and the final output layer.
 
 ---
 
 ## 🎯 Main Idea
-The core goal of this project is to create a fully decentralized framework for running collaborative, model-distributed LLM inference on a peer-to-peer network of heterogeneous edge devices.
 
-Instead of relying on a central coordinator, the framework uses a self-organizing network of server nodes. These servers dynamically adjust which LLM layers they host, forming a computational chain that automatically adapts to changes in available resources and network performance.
+The core goal is to enable collaborative LLM inference on edge devices without relying on a central coordinator. The system is dynamic and autonomous; server nodes self-organize, dynamically adjust the LLM layers they host, and form a computational chain that adapts to available hardware resources and network states.
 
 ---
 
-## 💡 Motivation
-Modern LLMs are too large to run on single, resource-constrained edge devices, creating a dependency on remote cloud servers. This project aims to solve that problem by enabling collaborative inference directly on the edge.  
-This approach offers several advantages:
+## 💡 Motivation & System Strengths
 
-- **Privacy & Availability:** Keeps data on-device and ensures the system works even without internet access.
-- **Efficiency:** Maximizes the use of available peer-to-peer resources.
-- **Resilience:** Avoids the single point of failure inherent in centrally coordinated systems.
+Modern LLMs often exceed the memory and compute capacity of individual, resource-constrained edge devices. This project addresses this by pooling the resources of multiple devices.
+
+* **Resource Distribution:** Enables the execution of large models by spreading the computational workload and memory requirements across multiple computers.
+* **Decentralization & Resilience:** Operates without a central orchestrator, eliminating single points of failure. Nodes can join or leave dynamically, and the system autonomously maintains a stable, optimal state.
+* **Heterogeneity:** Supports a mix of CPU and GPU nodes within the same inference chain.
+* **Privacy:** Keeps inference on-device (or within a trusted local network), avoiding dependence on external cloud APIs.
+
+> **Note:** This system is designed for deployment within a high-bandwidth local network to prevent network latency from reducing inference throughput.
 
 ---
 
 ## 🏛️ System Architecture
-The system's intelligence is distributed among the participating nodes, which automatically form a computational chain and adapt to network changes.
 
-### Key Components
-- **Model Partitioning:**  
-  The LLM is partitioned at the Transformer layer level. This simplifies the distribution logic, as each layer is a self-contained computational block.
+The network consists of client nodes and server nodes that automatically organize into a sequential processing chain (HEAD, intermediate nodes, and TAIL).
 
-- **Client Role:**  
-  A client node initiates the inference task. It is responsible for the initial embedding layer and the final output layers. The client queries the DHT to find the head of the server chain and verify that a complete inference path is available.
+### Node Roles
 
-- **Server Chain:**  
-  Server nodes form a logical, sequential processing chain. Each server is aware of its successor, creating a clear data flow for the inference process.
+* **Client Node:** * Loads only the initial embedding layer.
+  * Initiates inference requests and provides a GUI for a chatbot interface.
+  * Responsible for repairing the inference chain if the HEAD server fails.
+* **Active Server Node:** * Loads a specific range of transformer layers and/or the final output layer.
+  * Runs inference on its assigned layers and transmits intermediate activations to its successor.
+  * Autonomously monitors chain balance. If a processing imbalance is detected, it can trigger the Reallocation process.
+  * Responsible for repairing the chain if its immediate successor fails.
+  * **The TAIL Server:** The final active node in the chain. It holds the output layer, calculates logits, and samples the next token.
+* **Backup Server Node:** * If all model layers are already served by the network, new nodes join as backups.
+  * They remain on standby to assist with chain repairs if an active node fails.
+  * Can perform an "opportunistic takeover" of a weaker active node's layers if the backup has a higher processing rate and sufficient memory.
 
-- **Distributed Hash Table (DHT):**  
-  Inspired by *Petals*, a DHT acts as the network's "bulletin board." Servers publish their ID, successor, the range of layers they host, and key performance metrics (memory, latency).
+### Networking & State Management
 
----
-
-## ⚙️ Adaptive Layer Allocation Strategy
-The framework employs a **three-phase, server-driven** strategy to manage the computational workload dynamically.
-
-1. **Phase 1: Initial Chain Formation**  
-   A new server discovers the "tail" of the chain via the DHT and attaches itself.  
-   Servers greedily claim as many layers as their memory allows, announcing their assigned layers on the DHT.
-
-2. **Phase 2: Adaptive Re-allocation**  
-   After the first inference run, the network uses collected performance data (computational and communication delays) to re-balance the layer distribution.  
-   Following the logic of **AR-MDI**, each server calculates its optimal share of the model's parameters based on its contribution to the network's total processing rate.
-
-3. **Phase 3: Self-Healing & Opportunistic Takeover**  
-   The network is designed to continuously improve.  
-   - If a powerful new node joins, it can take over the role of a less performant node to increase overall throughput.  
-   - If a node fails, the remaining servers coordinate through the DHT to redistribute the "orphaned" layers, ensuring the chain remains intact.
+* **Distributed Hash Table (DHT):** Built using the `hivemind` library, the DHT acts as a decentralized metadata store. Nodes publish their IDs, successors, hosted layers, and performance metrics. If a node fails, its metadata remains temporarily available on the DHT, enabling the network to organize a repair.
+* **gRPC Communication:** The Python `grpc` library is utilized for all peer-to-peer remote procedure calls, primarily for transmitting intermediate tensor activations between consecutive nodes in the chain.
 
 ---
 
-## 🛠️ Implementation Strategy
-- **Language:** Python  
-- **Core Library:** PyTorch  
-- **P2P Networking:** hivemind  
-- **Models:** Initial experiments will focus on manageable models like *Llama 3.1 8B*, using implementations from libraries such as `lit-gpt`.
+## ⚙️ Core Operations & Adaptive Allocation
+
+The system utilizes several operations to maintain throughput and fault tolerance:
+
+1. **Initialization & Profiling:** When a server joins, it is profiled to determine its processing rate (measured in transformer layer equivalents per second). The network also calculates an "output layer temporal equivalent" to ensure the TAIL server's processing rate is measured consistently against standard transformer layers. Nodes greedily load as many layers as their memory permits.
+2. **Reallocation:** If the inference delay across servers is unequal, an imbalance is detected, triggering a reallocation. Servers adjust their layer assignments proportional to their processing rates. If memory constraints prevent a node from taking its ideal share, it adjusts its effective processing rate and loads its maximum possible layers.
+3. **Self-Healing (Repairs):** If an active node fails, its predecessor handles the repair. If the HEAD fails, the initiating Client handles the repair. Backups or re-routing are used to replace the orphaned layers.
+4. **Opportunistic Takeover:** A backup node (or a highly performant active node) can autonomously take over the layers of a slower node in the active chain to maximize overall throughput.
 
 ---
 
-## 📊 Evaluation
-The framework's performance will be tested on a simulated heterogeneous environment using docker containers or a collection of devices like Raspberry Pis and laptops.
+## 🧠 Memory Management & Optimizations
 
-**Metrics:**
-- **Throughput:** Tokens per second.
-- **Resource Utilization:** Distribution of memory and compute load across the network.
+* **Rotating KV Caches:** Server nodes maintain separate Key-Value (KV) caches for different clients, identified by client addresses. To prevent uncontrolled memory expansion, a global maximum sequence length is defined and divided equally among active clients (e.g., a global limit of 8192 tokens means 4 concurrent clients get 2048 tokens each).
+* **8-bit Blockwise Quantization:** Intermediate activations are quantized to 8-bit precision before being transmitted over the network via gRPC, significantly reducing network latency.
+* **Execution Pipelining:** The active chain functions as an execution pipeline. Multiple clients can generate text simultaneously, keeping the pipeline full, eliminating idle node time, and maximizing total chain throughput.
 
-**Baselines for Comparison:**
-1. A static, greedy partitioning of layers.
-2. A naive allocation of an equal number of layers to each server.
-3. Inference of a smaller LLM on a single device.
+---
+
+## 🛠️ Implementation Details
+
+* **Language:** Python
+* **Core Framework:** PyTorch (CPU and CUDA support)
+* **P2P/Networking:** `hivemind`, `grpc`
+* **Models:** Features a custom architecture implementation to allow dynamic layer loading for Llama 3 models (specifically Llama 3.2 1B, Llama 3.2 3B, and Llama 3.1 8B).
+
+---
+
+## 🚀 Future Work
+
+* **Partial Layer Recovery:** During takeovers or repairs, enable the replacement node to load a partial subset of the replaced node's layers (if it lacks memory for all of them), rather than strictly requiring a single node to take all orphaned layers or relying solely on a larger backup.
+* **Latency-Aware Operations:** Incorporate network latency metrics into the decision-making process for chain repairs and takeovers (though less critical in high-bandwidth local networks).
+* **Post-Training Quantization:** Implement post-training quantization to support the execution of even larger models at acceptable inference speeds.
