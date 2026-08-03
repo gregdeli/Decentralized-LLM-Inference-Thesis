@@ -23,7 +23,7 @@ services:
       #         count: 1
       #         capabilities: [gpu]
         limits:
-          memory: 6G #11657M 
+          memory: 4G #11657M 
         #   cpus: '16.0'
     ports:
       - "5671:5678"
@@ -48,11 +48,11 @@ services:
       - ./models:/models:ro 
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 5G # 2.2
           # cpus: '1.0'
@@ -79,11 +79,11 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        # reservations:
-        #     devices:
-        #       - driver: nvidia
-        #         count: 1
-        #         capabilities: [gpu]
+        reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
         limits:
           memory: 4G
           # cpus: '1.0'
@@ -149,7 +149,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 6G
+          memory: 5G
     depends_on:
       - worker-A
       - worker-B

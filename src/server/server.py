@@ -33,7 +33,7 @@ from core.utils import (
     calculate_final_output_params,
     update_model_config,
     can_load,
-    calculate_model_size_mb
+    calculate_model_size_mb,
 )
 from core.remote.utils import *
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
@@ -73,7 +73,7 @@ class Server:
             try:
                 free_bytes, _ = torch.cuda.mem_get_info()
                 free_mb = free_bytes / (1024 * 1024)
-                
+
                 # Force PyTorch's CUDACachingAllocator to initialize
                 _dummy = torch.empty(1, device="cuda")
 
@@ -83,7 +83,7 @@ class Server:
                     self.device = "cuda"
             except RuntimeError as e:
                 logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
-        
+
         # Locks
         self._repair_lock = threading.Lock()
         self._inference_lock = threading.Lock()
@@ -114,7 +114,7 @@ class Server:
         self.llm = None
         self.model = None
         self.num_local_params = 0
-        self.output_layer_temporal_tle = 1 # Transformer Layer Equivilant 
+        self.output_layer_temporal_tle = 1  # Transformer Layer Equivilant
         self.output_layer_memory_tle = 1
         self.layer_mem_size_mb = 0
 
@@ -135,14 +135,13 @@ class Server:
             )
             num_layers = self._mem_to_num_layers()
 
-
         # Join the Inference Chain
         server_info = {
             "id": self.chain.node_id,
             "address": grpc_addr,
             "hostname": socket.gethostname(),
             "processing_rate": 0.0,
-            "is_client": False
+            "is_client": False,
         }
 
         self.previous_tail_info = self.chain.join_chain(
@@ -154,7 +153,7 @@ class Server:
         )
         self.chain.update_output_layer_memory_tle(self.output_layer_memory_tle)
 
-        # Metrics 
+        # Metrics
         self.inference_delay = 0.0
         self.processing_rate = 0
         self.grpc_overhead = 0.0
@@ -167,7 +166,6 @@ class Server:
         # Client Stub
         self.client_stub = None
         self.client_stub_addr = None
-
 
     def _load_llm(
         self,
@@ -183,7 +181,7 @@ class Server:
 
         logger.info(f"Loading layers: {layers_to_load}...")
         if load_output_layer:
-            logger.info("Loading Final Output Layer...") 
+            logger.info("Loading Final Output Layer...")
 
         self.llm = LLM.load(
             self.model_path,
@@ -196,7 +194,9 @@ class Server:
         self.model = self.llm.model
 
         layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
-        output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        output_params = (
+            self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        )
         self.num_local_params = layer_params + output_params
 
         # Update DHT and Chain Status
@@ -204,7 +204,7 @@ class Server:
         self._update_memory_usage()
         # if not self.chain.is_backup() and update_on_dht:
         if update_on_dht:
-            self.chain.update_layers_loaded(self.model.num_layers>0)
+            self.chain.update_layers_loaded(self.model.num_layers > 0)
             if self.llm.output_layer_loaded:
                 self.chain.update_load_output_layer(False)
             self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
@@ -238,27 +238,31 @@ class Server:
 
     def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
-        logger.info(f"Reloading model with layers: {layers} | Load Output Layer: {load_output_layer}...")
+        logger.info(
+            f"Reloading model with layers: {layers} | Load Output Layer: {load_output_layer}..."
+        )
 
         self._unload_llm()
 
         self.llm = LLM.load(
-            self.model_path, 
+            self.model_path,
             device=self.device,
-            load_initial_layer=False, 
-            layers_to_load=layers, 
-            load_output_layer=load_output_layer
+            load_initial_layer=False,
+            layers_to_load=layers,
+            load_output_layer=load_output_layer,
         )
         self.model = self.llm.model
-        
+
         layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
-        output_params = self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        output_params = (
+            self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+        )
         self.num_local_params = layer_params + output_params
 
         self._update_memory_usage()
         if self.llm.output_layer_loaded:
             self.chain.update_load_output_layer(False)
-        self.chain.update_layers_loaded(self.model.num_layers>0)
+        self.chain.update_layers_loaded(self.model.num_layers > 0)
         self.chain.update_output_layer_loaded(self.llm.output_layer_loaded)
 
     def _reload_config(self):
@@ -274,20 +278,20 @@ class Server:
         total_params = self.config.get("num_total_params")
         layer_params = self.config.get("transformer_layer_params")
         final_output_params = self.config.get("final_output_params")
-        
+
         if total_params is None:
             if layer_params is None:
                 layer_params = calculate_transformer_params(self.model_path)
                 # update_config_layer_param_count(self.model_path, layer_params)
                 update_model_config(self.model_path, "transformer_layer_params", layer_params)
                 self._reload_config()
-            
+
             if final_output_params is None:
                 final_output_params = calculate_final_output_params(self.model_path)
                 # update_config_final_output_param_count(self.model_path, final_output_params)
                 update_model_config(self.model, "final_output_params", final_output_params)
                 self._reload_config()
-            
+
             total_params = self.config.get("num_hidden_layers") * layer_params + final_output_params
             # update_config_total_param_count(self.model_path, total_params)
             update_model_config(self.model_path, "num_total_params", total_params)
@@ -295,41 +299,54 @@ class Server:
 
         # Also set self.output_layer_memory_tle
         if "head_dim" not in self.config:
-            self.config["head_dim"] = self.config["hidden_size"] // self.config["num_attention_heads"]
+            self.config["head_dim"] = (
+                self.config["hidden_size"] // self.config["num_attention_heads"]
+            )
 
         param_dtype = get_dtype_from_config(self.config)
         bytes_per_param = param_dtype.itemsize
 
         layer_param_mem_size_mb = (layer_params * bytes_per_param) / (1024 * 1024)
-        layer_kv_cache_mem_size_mb = (2 * self.config.get("num_key_value_heads") * GLOBAL_MAX_SEQ_LEN * self.config.get("head_dim") * bytes_per_param) / (1024 * 1024)
+        layer_kv_cache_mem_size_mb = (
+            2
+            * self.config.get("num_key_value_heads")
+            * GLOBAL_MAX_SEQ_LEN
+            * self.config.get("head_dim")
+            * bytes_per_param
+        ) / (1024 * 1024)
         self.layer_mem_size_mb = layer_param_mem_size_mb + layer_kv_cache_mem_size_mb
         if self.config.get("layer_mem_size_mb") is None:
             update_model_config(self.model_path, "layer_mem_size_mb", self.layer_mem_size_mb)
             self._reload_config()
 
         # Set the output layer's equivilance to a transformer layer in memory
-        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (self.layer_mem_size_mb * 1024 * 1024)
+        self.output_layer_memory_tle = (final_output_params * bytes_per_param) / (
+            self.layer_mem_size_mb * 1024 * 1024
+        )
         if self.config.get("output_layer_memory_tle") is None:
-            update_model_config(self.model_path, "output_layer_memory_tle", self.output_layer_memory_tle)
+            update_model_config(
+                self.model_path, "output_layer_memory_tle", self.output_layer_memory_tle
+            )
             self._reload_config()
 
-
     def _mem_to_num_layers(
-            self, 
-            available_vram: Optional[float] = None,
-            available_memory: Optional[float] = None,
-            round_it: bool = True
-        ) -> int:
+        self,
+        available_vram: Optional[float] = None,
+        available_memory: Optional[float] = None,
+        round_it: bool = True,
+    ) -> int:
         """
-        Calculates how many transformer layers fit in the available Memory/VRAM taking into account the KV Cache 
-        
+        Calculates how many transformer layers fit in the available Memory/VRAM taking into account the KV Cache
+
         Arguements avail_vram, avail_memory are used in reallocation.
         """
         self._update_memory_usage(update_on_dht=False)
 
         available_vram = available_vram if available_vram is not None else self.available_vram_mb
-        available_memory = available_memory if available_memory is not None else self.available_memory_mb
-        
+        available_memory = (
+            available_memory if available_memory is not None else self.available_memory_mb
+        )
+
         if self.device == "cuda":
             available = available_vram - self.memory_usage_mb - RESERVED_MEM_MB
         else:
@@ -342,7 +359,9 @@ class Server:
         if round_it:
             max_num_layers = int(round(max_num_layers))
 
-        return min(max_num_layers, self.config.get("num_hidden_layers") + self.output_layer_memory_tle)
+        return min(
+            max_num_layers, self.config.get("num_hidden_layers") + self.output_layer_memory_tle
+        )
 
     def _can_load(
         self,
@@ -352,7 +371,9 @@ class Server:
     ) -> bool:
         """Checks if this node can load a certain number of layers or a range of layers"""
         # The requested additional number of layers
-        requested_num_layers = num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
+        requested_num_layers = (
+            num_layers if num_layers else (layers[1] - layers[0] + 1) if layers else 0
+        )
 
         # Calculate the memory used currently by layers that are loaded
         current_num_layers = self.llm.model.num_layers if self.llm is not None else 0
@@ -381,13 +402,13 @@ class Server:
         if requested_num_layers > 0:
             if max_extra_num_layers < requested_num_layers:
                 return False
-            
+
             if output_layer:
                 max_extra_num_layers -= requested_num_layers
                 return max_extra_num_layers >= self.output_layer_memory_tle
-            
+
             return True
-        
+
         return max_extra_num_layers >= self.output_layer_memory_tle
 
     def _get_container_memory_limit_mb(self) -> Optional[float]:
@@ -450,18 +471,19 @@ class Server:
             #     self.chain.init_chain_thoughput()
 
             num_clients = self.chain.get_num_clients()
-            max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
+            max_seq_length = (
+                GLOBAL_MAX_SEQ_LEN // num_clients if num_clients else GLOBAL_MAX_SEQ_LEN
+            )
 
             self.model.add_client_cache(
-                client_id, 
+                client_id,
                 batch_size=1,
                 max_seq_length=max_seq_length,
                 device=self.device,
-                dtype=self.llm.dtype
+                dtype=self.llm.dtype,
             )
 
             self._update_memory_usage(update_on_dht=True)
-
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
@@ -472,10 +494,10 @@ class Server:
 
         if self.model.output_layer_loaded:
             num_layers += self.output_layer_temporal_tle
-        
+
         if num_layers == 0:
-            return 
-            
+            return
+
         current_rate = num_layers / delay
 
         # Moving average to avoid jitter
@@ -486,18 +508,17 @@ class Server:
 
     @torch.no_grad()
     def _profile_node(
-        self, 
-        dummy_seq_length: int = 30, 
-        profiling_runs: int = 100, 
-        profiling_duration_s: int = 3
+        self, dummy_seq_length: int = 30, profiling_runs: int = 100, profiling_duration_s: int = 3
     ):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
 
         # time.sleep(random.uniform(0.5, 3.0))
 
-        other_node_profiling =  self.chain.get_chain_status() == ChainStatus.PROFILING
+        other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
         while other_node_profiling:
-            logger.info(f"Another node is currently profiling. Sleeping for {profiling_duration_s} seconds...")
+            logger.info(
+                f"Another node is currently profiling. Sleeping for {profiling_duration_s} seconds..."
+            )
             time.sleep(profiling_duration_s)
             other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
 
@@ -506,9 +527,9 @@ class Server:
 
         # ------ Transformer Layer Profiling ------
 
-        # First profile a signle transformer layer to get the nodes processing rate and 
-        # the transformer layers inference delay 
-        self._load_llm(layers_to_load=(0,0), load_output_layer=False, update_on_dht=False)
+        # First profile a signle transformer layer to get the nodes processing rate and
+        # the transformer layers inference delay
+        self._load_llm(layers_to_load=(0, 0), load_output_layer=False, update_on_dht=False)
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
@@ -551,7 +572,7 @@ class Server:
             profiling_time = time.perf_counter() - prof_start_time
             if profiling_time >= profiling_duration_s:
                 break
-        
+
         self._unload_llm()
 
         # ---------- Output Layer Profiling ---------------
@@ -569,15 +590,12 @@ class Server:
 
             output_layer_delay = time.perf_counter() - start
 
-            logger.info(
-                f"Profiling: Output Layer: "
-                f"Delay: {output_layer_delay}s "
-            )
+            logger.info(f"Profiling: Output Layer: " f"Delay: {output_layer_delay}s ")
 
             profiling_time = time.perf_counter() - prof_start_time
             if profiling_time >= profiling_duration_s:
                 break
-        
+
         self._unload_llm()
 
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
@@ -585,12 +603,12 @@ class Server:
         self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
 
         self.chain.update_processing_rate(self.processing_rate)
-        
+
         self._update_memory_usage()
 
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
-        else:    
+        else:
             self.chain.update_chain_status(ChainStatus.UNREADY)
 
     @torch.no_grad()
@@ -623,7 +641,10 @@ class Server:
             input_pos = input_pos.to(device)
 
         # If KV caches have been reallocated the generation needs to stop because the context is lost
-        if self.model.client_cache_reallocated(client_id=response_address) and input_pos is not None:
+        if (
+            self.model.client_cache_reallocated(client_id=response_address)
+            and input_pos is not None
+        ):
             self._connect_to_client(response_address)
             self.client_stub.ReceiveResponse(
                 nodeservice_pb2.InferenceResponse(error_message="KV Caches have been reallocated!")
@@ -637,18 +658,20 @@ class Server:
             self.model.set_active_client(client_id=response_address)
 
             # --- Inference ---
-            logger.info(f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})...")
+            logger.info(
+                f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})..."
+            )
 
             start = time.perf_counter()
 
             h = self.model.forward_server(input_tensor, seq_length, input_pos)
             if self.added_delay:
                 time.sleep(self.added_delay)
-        
+
             self.inference_delay = time.perf_counter() - start
-        
+
             self.chain.update_inference_delay(self.inference_delay)
-            
+
             self._calculate_processing_rate(self.inference_delay)
             self.chain.update_processing_rate(self.processing_rate)
 
@@ -683,14 +706,14 @@ class Server:
 
                 start = time.perf_counter()
                 self.client_stub.ReceiveResponse(response)
-                
+
                 self.grpc_overhead = time.perf_counter() - start
                 self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
-        
-            return 
+
+            return
 
         # INTERMEDIATE NODE -> FORWARD TO SUCCESSOR
 
@@ -725,10 +748,11 @@ class Server:
                 threading.Thread(target=self.repair_chain, daemon=True).start()
                 self._connect_to_client(response_address)
                 self.client_stub.ReceiveResponse(
-                    nodeservice_pb2.InferenceResponse(error_message=f"Node with address: {self.successor_stub_addr} has failed. The chain is being repaired...")
+                    nodeservice_pb2.InferenceResponse(
+                        error_message=f"Node with address: {self.successor_stub_addr} has failed. The chain is being repaired..."
+                    )
                 )
         return
-    
 
     def trigger_reallocation(self):
         """
@@ -736,8 +760,8 @@ class Server:
         """
         if not self.chain.is_head():
             return
-        
-        if self.chain.get_chain_status() not in  (ChainStatus.READY, ChainStatus.REPAIRING):
+
+        if self.chain.get_chain_status() not in (ChainStatus.READY, ChainStatus.REPAIRING):
             logger.info("Reallocation already in process. Returning...")
             return
 
@@ -748,26 +772,30 @@ class Server:
             total_rate = self.chain.gather_total_rate()
 
             num_active_chain_nodes = self.chain.gather_num_active_chain_nodes()
-            
+
             # Check if the model can be loaded on the available active server nodes
-            model_mem_size, layer_mem_size_mb, output_layer_mem_size = calculate_model_size_mb(self.config, num_active_chain_nodes)
-            total_chain_memory = self.chain.gather_total_memory(self.config, layer_mem_size_mb, output_layer_mem_size)
+            model_mem_size, layer_mem_size_mb, output_layer_mem_size = calculate_model_size_mb(
+                self.config, num_active_chain_nodes
+            )
+            total_chain_memory = self.chain.gather_total_memory(
+                self.config, layer_mem_size_mb, output_layer_mem_size
+            )
 
             load_max = False
             if total_chain_memory < model_mem_size:
                 load_max = True
-                logger.info("The nodes in the active chain can't load the full model. Loading the maximum number of layers...")
+                logger.info(
+                    "The nodes in the active chain can't load the full model. Loading the maximum number of layers..."
+                )
 
             if total_rate <= 0:
                 logger.error("Total Rate is 0 or less, cannot reallocate.")
                 break
 
-            logger.info(
-                f"Triggering reallocation with Total Rate: {total_rate} layers/sec..."
-            )
+            logger.info(f"Triggering reallocation with Total Rate: {total_rate} layers/sec...")
 
             # request = nodeservice_pb2.ReallocateRequest(
-            #     total_rate=total_rate, 
+            #     total_rate=total_rate,
             #     start_layer_index=0,
             #     load_max=load_max
             # )
@@ -783,19 +811,21 @@ class Server:
                     total_system_rate=total_rate,
                     start_layer_index=0,
                     load_max=load_max,
-                    predecessor_info=None
+                    predecessor_info=None,
                 )
 
                 if response.requires_restart:
-                    logger.info(f"Reallocation bottlenecked at {response.bottleneck_node}. Restarting...")
+                    logger.info(
+                        f"Reallocation bottlenecked at {response.bottleneck_node}. Restarting..."
+                    )
                     continue
 
                 if response.success:
                     self.chain.update_all_layers_loaded()
-                    
+
                     logger.info("Reallocation completed successfully.")
                     break
-                
+
                 else:
                     logger.error("Reallocation failed without a restart request.")
                     break
@@ -803,7 +833,7 @@ class Server:
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
                 break
-        
+
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
         else:
@@ -829,7 +859,7 @@ class Server:
         # tail_output_temporal_tle = self.chain.get_tail_output_temporal_tle()
         # logger.info(f"Tail Output Temporal TLE: {tail_output_temporal_tle}")
         logger.info(f"Output Layer Memory TLE: {self.output_layer_memory_tle}")
-        
+
         num_total_tle = num_total_layers + self.output_layer_memory_tle
 
         # Calculate share
@@ -840,7 +870,6 @@ class Server:
             ideal_tle_count = 0
 
         logger.info(f"Ideal TLE Count: {ideal_tle_count}")
-
 
         # Calculate the max number of tle this node can load
         current_num_layers = self.model.num_layers
@@ -868,24 +897,23 @@ class Server:
         max_num_layers = current_num_layers + max_extra_num_layers
         logger.info(f"Max Num Transformer Layers (Memory Limit): {max_num_layers}")
 
-        
         target_tle_count = min(ideal_tle_count, max_num_layers)
         logger.info(f"Target TLE Count: {target_tle_count}")
 
-        
         tail_cant_load_remaining = False
         if self.chain.is_tail():
-            remaining_num_trans_layers = num_total_layers - start_layer_index if start_layer_index > 0 else 0
+            remaining_num_trans_layers = (
+                num_total_layers - start_layer_index if start_layer_index > 0 else 0
+            )
             target_transformer_layer_count = target_tle_count - self.output_layer_memory_tle
 
             if target_transformer_layer_count < remaining_num_trans_layers:
                 # adjust rate, restart realloc
                 tail_cant_load_remaining = True
-        
+
         if tail_cant_load_remaining:
             logger.warning("Tail can't load the Output Layer after Loading the remaining Layers!")
-            
-        
+
         # If the ideal number of parameters dont fit in memory, then its like this node had a lower processing rate
         # A node shouldnt restart the reallocation if its both the head and tail
         memory_limit_exceeded = round(ideal_tle_count, 2) > round(max_num_layers, 2)
@@ -893,42 +921,58 @@ class Server:
             logger.warning(f"Memory Limit Hit!")
         is_isolated_node = not (self.chain.is_head() and self.chain.is_tail())
 
-        if ((memory_limit_exceeded and is_isolated_node) or tail_cant_load_remaining) and not load_max:
+        if (
+            (memory_limit_exceeded and is_isolated_node) or tail_cant_load_remaining
+        ) and not load_max:
             remaining_rate = total_system_rate - self.processing_rate
-            effective_num_layers = max_num_layers if memory_limit_exceeded else remaining_num_trans_layers + self.output_layer_memory_tle
+            effective_num_layers = (
+                max_num_layers
+                if memory_limit_exceeded
+                else remaining_num_trans_layers + self.output_layer_memory_tle
+            )
 
-            effective_rate = effective_num_layers * remaining_rate / ((num_total_tle) - effective_num_layers)
-        
-            logger.warning(f"Effective Num Layers: {effective_num_layers} | Effective Processing Rate: {effective_rate}. Requesting reallocation restart...")
+            effective_rate = (
+                effective_num_layers * remaining_rate / ((num_total_tle) - effective_num_layers)
+            )
+
+            logger.warning(
+                f"Effective Num Layers: {effective_num_layers} | Effective Processing Rate: {effective_rate}. Requesting reallocation restart..."
+            )
             self.processing_rate = effective_rate
             self.chain.update_processing_rate(effective_rate)
             return nodeservice_pb2.ReallocateResponse(
-                success=False,
-                requires_restart=True,
-                bottleneck_node=self.grpc_addr
+                success=False, requires_restart=True, bottleneck_node=self.grpc_addr
             )
 
         # Start with transformer layers
         target_layer_count = int(round(target_tle_count))
-        
+
         end_layer_index = start_layer_index + target_layer_count - 1
         if end_layer_index >= num_total_layers:
             end_layer_index = num_total_layers - 1
-            target_layer_count = end_layer_index - start_layer_index + 1 
-        
+            target_layer_count = end_layer_index - start_layer_index + 1
 
         # Check if the lm_head should be loaded
         load_output_layer = False
-        if self.chain.is_tail() and max_num_layers >= (target_layer_count + self.output_layer_memory_tle) and end_layer_index == num_total_layers - 1:
+        if (
+            self.chain.is_tail()
+            and max_num_layers >= (target_layer_count + self.output_layer_memory_tle)
+            and end_layer_index == num_total_layers - 1
+        ):
             load_output_layer = True
-        
+
         new_layers = None
         if start_layer_index < num_total_layers:
             new_layers = (start_layer_index, end_layer_index)
-        logger.info(f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}")
+        logger.info(
+            f"Target Layer Count: {target_layer_count} | New Layers: {new_layers} | Load Output Layer: {load_output_layer}"
+        )
 
         # Load Layers
-        if new_layers != self.llm.layers_loaded or load_output_layer != self.model.output_layer_loaded:
+        if (
+            new_layers != self.llm.layers_loaded
+            or load_output_layer != self.model.output_layer_loaded
+        ):
             self._reload_llm(layers=new_layers, load_output_layer=load_output_layer)
             self.chain.update_layers(new_layers)
         else:
@@ -954,12 +998,7 @@ class Server:
                 logger.error(f"Failed to propagate Reallocation to successor: {e}")
                 return nodeservice_pb2.ReallocateResponse(success=False)
         else:
-            return nodeservice_pb2.ReallocateResponse(
-                success=True,
-                requires_restart=False
-            )
-    
-    
+            return nodeservice_pb2.ReallocateResponse(success=True, requires_restart=False)
 
     def repair_chain(self):
         """
@@ -1004,11 +1043,13 @@ class Server:
                     layers_to_load = (self.llm.layers_loaded[0], orphaned_layers[1])
                 elif dead_succ_output_loaded:
                     layers_to_load = self.llm.layers_loaded
-                
-                logger.info(f"Taking over layers {orphaned_layers}. New range: {layers_to_load}. Load Output Layer: {dead_succ_output_loaded}")
+
+                logger.info(
+                    f"Taking over layers {orphaned_layers}. New range: {layers_to_load}. Load Output Layer: {dead_succ_output_loaded}"
+                )
 
                 self._reload_llm(layers_to_load, load_output_layer=dead_succ_output_loaded)
-                
+
                 self_info = self.chain.get_self_info()
                 self.chain.repair(
                     layers_to_load,
@@ -1049,7 +1090,7 @@ class Server:
                                 avail_vram=avail_vram,
                                 vram_usage=backup_info.get("vram_usage"),
                                 layers=orphaned_layers,
-                                output_layer=dead_succ_output_loaded
+                                output_layer=dead_succ_output_loaded,
                             ):
                                 self_info = self.chain.get_self_info()
                                 self.chain.repair(
@@ -1079,15 +1120,15 @@ class Server:
                                     f"Backup Node {backup_id} cannot load the orphaned layers."
                                 )
                 else:
-                    logger.info("No backup nodes found. Setting this node as the tail...")
-                
+                    logger.info("No backup nodes found. Patching topology and Reallocationg...")
+
                 # If no backup node is found or the backups cant load the orphaned layers,
                 succ_data = dead_successor_info.get("successor")
                 if succ_data:
                     # Update this node's successor to point to the dead nodes successor and Reallocate
                     self.chain.update_successor(succ_data)
                     self._connect_to_successor()
-                    
+
                     if self.chain.is_head():
                         self.trigger_reallocation()
                     else:
@@ -1100,15 +1141,15 @@ class Server:
                     # If the dead node was the tail, make this node the new tail
                     self.chain.update_chain_tail(self.chain.node_id)
                     self.chain.update_successor(new_successor_data=None)
-                
-                # Make Backup Nodes Join the Chain 
+
+                # Make Backup Nodes Join the Chain
                 logger.info(f"Attempting to rebuild the chain with backup nodes...")
                 backup_nodes = self.chain.get_backup_nodes()
                 if backup_nodes:
                     # Find backup node with enough memory
                     for backup_id in backup_nodes:
                         backup_info = self.chain.get_server_info(backup_id)
-                        
+
                         backup_addr = backup_info.get("address")
                         if not backup_addr:
                             continue
@@ -1121,12 +1162,11 @@ class Server:
                             logger.error(
                                 f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                             )
-                
+
                 if self.chain.get_all_layers_loaded():
                     self.chain.update_chain_status(ChainStatus.READY)
                 else:
                     self.chain.update_chain_status(ChainStatus.UNREADY)
-                
 
     def opportunistic_takeover(
         self, weak_node_info: Dict[str, Any], predecessor_info: Optional[Dict[str, Any]]
@@ -1155,12 +1195,16 @@ class Server:
             self.chain.update_chain_status(ChainStatus.TAKEOVER)
 
             if self.llm is not None and self.llm.layers_loaded is not None:
-                new_layers = (self.llm.layers_loaded[0], layers_to_takeover[1]) if layers_to_takeover else self.llm.layers_loaded
+                new_layers = (
+                    (self.llm.layers_loaded[0], layers_to_takeover[1])
+                    if layers_to_takeover
+                    else self.llm.layers_loaded
+                )
             else:
                 new_layers = layers_to_takeover
-            
+
             self._reload_llm(new_layers, load_output_layer=weak_node_output_layer_loaded)
-            
+
             self.chain.repair(
                 new_layers,
                 replacement_info=self.chain.get_self_info(),
@@ -1231,14 +1275,13 @@ class Server:
             self.successor_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
             self.successor_stub_addr = successor_addr
             logger.info(f"Connection to successor: {successor_addr} established.")
-        
+
         except grpc.FutureTimeoutError:
             logger.error(f"Connection to {successor_addr} timed out.")
             self.successor_stub = None
 
             raise CustomRpcError(
-                code=grpc.StatusCode.DEADLINE_EXCEEDED,
-                details="Connection to successor timed."
+                code=grpc.StatusCode.DEADLINE_EXCEEDED, details="Connection to successor timed."
             )
 
         except grpc.RpcError as e:
@@ -1246,9 +1289,9 @@ class Server:
                 f"A gRPC error occurred while connecting to {successor_addr}: {e.code().name}"
             )
             self.successor_stub = None
-    
+
     def _connect_to_client(self, client_addr: str):
-        """Establishes a gRPC connection to a client node."""       
+        """Establishes a gRPC connection to a client node."""
         if not self.client_stub or self.client_stub_addr != client_addr:
             channel = create_grpc_channel(client_addr)
             self.client_stub_addr = client_addr
@@ -1278,7 +1321,7 @@ def serve():
     my_ip = os.getenv("IP")
     if not my_ip:
         my_ip = get_ip_address()
-    
+
     grpc_port = os.getenv("GRPC_PORT")
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = f"{my_ip}:{grpc_port}"
@@ -1342,7 +1385,6 @@ def serve():
             logger.error(
                 f"A gRPC error occurred while connecting to {server_node.previous_tail_info.get('address')}: {e.code().name}"
             )
-    
 
     def _dht_heartbeat_task(server_node: Server):
         """Background task to keep DHT keys alive."""
@@ -1350,7 +1392,7 @@ def serve():
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node._update_memory_usage()
             if server_node.llm is not None and hasattr(server_node.llm, "output_layer_loaded"):
-                server_node.chain.update_layers_loaded(server_node.model.num_layers>0)
+                server_node.chain.update_layers_loaded(server_node.model.num_layers > 0)
                 server_node.chain.update_output_layer_loaded(server_node.llm.output_layer_loaded)
             server_node.chain.republish_keys()
 
@@ -1369,11 +1411,17 @@ def serve():
                 continue
 
             # Perform the health check on the successor
-            if server_node.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY, ChainStatus.NONE):
+            if server_node.chain.get_chain_status() in (
+                ChainStatus.READY,
+                ChainStatus.UNREADY,
+                ChainStatus.NONE,
+            ):
                 try:
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:
-                        server_node.successor_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
+                        server_node.successor_stub.Check(
+                            nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT
+                        )
                         logger.info(f"Successor is ALIVE.")
                 except grpc.RpcError as e:
                     if (
@@ -1395,12 +1443,15 @@ def serve():
                     continue
 
                 successor_proc_rate = succ_info.get("processing_rate")
-                if server_node.processing_rate > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD:
+                if (
+                    server_node.processing_rate
+                    > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD
+                ):
                     server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            if server_node.chain.get_chain_status() == ChainStatus.READY:
-                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            # if server_node.chain.get_chain_status() == ChainStatus.READY:
+            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
@@ -1444,7 +1495,9 @@ def serve():
     profile_node_str = os.getenv("PROFILE")
     profile_node = int(profile_node_str) if profile_node_str is not None else 1
     if profile_node:
-        server_node._profile_node(dummy_seq_length=1000, profiling_runs=50, profiling_duration_s=PROFILING_DURATION)
+        server_node._profile_node(
+            dummy_seq_length=1000, profiling_runs=50, profiling_duration_s=PROFILING_DURATION
+        )
 
     # Load the server's assigned layers
     # if not server_node.chain.is_backup():

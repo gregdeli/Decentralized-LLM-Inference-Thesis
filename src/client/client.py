@@ -68,7 +68,13 @@ class Client:
             config = json.load(f)
         self.config = config
 
-        self.llm = LLM.load(model_path, device=self.device, load_initial_layer=True, load_output_layer=False, time_it=time_it)
+        self.llm = LLM.load(
+            model_path,
+            device=self.device,
+            load_initial_layer=True,
+            load_output_layer=False,
+            time_it=time_it,
+        )
         self.model = self.llm.model
         self.chat_history = []
 
@@ -95,7 +101,7 @@ class Client:
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
         grpc_thread.start()
         self.grpc_server = None
-        
+
         self._stop_health_monitor_event = threading.Event()
         self._stop_dht_heartbeat_task = threading.Event()
 
@@ -108,7 +114,9 @@ class Client:
                 ("grpc.max_receive_message_length", GRPC_MAX_MSG_SIZE),
             ],
         )
-        nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(ClientServicer(self), self.grpc_server)
+        nodeservice_pb2_grpc.add_ClientServiceServicer_to_server(
+            ClientServicer(self), self.grpc_server
+        )
         self.grpc_server.add_insecure_port(grpc_addr)
         self.grpc_server.start()
         logger.info(f"Client is ready to accept grpc connections on {grpc_addr}.")
@@ -117,7 +125,7 @@ class Client:
         threading.Thread(target=self._dht_heartbeat_task, daemon=True).start()
 
         self.grpc_server.wait_for_termination()
-    
+
     def shutdown(self):
         # Stop the head health monitor and dht heartbeat
         self._stop_health_monitor_event.set()
@@ -132,21 +140,22 @@ class Client:
 
         # Remove this client's kv cache from the server nodes
         num_clients = self.chain.get_num_clients()
-        max_seq_length = GLOBAL_MAX_SEQ_LEN // num_clients if num_clients > 0 else GLOBAL_MAX_SEQ_LEN
+        max_seq_length = (
+            GLOBAL_MAX_SEQ_LEN // num_clients if num_clients > 0 else GLOBAL_MAX_SEQ_LEN
+        )
 
         request = nodeservice_pb2.RemoveClientKVCacheRequest(
-            client_id=self.grpc_addr,
-            new_max_seq_length=max_seq_length
+            client_id=self.grpc_addr, new_max_seq_length=max_seq_length
         )
 
         self.head_server_stub.RemoveClientKVCache(request)
-        
+
         # Shut down the P2P/DHT connections and GRPC server
         if self.grpc_server:
             logger.info("Shutting down GRPC server...")
             self.grpc_server.stop(grace=None)
-        
-        if hasattr(self, 'dht') and self.dht:
+
+        if hasattr(self, "dht") and self.dht:
             self.dht.shutdown()
 
     def _dht_heartbeat_task(self):
@@ -165,11 +174,17 @@ class Client:
             if is_stopped:
                 break
 
-            if self.chain.get_chain_status() in (ChainStatus.READY, ChainStatus.UNREADY, ChainStatus.REPAIRING):
+            if self.chain.get_chain_status() in (
+                ChainStatus.READY,
+                ChainStatus.UNREADY,
+                ChainStatus.REPAIRING,
+            ):
                 try:
                     self._connect_to_head()
                     if self.head_server_stub is not None:
-                        self.head_server_stub.Check(nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT)
+                        self.head_server_stub.Check(
+                            nodeservice_pb2.Empty(), timeout=GRPC_CHECK_TIMEOUT
+                        )
                         logger.info(f"HEAD is ALIVE.")
                 except grpc.RpcError as e:
                     if (
@@ -240,19 +255,24 @@ class Client:
             if not dead_head_info:
                 logger.error("Could not retrieve HEAD data from DHT! Chain is broken.")
                 return
-            
+
             self.head_server_stub = None
-            
+
             # Only one client has to do the repair
             # client_nodes = self.chain.get_client_nodes()
             client_leader = self.chain.get_client_leader()
 
             if client_leader != self.chain.node_id:
-                logger.info(f"Waiting for client {client_leader[:DIGITS_SHOW]} to finish the HEAD replacement...")
+                logger.info(
+                    f"Waiting for client {client_leader[:DIGITS_SHOW]} to finish the HEAD replacement..."
+                )
 
-                while self.chain.get_chain_status() in (ChainStatus.REPAIRING, ChainStatus.REALLOCATING):
+                while self.chain.get_chain_status() in (
+                    ChainStatus.REPAIRING,
+                    ChainStatus.REALLOCATING,
+                ):
                     time.sleep(HEARTBEAT_INTERVAL_S)
-                
+
                 self._connect_to_head()
                 return
 
@@ -264,7 +284,6 @@ class Client:
             head_succ_data = dead_head_info.get("successor")
             if head_succ_data:
                 head_succ_info = self.chain.get_server_info(head_succ_data.get("id"))
-
 
             orphaned_layers = dead_head_info.get("layers")
             head_was_tail = self.chain.node_is_tail(dead_head_info.get("id"))
@@ -286,13 +305,13 @@ class Client:
                     avail_mem=head_succ_avail_mem,
                     mem_usage=head_succ_info.get("memory_usage"),
                     avail_vram=head_succ_avail_vram,
-                    vram_usage=head_succ_info.get("vram_usage")
+                    vram_usage=head_succ_info.get("vram_usage"),
                 ):
                     if head_succ_info.get("layers") is not None:
                         new_layers = (orphaned_layers[0], head_succ_info.get("layers")[1])
                     else:
                         new_layers = orphaned_layers
-                    
+
                     self.chain.repair(
                         new_layers,
                         replacement_info=head_succ_info,
@@ -348,7 +367,9 @@ class Client:
                             self.chain.repair(
                                 orphaned_layers,
                                 replacement_info=backup_info,
-                                replacement_load_output_layer=dead_head_info.get("output_layer_loaded"),
+                                replacement_load_output_layer=dead_head_info.get(
+                                    "output_layer_loaded"
+                                ),
                                 replacee_info=dead_head_info,
                                 replacee_was_head=True,
                                 replacee_was_tail=head_was_tail,
@@ -388,11 +409,11 @@ class Client:
                 # Reallocate among the remaining nodes
                 self.trigger_reallocation()
             else:
-                # Its over make the HEAD None 
+                # Its over make the HEAD None
                 self.chain.dht.store(HEAD_KEY, None, EXPIRATION_S)
                 self.chain.update_all_layers_loaded()
-            
-            # Use backup nodes to rebuild the chain 
+
+            # Use backup nodes to rebuild the chain
             logger.info(f"Attempting to rebuild the chain with backup nodes...")
             backup_nodes = self.chain.get_backup_nodes()
             if backup_nodes:
@@ -400,7 +421,7 @@ class Client:
                 # Find backup node with enough memory
                 for backup_id in backup_nodes:
                     backup_info = self.chain.get_server_info(backup_id)
-                    
+
                     backup_addr = backup_info.get("address")
                     if not backup_addr:
                         continue
@@ -417,15 +438,13 @@ class Client:
                         logger.error(
                             f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                         )
-                
+
                 self._connect_to_head()
-            
+
             if self.chain.get_all_layers_loaded():
                 self.chain.update_chain_status(ChainStatus.READY)
             else:
                 self.chain.update_chain_status(ChainStatus.UNREADY)
-
-            
 
     def trigger_reallocation(self):
         """
@@ -439,43 +458,47 @@ class Client:
             self.total_rate = self.chain.gather_total_rate()
 
             num_active_chain_nodes = self.chain.gather_num_active_chain_nodes()
-            
+
             # Check if the model can be loaded on the available active server nodes
-            model_mem_size, layer_mem_size_mb, output_layer_mem_size = calculate_model_size_mb(self.config, num_active_chain_nodes)
-            total_chain_memory = self.chain.gather_total_memory(self.config, layer_mem_size_mb, output_layer_mem_size)
+            model_mem_size, layer_mem_size_mb, output_layer_mem_size = calculate_model_size_mb(
+                self.config, num_active_chain_nodes
+            )
+            total_chain_memory = self.chain.gather_total_memory(
+                self.config, layer_mem_size_mb, output_layer_mem_size
+            )
 
             load_max = False
             if total_chain_memory < model_mem_size:
                 load_max = True
-                logger.info("The nodes in the active chain can't load the full model. Loading the maximum number of layers...")
+                logger.info(
+                    "The nodes in the active chain can't load the full model. Loading the maximum number of layers..."
+                )
 
             if self.total_rate <= 0:
                 logger.error("Total Rate is 0 or less, cannot reallocate.")
                 break
 
-            logger.info(
-                f"Triggering reallocation with Total Rate: {self.total_rate} layers/sec..."
-            )
+            logger.info(f"Triggering reallocation with Total Rate: {self.total_rate} layers/sec...")
 
             request = nodeservice_pb2.ReallocateRequest(
-                total_rate=self.total_rate, 
-                start_layer_index=0,
-                load_max=load_max
+                total_rate=self.total_rate, start_layer_index=0, load_max=load_max
             )
 
             try:
                 response = self.head_server_stub.Reallocate(request)
 
                 if response.requires_restart:
-                    logger.info(f"Reallocation bottlenecked at {response.bottleneck_node}. Restarting...")
+                    logger.info(
+                        f"Reallocation bottlenecked at {response.bottleneck_node}. Restarting..."
+                    )
                     continue
 
                 if response.success:
                     self.chain.update_all_layers_loaded()
-                    
+
                     logger.info("Reallocation completed successfully.")
                     break
-                
+
                 else:
                     logger.error("Reallocation failed without a restart request.")
                     break
@@ -483,7 +506,7 @@ class Client:
             except grpc.RpcError as e:
                 logger.error(f"Failed to trigger reallocation: {e}")
                 break
-        
+
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
         else:
@@ -522,9 +545,7 @@ class Client:
 
         num_clients = self.chain.get_num_clients()
         if max_returned_tokens > GLOBAL_MAX_SEQ_LEN // num_clients:
-            return (
-                f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds this client's max sequence length of {GLOBAL_MAX_SEQ_LEN//num_clients} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
-            )
+            return f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds this client's max sequence length of {GLOBAL_MAX_SEQ_LEN//num_clients} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
 
         if stream:
             return self._generate_stream(
@@ -640,13 +661,16 @@ class Client:
         # self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.RUNNING)
 
+        generated_ids = []
+
         input_tensor = input_ids
         input_pos = None
         seq_length = prompt_length
 
         start_time = time.perf_counter()
         tokens_generated = 0
-        for i in range(max_new_tokens):
+        # for i in range(max_new_tokens):
+        while tokens_generated < max_new_tokens:
             # self.chain.become_chain_leader()
 
             start_token_gen = time.perf_counter()
@@ -684,7 +708,6 @@ class Client:
                 yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
                 self.chain.update_chain_status(ChainStatus.UNREADY)
                 return
-            
 
             # Wait for the Tail to set the inference_response event
             is_set = self.inference_response_event.wait(timeout=15)
@@ -709,9 +732,27 @@ class Client:
                 # if self.chain.get_all_layers_loaded():
                 #     self.chain.update_chain_status(ChainStatus.READY)
 
-                yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
+                # yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
                 self.chain.update_chain_status(ChainStatus.UNREADY)
-                return
+
+                # Wait until the repair is done
+                while self.chain.get_chain_status() in (ChainStatus.REPAIRING, ChainStatus.UNREADY):
+                    continue
+
+                if self.chain.get_all_layers_loaded():
+                    prompt_length = input_ids.size(1) + tokens_generated
+                    max_new_tokens = max_new_tokens - tokens_generated
+                    tokens_generated = 0
+
+                    all_generated_ids = torch.cat(generated_ids, dim=1)
+                    input_tensor = torch.cat([input_ids, all_generated_ids], dim=1)
+                    input_pos = None
+                    seq_length = input_tensor.size(1)
+
+                    continue
+                else:
+                    yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
+                    return
 
             # Capture the TOTAL PROCESSING RATE
             self.total_rate = self.chain.gather_total_rate()
@@ -734,6 +775,7 @@ class Client:
             self.decode_delay = time.perf_counter() - start
 
             tokens_generated += 1
+            generated_ids.append(next_token)
 
             self.chat_history.append(decoded_token)
             start = time.perf_counter()
@@ -741,14 +783,18 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             input_tensor = next_token
-            current_pos = prompt_length + (i + 1)
+            current_pos = prompt_length + tokens_generated
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
 
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
-        self.last_inference_stats = {"num_tokens_generated": tokens_generated, "latency": elapsed_time, "throughput": throughput}
+        self.last_inference_stats = {
+            "num_tokens_generated": tokens_generated,
+            "latency": elapsed_time,
+            "throughput": throughput,
+        }
         # self.chain.update_chain_status(ChainStatus.READY)
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
