@@ -757,6 +757,12 @@ class Client:
                     # input_tensor = torch.cat([input_ids, all_generated_ids], dim=1)
                     # input_pos = None
                     # seq_length = input_tensor.size(1)
+
+                    input_tensor = self.chat_history
+                    input_pos = 0
+                    seq_length = input_tensor.size(1)
+
+                    prompt_length = seq_length
                     pass
 
                     continue
@@ -799,7 +805,8 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             input_tensor = next_token
-            current_pos = history_length + prompt_length + tokens_generated
+            # current_pos = history_length + prompt_length + tokens_generated
+            current_pos = self.chat_history.size(1)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
 
