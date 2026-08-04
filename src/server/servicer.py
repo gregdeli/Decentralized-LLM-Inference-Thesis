@@ -6,7 +6,7 @@ import torch
 import time
 import json
 import threading
-import gc 
+import gc
 import ctypes
 
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
@@ -43,11 +43,22 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         max_returned_tokens = request.max_returned_tokens
         seq_length = request.seq_length if request.HasField("seq_length") else None
         input_pos_val = request.input_pos if request.HasField("input_pos") else None
-        input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
+        if seq_length > 1:
+            input_pos = torch.arange(
+                input_pos_val, input_pos_val + seq_length, device=self.server_node.device
+            )
+        else:
+            input_pos = torch.tensor([input_pos_val])
+
+        # input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
 
         response_address = request.response_address
 
-        threading.Thread(target=self.server_node.run_local_layers, args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address), daemon=True).start()
+        threading.Thread(
+            target=self.server_node.run_local_layers,
+            args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address),
+            daemon=True,
+        ).start()
 
         # logger.info(f"End RunLayers handling from ({request.response_address})...")
         return nodeservice_pb2.Empty()
@@ -67,17 +78,14 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         )
 
         response = self.server_node.reallocate_layers(
-            total_rate, 
-            start_layer_index, 
-            load_max, 
-            predecessor_info
+            total_rate, start_layer_index, load_max, predecessor_info
         )
 
         return response
 
     def TriggerReallocation(self, request, context):
         self.server_node.trigger_reallocation()
-        
+
         return nodeservice_pb2.Empty()
 
     def UpdateSuccessorStub(self, request, context):
@@ -93,7 +101,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def UnloadLayers(self, request, context):
         self.server_node._unload_llm()
         return nodeservice_pb2.Empty()
-    
+
     def RemoveClientKVCache(self, request, context):
         # Free the client's cache memory
         logger.info(f"Removing client's {request.client_id} KV Cache...")
@@ -105,7 +113,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             batch_size=1,
             max_seq_length=request.new_max_seq_length,
             device=self.server_node.device,
-            dtype=self.server_node.llm.dtype
+            dtype=self.server_node.llm.dtype,
         )
 
         # Release freed memory
@@ -121,8 +129,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
         # Forward to successor
         request = nodeservice_pb2.RemoveClientKVCacheRequest(
-            client_id=request.client_id,
-            new_max_seq_length=request.new_max_seq_length
+            client_id=request.client_id, new_max_seq_length=request.new_max_seq_length
         )
         if not self.server_node.chain.is_tail() and self.server_node.successor_stub:
             try:
@@ -133,14 +140,14 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
                 logger.error(f"Failed to forward Client Removal Request to successor: {e}")
 
         return nodeservice_pb2.Empty()
-    
+
     def JoinChain(self, request, context):
         previous_tail_info = self.server_node.chain.join_chain(
             self_info=self.server_node.chain.get_self_info(),
             max_num_layers=self.server_node._mem_to_num_layers(),
             output_layer_memory_tle=self.server_node.output_layer_memory_tle,
             num_total_layers=self.server_node.config.get("num_hidden_layers"),
-            num_total_params=self.server_node.config.get("num_total_params")
+            num_total_params=self.server_node.config.get("num_total_params"),
         )
 
         # Update the previous TAIL's successor stub
@@ -160,7 +167,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # self.server_node._connect_to_successor()
 
         return nodeservice_pb2.Empty()
-    
+
     def UpdateChainStatus(self, request, context):
         status_str = request.status
         chain_status = ChainStatus(status_str)

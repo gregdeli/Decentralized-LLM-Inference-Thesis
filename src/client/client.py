@@ -535,10 +535,17 @@ class Client:
         self._connect_to_head()
 
         prompt = self.llm.apply_chat_template(prompt)
+
+        history_prompt = "".join(self.chat_history)
+        history_length = (
+            self.llm.preprocessor.encode(history_prompt).size(1)
+            if len(self.chat_history) > 0
+            else 0
+        )
+
         self.chat_history.append(prompt)
 
-        full_prompt = "".join(self.chat_history)
-        input_ids = self.llm.preprocessor.encode(full_prompt)
+        input_ids = self.llm.preprocessor.encode(prompt)
 
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
@@ -549,6 +556,7 @@ class Client:
 
         if stream:
             return self._generate_stream(
+                history_length,
                 prompt_length,
                 input_ids,
                 max_new_tokens,
@@ -650,6 +658,7 @@ class Client:
     @torch.no_grad()
     def _generate_stream(
         self,
+        history_length: int,
         prompt_length: int,
         input_ids: torch.Tensor,
         max_new_tokens: int,
@@ -658,25 +667,22 @@ class Client:
         top_p: float = 0.9,
         time_it: bool = False,
     ) -> Iterator[str]:
-        # self.chain.become_chain_leader()
         self.chain.update_chain_status(ChainStatus.RUNNING)
 
         generated_ids = []
 
         input_tensor = input_ids
-        input_pos = None
+        input_pos = history_length
         seq_length = prompt_length
 
         start_time = time.perf_counter()
 
-        all_tokens_generated = 0 # Total tokens generated in this generation even after repair
-        tokens_generated = 0 # Gets reset after a chain repair
-        # for i in range(max_new_tokens):
-        while all_tokens_generated < max_new_tokens:
-            # self.chain.become_chain_leader()
+        all_tokens_generated = 0  # Total tokens generated in this generation even after repair
+        tokens_generated = 0  # Gets reset after a chain repair
 
+        while all_tokens_generated < max_new_tokens:
             start_token_gen = time.perf_counter()
-            x = self.model.forward_client_initial(input_tensor, input_pos=input_pos)
+            x = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
             self.initial_inference_delay = time.perf_counter() - start_token_gen
 
             # Move output tensor back to the cpu for serialization
@@ -688,7 +694,7 @@ class Client:
                 x,
                 max_returned_tokens=max_returned_tokens,
                 seq_length=seq_length,
-                input_pos=input_pos.item() if input_pos is not None else None,
+                input_pos=input_pos,
             )
             request.response_address = self.grpc_addr
 
@@ -788,7 +794,7 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             input_tensor = next_token
-            current_pos = prompt_length + tokens_generated
+            current_pos = history_length + prompt_length + tokens_generated
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
             seq_length = 1
 

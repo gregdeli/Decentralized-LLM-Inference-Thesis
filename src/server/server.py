@@ -537,7 +537,7 @@ class Server:
         dummy_input = torch.randn(
             1, dummy_seq_length, hidden_size, device=self.device, dtype=self.llm.dtype
         )
-        dummy_input_pos = None
+        dummy_input_pos = torch.arange(0, dummy_seq_length, device=self.device)
 
         # KV Cache
         self._ensure_kv_cache(client_id="profiling")
@@ -726,7 +726,7 @@ class Server:
             h,
             max_returned_tokens=max_returned_tokens,
             seq_length=seq_length,
-            input_pos=input_pos.item() if input_pos is not None else None,
+            input_pos=input_pos[0].item(),
         )
 
         request.response_address = response_address
@@ -1450,8 +1450,8 @@ def serve():
                     server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            # if server_node.chain.get_chain_status() == ChainStatus.READY:
-            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            if server_node.chain.get_chain_status() == ChainStatus.READY:
+                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
@@ -1505,8 +1505,8 @@ def serve():
 
     # server_node._connect_to_successor()
 
-    if server_node.chain.is_tail() and server_node.chain.get_all_layers_loaded():
-        server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+    # if server_node.chain.is_tail() and server_node.chain.get_all_layers_loaded():
+    #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     grpc_server.wait_for_termination()
 

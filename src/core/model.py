@@ -40,7 +40,10 @@ class Llama3(nn.Module):
             self.embed_tokens = nn.Embedding(config["vocab_size"], config["hidden_size"])
         if self.num_layers > 0:
             self.layers = nn.ModuleDict(
-                {str(block_idx): TransformerBlock(config, block_idx) for block_idx in range(layers_to_load[0], layers_to_load[1] + 1)}
+                {
+                    str(block_idx): TransformerBlock(config, block_idx)
+                    for block_idx in range(layers_to_load[0], layers_to_load[1] + 1)
+                }
             )
         if load_output_layer:
             self.norm = RMSNorm(config["hidden_size"], eps=config["rms_norm_eps"])
@@ -61,7 +64,9 @@ class Llama3(nn.Module):
     ) -> torch.Tensor:
         T = input_ids.size(1)
         if self.max_seq_length < T:
-            raise ValueError(f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}.")
+            raise ValueError(
+                f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}."
+            )
 
         if self.rope_cache is None:
             self.rope_cache = self.build_rope_cache(device=input_ids.device)
@@ -96,30 +101,32 @@ class Llama3(nn.Module):
     def forward_client_initial(
         self,
         input_ids: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        # input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         T = input_ids.size(1)
         if self.max_seq_length < T:
-            raise ValueError(f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}.")
+            raise ValueError(
+                f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}."
+            )
 
-        if self.rope_cache is None:
-            self.rope_cache = self.build_rope_cache(device=input_ids.device)
+        # if self.rope_cache is None:
+        #     self.rope_cache = self.build_rope_cache(device=input_ids.device)
 
-        # Get the RoPE embeddings for the current sequence
-        cos, sin = self.rope_cache
-        if input_pos is None:  # prefill
-            cos = cos[:T]
-            sin = sin[:T]
-        else:  # generation
-            cos = cos[input_pos]
-            sin = sin[input_pos]
+        # # Get the RoPE embeddings for the current sequence
+        # cos, sin = self.rope_cache
+        # if input_pos is None:  # prefill
+        #     cos = cos[:T]
+        #     sin = sin[:T]
+        # else:  # generation
+        #     cos = cos[input_pos]
+        #     sin = sin[input_pos]
 
         # Get the attention mask
-        mask = self.mask_cache
-        if mask is not None and T > 1:  # prefill
-            mask = mask[:, :, :T, :T]
-        else:
-            mask = None
+        # mask = self.mask_cache
+        # if mask is not None and T > 1:  # prefill
+        #     mask = mask[:, :, :T, :T]
+        # else:
+        #     mask = None
 
         # Forward pass
         x = self.embed_tokens(input_ids)
@@ -144,12 +151,21 @@ class Llama3(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        Prefill:
-            The seq_length must be sent to the server in order to get the correct range of positional embeddings
-            in the prefill phase. The input_pos arguement remains None at this stage.
-        Generation:
-            In the generation phase the input_pos of the current token that is being generated must be sent
-            to the server. The seq_length arguement remains None at this stage.
+        Executes the forward pass through the server's assigned transformer layers.
+
+        Args:
+            input (torch.Tensor): The input hidden states tensor received from the predecessor node.
+            seq_length (Optional[int]): The number of tokens in the current payload. Used to
+                                        distinguish between the prefill phase (seq_length > 1)
+                                        and the generation phase (seq_length == 1).
+            input_pos (Optional[torch.Tensor]): A 1-D tensor containing the absolute sequence
+                                                positions for the tokens in the current payload.
+                                                - Prefill: Contains a sequence of positional indices mapping the new prompt.
+                                                - Generation: Contains a single positional index for the newly generated token.
+
+        Returns:
+            torch.Tensor: The computed hidden states to be forwarded to the successor node,
+                          or the final logits if this node holds the output layer.
         """
 
         if self.rope_cache is None:
@@ -161,37 +177,36 @@ class Llama3(nn.Module):
             T = seq_length
             # Get the RoPE embeddings for the current sequence
             cos, sin = self.rope_cache
-            if input_pos is None:  # prefill
-                cos = cos[:T]
-                sin = sin[:T]
-            else:  # generation
-                cos = cos[input_pos]
-                sin = sin[input_pos]
+            cos = cos[input_pos]
+            sin = sin[input_pos]
 
             # Get the attention mask
             mask = self.mask_cache
             if mask is not None and T > 1:  # prefill
-                mask = mask[:, :, :T, :T]
+                entire_seq_len = input_pos.max() + 1
+                mask = mask[:, :, input_pos, :entire_seq_len]
             else:
                 mask = None
-        
+
             for block in self.layers.values():
                 h = block(h, cos, sin, mask, input_pos)
-        
+
         if self.output_layer_loaded:
             x = self.norm(h)
             h = self.lm_head(x)
-        
+
         return h
 
-    def build_rope_cache(self, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+    def build_rope_cache(
+        self, device: Optional[torch.device] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         return build_rope_cache(
             seq_len=GLOBAL_MAX_SEQ_LEN,
             n_elem=self.config["head_dim"],
             device=device,
             base=self.config["rope_theta"],
         )
-    
+
     def client_has_cache(self, client_id: str) -> bool:
         """Check if the given client has a kv cache allocated"""
         if self.num_layers > 0:
@@ -199,7 +214,7 @@ class Llama3(nn.Module):
                 if client_id not in block.self_attn.kv_caches:
                     return False
             return True
-        
+
         return False
 
     def add_client_cache(
@@ -208,7 +223,7 @@ class Llama3(nn.Module):
         batch_size: int = 1,
         max_seq_length: Optional[int] = GLOBAL_MAX_SEQ_LEN,
         device: Optional[torch.device] = "cpu",
-        dtype: Optional[torch.dtype] = torch.get_default_dtype()
+        dtype: Optional[torch.dtype] = torch.get_default_dtype(),
     ) -> None:
         """Allocate a KV Cache for the new client"""
         # First reallocate the caches of the previous clients so that their local max_seq_lenths add up to GLOBAL_MAX_SEQ_LEN
@@ -220,7 +235,7 @@ class Llama3(nn.Module):
 
                         block.self_attn.kv_caches[client] = block.self_attn.rebuild_kv_cache(
                             batch_size, max_seq_length, prev_max_seq_length, device, dtype
-                        )       
+                        )
 
         # Allocate the new client's kv cache
         if self.num_layers > 0:
@@ -228,7 +243,7 @@ class Llama3(nn.Module):
                 block.self_attn.kv_caches[client_id] = block.self_attn.build_kv_cache(
                     batch_size, max_seq_length, device, dtype
                 )
-        
+
         # Ensure mask cache exists
         if self.mask_cache is None or self.mask_cache.size(3) != max_seq_length:
             self.mask_cache = build_mask_cache(max_seq_length, device)
@@ -241,14 +256,14 @@ class Llama3(nn.Module):
                     del block.self_attn.kv_caches[client_id]
 
     def reallocate_caches(
-        self, 
+        self,
         batch_size: int = 1,
         max_seq_length: Optional[int] = GLOBAL_MAX_SEQ_LEN,
         device: Optional[torch.device] = "cpu",
         dtype: Optional[torch.dtype] = torch.get_default_dtype(),
     ) -> None:
         """
-        Realocate the caches of the remaining clients so that each of their caches 
+        Realocate the caches of the remaining clients so that each of their caches
         has a max_seq_length of GLOBAL_MAX_SEQ_LEN // num_clients
         """
         if self.num_layers > 0:
@@ -257,7 +272,7 @@ class Llama3(nn.Module):
                     prev_max_seq_length = block.self_attn.kv_caches[client_id].max_seq_length
                     block.self_attn.kv_caches[client_id] = block.self_attn.rebuild_kv_cache(
                         batch_size, max_seq_length, prev_max_seq_length, device, dtype
-                    )   
+                    )
 
     def client_cache_reallocated(
         self,
@@ -267,22 +282,26 @@ class Llama3(nn.Module):
 
         if self.num_layers > 0:
             for block in self.layers.values():
-                client_cache = block.self_attn.kv_caches.get(client_id) 
-                if client_cache and client_cache.prev_max_seq_length and client_cache.max_seq_length != client_cache.prev_max_seq_length:
+                client_cache = block.self_attn.kv_caches.get(client_id)
+                if (
+                    client_cache
+                    and client_cache.prev_max_seq_length
+                    and client_cache.max_seq_length != client_cache.prev_max_seq_length
+                ):
                     # update the prev_max_seq_length
                     client_cache.prev_max_seq_length = client_cache.max_seq_length
                     cache_reallocated = True
                 else:
                     return False
-        
+
         return cache_reallocated
-    
+
     def set_active_client(self, client_id: str) -> None:
         """Rotates the active KV cache for the upcoming forward pass."""
         if self.num_layers > 0:
             for block in self.layers.values():
                 block.self_attn.active_client_id = client_id
-    
+
     def clear_all_kv_caches(self) -> None:
         """Clears all caches for all clients."""
         self.mask_cache = None
@@ -306,9 +325,9 @@ class Llama3(nn.Module):
                         client_cache_bytes = kv_cache.k.nelement() * kv_cache.k.element_size()
                         client_cache_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
                         kv_cache_memories[client_id] += client_cache_bytes / (1024 * 1024)
-        
+
         return kv_cache_memories
-    
+
     def get_client_kv_cache_memory_size(self, client_id: int) -> float:
         """Returns the size of a client's KV Cache in MB"""
         total_bytes = 0
@@ -319,7 +338,7 @@ class Llama3(nn.Module):
                 if kv_cache is not None:
                     total_bytes += kv_cache.k.nelement() * kv_cache.k.element_size()
                     total_bytes += kv_cache.v.nelement() * kv_cache.v.element_size()
-        
+
         total_mb = total_bytes / (1024 * 1024)
         return total_mb
 
@@ -420,21 +439,18 @@ class CausalSelfAttention(nn.Module):
 
         # KV Caching
         if self.active_client_id is not None and self.active_client_id in self.kv_caches:
-            active_cache = self.kv_caches[self.active_client_id] 
+            active_cache = self.kv_caches[self.active_client_id]
             k, v = active_cache(input_pos, k, v)
 
-        # In the prefill phase attend only to the tokens in the prompt
-        if input_pos is None:
-            k = k[:, :, :T, :]
-            v = v[:, :, :T, :]
-        else:
-            current_seq_len = input_pos.max() + 1
-            k = k[:, :, :current_seq_len, :]
-            v = v[:, :, :current_seq_len, :]
+        current_seq_len = input_pos.max() + 1
+        k = k[:, :, :current_seq_len, :]
+        v = v[:, :, :current_seq_len, :]
 
         # GQA: repeat K and V heads
         if self.n_rep > 1:
-            k = k.repeat_interleave(self.n_rep, dim=1)  # Repeat elements of the tensor along the head dim
+            k = k.repeat_interleave(
+                self.n_rep, dim=1
+            )  # Repeat elements of the tensor along the head dim
             v = v.repeat_interleave(self.n_rep, dim=1)
 
         # Scaled Dot-Product Attention
@@ -447,24 +463,60 @@ class CausalSelfAttention(nn.Module):
         return y
 
     def build_kv_cache(
-        self, batch_size: int, max_seq_length: int, device: Optional[torch.device] = None, dtype: Optional[torch.device] = None
+        self,
+        batch_size: int,
+        max_seq_length: int,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.device] = None,
     ) -> "KVCache":
         """
         Builds the K-V cache for this attention layer
         """
-        k_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
-        v_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
+        k_shape = (
+            batch_size,
+            self.config["num_key_value_heads"],
+            max_seq_length,
+            self.config["head_dim"],
+        )
+        v_shape = (
+            batch_size,
+            self.config["num_key_value_heads"],
+            max_seq_length,
+            self.config["head_dim"],
+        )
         return KVCache(k_shape, v_shape, max_seq_length=max_seq_length, device=device, dtype=dtype)
-    
+
     def rebuild_kv_cache(
-        self, batch_size: int, max_seq_length: int, prev_max_seq_length: int, device: Optional[torch.device] = None, dtype: Optional[torch.device] = None
+        self,
+        batch_size: int,
+        max_seq_length: int,
+        prev_max_seq_length: int,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.device] = None,
     ) -> "KVCache":
         """
         Rebuilds the K-V cache for this attention layer
         """
-        k_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
-        v_shape = (batch_size, self.config["num_key_value_heads"], max_seq_length, self.config["head_dim"])
-        return KVCache(k_shape, v_shape, max_seq_length=max_seq_length, prev_max_seq_length=prev_max_seq_length, device=device, dtype=dtype)
+        k_shape = (
+            batch_size,
+            self.config["num_key_value_heads"],
+            max_seq_length,
+            self.config["head_dim"],
+        )
+        v_shape = (
+            batch_size,
+            self.config["num_key_value_heads"],
+            max_seq_length,
+            self.config["head_dim"],
+        )
+        return KVCache(
+            k_shape,
+            v_shape,
+            max_seq_length=max_seq_length,
+            prev_max_seq_length=prev_max_seq_length,
+            device=device,
+            dtype=dtype,
+        )
 
 
 class MLP(nn.Module):
@@ -522,16 +574,19 @@ class KVCache(nn.Module):
         super().__init__()
         self.prev_max_seq_length = prev_max_seq_length
         self.max_seq_length = max_seq_length
-        self.register_buffer("k", torch.zeros(k_shape, device=device, dtype=dtype), persistent=False)
-        self.register_buffer("v", torch.zeros(v_shape, device=device, dtype=dtype), persistent=False)
+        self.register_buffer(
+            "k", torch.zeros(k_shape, device=device, dtype=dtype), persistent=False
+        )
+        self.register_buffer(
+            "v", torch.zeros(v_shape, device=device, dtype=dtype), persistent=False
+        )
 
-    def forward(self, input_pos: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, input_pos: torch.Tensor, k: torch.Tensor, v: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Updates the K-V cache and returns the full cached tensors.
         """
-        if input_pos is None:  # prefill phase
-            seq_len = k.size(2)
-            input_pos = torch.arange(0, seq_len, device=k.device)
 
         # Update cache
         self.k.index_copy_(2, input_pos, k)
@@ -548,7 +603,9 @@ def build_mask_cache(max_seq_length: int, device: Optional[torch.device] = None)
     return torch.tril(ones).unsqueeze(0).unsqueeze(0)
 
 
-def build_rope_cache(seq_len: int, n_elem: int, device: Optional[torch.device] = None, base: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
+def build_rope_cache(
+    seq_len: int, n_elem: int, device: Optional[torch.device] = None, base: float = 10000.0
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Builds the RoPE cache."""
     theta = 1.0 / (base ** (torch.arange(0, n_elem, 2, device=device).float() / n_elem))
     seq_idx = torch.arange(seq_len, device=device, dtype=theta.dtype)

@@ -63,8 +63,8 @@ services:
   worker-C:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     # network_mode: "host"
     hostname: worker-C
     environment:
@@ -97,8 +97,8 @@ services:
   worker-D:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -128,8 +128,8 @@ services:
   worker-E:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-E
     environment:
       - MODEL_PATH=/${MODEL_PATH}
