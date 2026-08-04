@@ -13,7 +13,7 @@ from core.remote.utils import (
     get_bootstrap_peer_address,
     discover_bootstrap_node_address,
     get_ip_address,
-    get_free_port
+    get_free_port,
 )
 from core.p2p.chain_manager import (
     ChainStatus,
@@ -92,6 +92,7 @@ def _sync_initialize_client():
     )
     # logger.info("Client initialized.")
 
+
 async def initialize_client():
     try:
         state.client = await run.io_bound(_sync_initialize_client)
@@ -118,26 +119,26 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
 
     with ui.card().classes(f"w-full p-0 bg-{color} gap-2"):
         with ui.expansion().classes("w-full font-mono text-sm") as expasion:
-            with expasion.add_slot('header'):
+            with expasion.add_slot("header"):
                 with ui.column().classes("gap-2 w-full"):
                     with ui.row().classes("w-full items-center justify-between"):
                         ui.label(role).classes("font-bold uppercase text-gray-600")
                     ui.label(f"Hostname: {info.get('hostname', 'N/A')}")
-                    
-                    # Layers 
+
+                    # Layers
                     layers = info.get("layers", None)
                     text = "Layers: None"
                     if layers is not None:
                         num_layers = layers[1] - layers[0] + 1
                         text = f"Layers: [{layers[0]} - {layers[1]}] | Count: {num_layers}"
-                        
+
                     labels["layers"] = ui.label(text).classes("font-mono text-sm")
-                    
+
                     # Output Layer Loaded
                     output_layer_loaded = info.get("output_layer_loaded", False)
-                    labels["output_layer_loaded"] = ui.label(f"Output Layer Loaded: {output_layer_loaded}").classes(
-                        "font-mono text-sm"
-                    )
+                    labels["output_layer_loaded"] = ui.label(
+                        f"Output Layer Loaded: {output_layer_loaded}"
+                    ).classes("font-mono text-sm")
 
             # ID
             ui.label(f"ID: {node_id[:DIGITS_SHOW]}...").classes("font-mono text-sm")
@@ -152,10 +153,10 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
             )
 
             # Load Output Layer
-            load_output_layer = info.get("load_output_layer", False) 
-            labels["load_output_layer"] = ui.label(f"Load Output Layer: {load_output_layer}").classes(
-                "font-mono text-sm"
-            )
+            load_output_layer = info.get("load_output_layer", False)
+            labels["load_output_layer"] = ui.label(
+                f"Load Output Layer: {load_output_layer}"
+            ).classes("font-mono text-sm")
 
             if "device" in info:
                 ui.label(f'Device: {info["device"]}').classes("font-mono text-sm")
@@ -187,9 +188,9 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
 
             if "available_memory" in info:
                 avail_mem = info["available_memory"]
-                labels["available_memory"] = ui.label(f"Available Memory: {int(avail_mem)} MB").classes(
-                    "font-mono text-sm"
-                )
+                labels["available_memory"] = ui.label(
+                    f"Available Memory: {int(avail_mem)} MB"
+                ).classes("font-mono text-sm")
 
             if "vram_usage" in info and "vram_limit" in info:
                 vram_usage = info["vram_usage"]
@@ -200,19 +201,17 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
 
             if "available_vram" in info:
                 avail_vram = info["available_vram"]
-                labels["available_vram"] = ui.label(f"Available VRAM: {int(avail_vram)} MB").classes(
-                    "font-mono text-sm"
-                )
-            
+                labels["available_vram"] = ui.label(
+                    f"Available VRAM: {int(avail_vram)} MB"
+                ).classes("font-mono text-sm")
+
             if "kv_cache_memories" in info:
                 kv_cache_memories = info.get("kv_cache_memories")
                 if kv_cache_memories:
                     for client_addr, kv_cache_size in kv_cache_memories.items():
-                        labels[client_addr] = ui.label(f"KV Cache ({client_addr}): {int(kv_cache_size)} MB").classes(
-                            "font-mono tesxt-sm"
-                        )
-
-    
+                        labels[client_addr] = ui.label(
+                            f"KV Cache ({client_addr}): {int(kv_cache_size)} MB"
+                        ).classes("font-mono tesxt-sm")
 
     return labels
 
@@ -269,25 +268,21 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
         if "total_params" in state.ui.global_labels:
             total_params = chain_info.get(TOTAL_PARAMS_KEY)
             total_params = round(total_params / 1000000000, 2) if total_params is not None else None
-            state.ui.global_labels["total_params"].text = (
-                f"Total Params: {total_params}B"
-            )
+            state.ui.global_labels["total_params"].text = f"Total Params: {total_params}B"
 
         if "total_layers" in state.ui.global_labels:
             state.ui.global_labels["total_layers"].text = (
                 f"Total Transformer Layers: {chain_info.get(TOTAL_LAYERS_KEY)}"
             )
-        
+
         if "num_clients" in state.ui.global_labels:
             state.ui.global_labels["num_clients"].text = (
                 f"Num Clients: {chain_info.get('num_clients')}"
             )
-        
+
         if "client_nodes" in state.ui.global_labels:
             client_nodes = [c[:DIGITS_SHOW] for c in chain_info.get(CLIENTS_KEY, [])]
-            state.ui.global_labels["client_nodes"].text = (
-                f"Clients: {client_nodes}"
-            )
+            state.ui.global_labels["client_nodes"].text = f"Clients: {client_nodes}"
 
         if "all_loaded" in state.ui.global_labels:
             all_loaded = chain_info.get(ALL_LAYERS_KEY, False)
@@ -316,7 +311,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     # Update Layers
                     if "layers" in labels and "layers" in node_info:
                         l = node_info["layers"]
-                        text = f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}" if l is not None else "Layers: None"
+                        text = (
+                            f"Layers: [{l[0]} - {l[1]}] | Count: {l[1] - l[0] + 1}"
+                            if l is not None
+                            else "Layers: None"
+                        )
                         labels["layers"].text = text
 
                     # Update Loaded Status
@@ -324,7 +323,7 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                         labels["layers_loaded"].text = (
                             f"Layers Loaded: {node_info.get('layers_loaded', False)}"
                         )
-                    
+
                     if "load_output_layer" in labels:
                         labels["load_output_layer"].text = (
                             f"Load Output Layer: {node_info.get('load_output_layer', False)}"
@@ -380,8 +379,9 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                         kv_cache_memories = node_info.get("kv_cache_memories")
                         if kv_cache_memories:
                             for client_addr, kv_cache_size in kv_cache_memories.items():
-                                labels[client_addr].text = f"KV Cache ({client_addr}): {int(kv_cache_size)} MB"
-                        
+                                labels[client_addr].text = (
+                                    f"KV Cache ({client_addr}): {int(kv_cache_size)} MB"
+                                )
 
         update_node_labels(server_list)
         update_node_labels(backups_list)
@@ -417,13 +417,13 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                 f"Total Transformer Layers: {total_layers}"
             ).classes("text-lg")
 
-            state.ui.global_labels["num_clients"] = ui.label(
-                f"Num Clients: {num_clients}"
-            ).classes("text-lg")
+            state.ui.global_labels["num_clients"] = ui.label(f"Num Clients: {num_clients}").classes(
+                "text-lg"
+            )
 
-            state.ui.global_labels["client_nodes"] = ui.label(
-                f"Clients: {client_nodes}"
-            ).classes("text-lg")
+            state.ui.global_labels["client_nodes"] = ui.label(f"Clients: {client_nodes}").classes(
+                "text-lg"
+            )
 
             state.ui.global_labels["all_loaded"] = ui.label(
                 f"All Layers Loaded: {all_loaded}"
@@ -487,6 +487,7 @@ def refresh_client_stats(client_stats_container: ui.column):
         ui.label(f"Token Decoding Delay: {state.client.decode_delay:.6f}s")
         ui.label(f"Yield Delay: {state.client.yield_delay:.6f}s")
 
+
 def clear_chain_throughput(chain_throughput_container: ui.column):
     state.client.chain.clear_chain_throughput()
     state.last_chain_throughput = {}
@@ -496,14 +497,15 @@ def clear_chain_throughput(chain_throughput_container: ui.column):
         xaxis_title="Time (s)",
         yaxis_title="Number of Tokens",
         template="plotly_white",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(size=10)
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=10),
     )
 
     chain_throughput_container.clear()
     with chain_throughput_container:
-        ui.plotly(state.ui.throughput_fig).classes('w-full')
+        ui.plotly(state.ui.throughput_fig).classes("w-full")
+
 
 async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_btn: ui.button):
     if state.client is None:
@@ -514,11 +516,11 @@ async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_
     if not chain_throughput:
         clear_btn.visible = True
         return
-    
+
     if len(state.last_chain_throughput.keys()) == len(chain_throughput.keys()):
         clear_btn.visible = True
         return
-    
+
     clear_btn.visible = False
 
     state.last_chain_throughput = chain_throughput
@@ -532,13 +534,15 @@ async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_
     state.ui.throughput_fig.data = []
 
     # Create the plotly figure
-    state.ui.throughput_fig.add_trace(go.Scatter(
-        x=x_values,
-        y=y_values,
-        mode='lines+markers',
-        line=dict(color='#38bdf8', width=2),
-        marker=dict(size=4)
-    ))
+    state.ui.throughput_fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=y_values,
+            mode="lines+markers",
+            line=dict(color="#38bdf8", width=2),
+            marker=dict(size=4),
+        )
+    )
 
     # Style the layout
     state.ui.throughput_fig.update_layout(
@@ -547,15 +551,14 @@ async def refresh_chain_throughput(chain_throughput_container: ui.column, clear_
         xaxis_title="Time (s)",
         yaxis_title="Number of Tokens",
         template="plotly_white",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(size=10)
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=10),
     )
-
 
     chain_throughput_container.clear()
     with chain_throughput_container:
-        ui.plotly(state.ui.throughput_fig).classes('w-full')
+        ui.plotly(state.ui.throughput_fig).classes("w-full")
 
 
 def get_next_token(generator):
@@ -665,10 +668,10 @@ async def generate(
         ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
 
         # if state.client.total_rate > 0:
-            # ui.button(
-            #     "Trigger Reallocation",
-            #     on_click=lambda: trigger_reallocation(generation_stats_container, chain_container),
-            # ).classes("w-full")
+        # ui.button(
+        #     "Trigger Reallocation",
+        #     on_click=lambda: trigger_reallocation(generation_stats_container, chain_container),
+        # ).classes("w-full")
 
 
 def stop_generation():
@@ -696,7 +699,7 @@ async def trigger_reallocation(generation_stats_container: ui.column, chain_cont
 
 def clear_chat(chat_container: ui.column):
     if state.client:
-        state.client.chat_history = []
+        state.client.chat_history = None
     chat_container.clear()
     ui.notify("Chat History Cleared...")
 
@@ -746,15 +749,19 @@ async def main_page():
             # Client Loading Spinner Overlay
             with chat_container:
                 # Absolute inset forces the column to cover the entire chat_container
-                with ui.column().classes("w-full h-full absolute inset-0 items-center justify-center bg-white z-50") as loading_overlay:
-                    ui.spinner(size='10em', color='primary')
-                    ui.label("Initializing Client & Joining Network...").classes("text-xl mt-6 text-gray-500 font-bold")
-                
+                with ui.column().classes(
+                    "w-full h-full absolute inset-0 items-center justify-center bg-white z-50"
+                ) as loading_overlay:
+                    ui.spinner(size="10em", color="primary")
+                    ui.label("Initializing Client & Joining Network...").classes(
+                        "text-xl mt-6 text-gray-500 font-bold"
+                    )
+
                 def _check_client_loaded():
                     if state.client is not None:
                         loading_overlay.delete()
                         spinner_timer.deactivate()
-                    
+
                 spinner_timer = ui.timer(0.5, _check_client_loaded)
 
             # Input Area
@@ -820,7 +827,7 @@ async def main_page():
             generation_stats_container = ui.column().classes("w-full gap-2")
             with generation_stats_container:
                 ui.label("Waiting for inference...").classes("text-gray-400 italic")
-            
+
             ui.button(
                 "Trigger Reallocation",
                 on_click=lambda: trigger_reallocation(generation_stats_container, chain_container),
@@ -833,17 +840,24 @@ async def main_page():
             # Chain Throughput measurements
             ui.label("Chain Throughput").classes("text-lg font-bold")
             chain_throughput_container = ui.column().classes("w-full gap-2")
-            clear_throughput_btn = ui.button("Clear", on_click=lambda: clear_chain_throughput(chain_throughput_container)).classes("w-full")
-            ui.timer(1.0, lambda: refresh_chain_throughput(chain_throughput_container, clear_throughput_btn))
+            clear_throughput_btn = ui.button(
+                "Clear", on_click=lambda: clear_chain_throughput(chain_throughput_container)
+            ).classes("w-full")
+            ui.timer(
+                1.0,
+                lambda: refresh_chain_throughput(chain_throughput_container, clear_throughput_btn),
+            )
+
 
 async def shutdown_client():
     """Handles graceful termination of background processes."""
     logger.info("Shutting down application and releasing ports...")
     if state.client:
         # Stop any active generation loops
-        state.is_generating = False 
+        state.is_generating = False
 
         state.client.shutdown()
+
 
 app.on_shutdown(shutdown_client)
 

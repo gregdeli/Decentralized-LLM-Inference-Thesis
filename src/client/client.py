@@ -76,7 +76,7 @@ class Client:
             time_it=time_it,
         )
         self.model = self.llm.model
-        self.chat_history = []
+        self.chat_history = None
 
         self._repair_lock = threading.Lock()
 
@@ -536,16 +536,15 @@ class Client:
 
         prompt = self.llm.apply_chat_template(prompt)
 
-        history_prompt = "".join(self.chat_history)
-        history_length = (
-            self.llm.preprocessor.encode(history_prompt).size(1)
-            if len(self.chat_history) > 0
-            else 0
-        )
-
-        self.chat_history.append(prompt)
-
         input_ids = self.llm.preprocessor.encode(prompt)
+
+        # Update the chat history with the new prompt
+        if self.chat_history is None:
+            self.chat_history = input_ids
+            history_length = 0
+        else:
+            history_length = self.chat_history.size(1)
+            self.chat_history = torch.cat([self.chat_history, input_ids], dim=1)
 
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
@@ -732,7 +731,7 @@ class Client:
             self.inference_response_event.clear()
             response = self.inference_response
 
-            # Error handling
+            # ------ SERVER ERROR HANDLING ------
             if response.HasField("error_message"):
                 logger.error(f"Server-side failure: {response.error_message}")
                 logger.error("Aborting generation task. Please try again.")
@@ -750,14 +749,15 @@ class Client:
                 logger.info("Done Waiting...")
 
                 if self.chain.get_all_layers_loaded():
-                    prompt_length = input_ids.size(1) + tokens_generated
-                    max_new_tokens = max_new_tokens - tokens_generated
-                    tokens_generated = 0
+                    # prompt_length = input_ids.size(1) + tokens_generated
+                    # max_new_tokens = max_new_tokens - tokens_generated
+                    # tokens_generated = 0
 
-                    all_generated_ids = torch.cat(generated_ids, dim=1)
-                    input_tensor = torch.cat([input_ids, all_generated_ids], dim=1)
-                    input_pos = None
-                    seq_length = input_tensor.size(1)
+                    # all_generated_ids = torch.cat(generated_ids, dim=1)
+                    # input_tensor = torch.cat([input_ids, all_generated_ids], dim=1)
+                    # input_pos = None
+                    # seq_length = input_tensor.size(1)
+                    pass
 
                     continue
                 else:
@@ -776,8 +776,14 @@ class Client:
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
-                self.chat_history.append(self.llm.preprocessor.tokenizer.eos_token)
+                eos_tensor = torch.tensor(
+                    [[self.llm.preprocessor.tokenizer.eos_token_id]], device=self.device
+                )
+                self.chat_history = torch.cat([self.chat_history, eos_tensor], dim=1)
                 break
+
+            # Add the new token id to the chat history
+            self.chat_history = torch.cat([self.chat_history, next_token], dim=1)
 
             # Decode and yield the new token
             start = time.perf_counter()
@@ -788,7 +794,6 @@ class Client:
             tokens_generated += 1
             generated_ids.append(next_token)
 
-            self.chat_history.append(decoded_token)
             start = time.perf_counter()
             yield decoded_token
             self.yield_delay = time.perf_counter() - start
