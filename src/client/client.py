@@ -668,9 +668,11 @@ class Client:
         seq_length = prompt_length
 
         start_time = time.perf_counter()
-        tokens_generated = 0
+
+        all_tokens_generated = 0 # Total tokens generated in this generation even after repair
+        tokens_generated = 0 # Gets reset after a chain repair
         # for i in range(max_new_tokens):
-        while tokens_generated < max_new_tokens:
+        while all_tokens_generated < max_new_tokens:
             # self.chain.become_chain_leader()
 
             start_token_gen = time.perf_counter()
@@ -737,7 +739,9 @@ class Client:
 
                 # Wait until the repair is done
                 while self.chain.get_chain_status() in (ChainStatus.REPAIRING, ChainStatus.UNREADY):
+                    logger.info("Waiting...")
                     continue
+                logger.info("Done Waiting...")
 
                 if self.chain.get_all_layers_loaded():
                     prompt_length = input_ids.size(1) + tokens_generated
@@ -774,6 +778,7 @@ class Client:
             decoded_token = self.llm.preprocessor.decode(next_token)
             self.decode_delay = time.perf_counter() - start
 
+            all_tokens_generated += 1
             tokens_generated += 1
             generated_ids.append(next_token)
 
@@ -791,7 +796,7 @@ class Client:
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
         self.last_inference_stats = {
-            "num_tokens_generated": tokens_generated,
+            "num_tokens_generated": all_tokens_generated,
             "latency": elapsed_time,
             "throughput": throughput,
         }
