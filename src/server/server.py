@@ -241,23 +241,23 @@ class Server:
         logger.info(
             f"Reloading model with layers: {layers} | Load Output Layer: {load_output_layer}..."
         )
+        with self._inference_lock:
+            self._unload_llm()
 
-        self._unload_llm()
+            self.llm = LLM.load(
+                self.model_path,
+                device=self.device,
+                load_initial_layer=False,
+                layers_to_load=layers,
+                load_output_layer=load_output_layer,
+            )
+            self.model = self.llm.model
 
-        self.llm = LLM.load(
-            self.model_path,
-            device=self.device,
-            load_initial_layer=False,
-            layers_to_load=layers,
-            load_output_layer=load_output_layer,
-        )
-        self.model = self.llm.model
-
-        layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
-        output_params = (
-            self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
-        )
-        self.num_local_params = layer_params + output_params
+            layer_params = self.model.num_layers * self.config.get("transformer_layer_params")
+            output_params = (
+                self.config.get("final_output_params") if self.llm.output_layer_loaded else 0
+            )
+            self.num_local_params = layer_params + output_params
 
         self._update_memory_usage()
         if self.llm.output_layer_loaded:
@@ -463,7 +463,7 @@ class Server:
                     self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
                 )
 
-    def _ensure_kv_cache(self, client_id: str) -> None:
+    def _ensure_kv_cache(self, client_id: str, input_pos: torch.Tensor) -> None:
         """Ensures the KV cache is initialized and large enough for the request."""
         # Initialize the client's kv cache if necessary
         if not self.model.client_has_cache(client_id):
@@ -484,6 +484,12 @@ class Server:
             )
 
             self._update_memory_usage(update_on_dht=True)
+
+        # Check if the inference is in the generation phase when the kv caches are freshly initialized
+        if input_pos[0].item() != 0 and self.model.is_client_cache_fresh(client_id):
+            return False
+
+        return True
 
     def _calculate_processing_rate(self, delay: float):
         """Calculates and updates the moving average of layers processed per second."""
@@ -540,7 +546,7 @@ class Server:
         dummy_input_pos = torch.arange(0, dummy_seq_length, device=self.device)
 
         # KV Cache
-        self._ensure_kv_cache(client_id="profiling")
+        self._ensure_kv_cache(client_id="profiling", input_pos=dummy_input_pos)
         self.model.set_active_client(client_id="profiling")
 
         starting_dummy_seq_len = dummy_seq_length
@@ -655,7 +661,14 @@ class Server:
 
         # Set KV Cache and Process Layers
         with self._inference_lock:
-            self._ensure_kv_cache(client_id=response_address)
+            if not self._ensure_kv_cache(client_id=response_address, input_pos=input_pos):
+                self._connect_to_client(response_address)
+                self.client_stub.ReceiveResponse(
+                    nodeservice_pb2.InferenceResponse(
+                        error_message="Server-side ERROR: KV Caches are empty in the generation phase!"
+                    )
+                )
+                return
 
             self.model.set_active_client(client_id=response_address)
 

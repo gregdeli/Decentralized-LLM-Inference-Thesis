@@ -635,7 +635,7 @@ async def generate(
                     token = await run.io_bound(get_next_token, token_generator)
 
                     if token is not None and token.startswith("Server-side ERROR"):
-                        ui.notify(token, type="negative")
+                        ui.notify(token, type="warning")
                         continue
 
                     if token is None:

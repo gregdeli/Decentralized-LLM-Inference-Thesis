@@ -127,6 +127,8 @@ class Client:
         self.grpc_server.wait_for_termination()
 
     def shutdown(self):
+        self.print_chain_status()
+
         # Stop the head health monitor and dht heartbeat
         self._stop_health_monitor_event.set()
         self._stop_dht_heartbeat_task.set()

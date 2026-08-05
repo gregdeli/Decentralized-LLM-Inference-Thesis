@@ -296,6 +296,25 @@ class Llama3(nn.Module):
 
         return cache_reallocated
 
+    def is_client_cache_fresh(self, client_id: str) -> bool:
+        """Checks if the KV caches for a given client_id have not yet been written to"""
+        if self.num_layers <= 0:
+            return False
+
+        for block in self.layers.values():
+            client_cache = block.self_attn.kv_caches.get(client_id)
+            
+            # If the cache is missing from any loaded layer, it is not properly initialized.
+            if client_cache is None:
+                return False
+            
+            # KVCache initializes 'k' and 'v' buffers with torch.zeros. 
+            if torch.any(client_cache.k) or torch.any(client_cache.v):
+                return False
+
+        #It is fresh.
+        return True
+
     def set_active_client(self, client_id: str) -> None:
         """Rotates the active KV cache for the upcoming forward pass."""
         if self.num_layers > 0:
