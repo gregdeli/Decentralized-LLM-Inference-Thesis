@@ -732,42 +732,36 @@ class Client:
             response = self.inference_response
 
             # ------ SERVER ERROR HANDLING ------
+
             if response.HasField("error_message"):
-                logger.error(f"Server-side failure: {response.error_message}")
-                logger.error("Aborting generation task. Please try again.")
+                logger.error(f"{response.error_message}")
+                yield f"{response.error_message}"
 
-                # if self.chain.get_all_layers_loaded():
-                #     self.chain.update_chain_status(ChainStatus.READY)
-
-                # yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
                 self.chain.update_chain_status(ChainStatus.UNREADY)
 
                 # Wait until the repair is done
-                while self.chain.get_chain_status() in (ChainStatus.REPAIRING, ChainStatus.UNREADY):
-                    logger.info("Waiting...")
-                    continue
+                attempts = 10
+                for attempt in range(attempts):
+                    if self.chain.get_chain_status() in (
+                        ChainStatus.REPAIRING,
+                        ChainStatus.UNREADY,
+                    ):
+                        logger.info("The chain is not Ready yet. Waiting...")
+                        time.sleep(2)
+                    else:
+                        break
                 logger.info("Done Waiting...")
 
                 if self.chain.get_all_layers_loaded():
-                    # prompt_length = input_ids.size(1) + tokens_generated
-                    # max_new_tokens = max_new_tokens - tokens_generated
-                    # tokens_generated = 0
-
-                    # all_generated_ids = torch.cat(generated_ids, dim=1)
-                    # input_tensor = torch.cat([input_ids, all_generated_ids], dim=1)
-                    # input_pos = None
-                    # seq_length = input_tensor.size(1)
-
                     input_tensor = self.chat_history
                     input_pos = 0
                     seq_length = input_tensor.size(1)
 
                     prompt_length = seq_length
-                    pass
-
                     continue
                 else:
-                    yield f'<br><span style="color:red">Server-side failure: {response.error_message} Aborting generation task. Please try again.</span>'
+                    yield f'<br><span style="color:red">{response.error_message} Aborting generation task. Please try again.</span>'
+                    self.chat_history = None
                     return
 
             # Capture the TOTAL PROCESSING RATE

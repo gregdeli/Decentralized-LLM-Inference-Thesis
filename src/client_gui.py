@@ -1,4 +1,5 @@
 import asyncio
+import torch
 import os
 import grpc
 from dotenv import load_dotenv
@@ -633,6 +634,10 @@ async def generate(
 
                     token = await run.io_bound(get_next_token, token_generator)
 
+                    if token is not None and token.startswith("Server-side ERROR"):
+                        ui.notify(token, type="negative")
+                        continue
+
                     if token is None:
                         break
 
@@ -678,6 +683,12 @@ def stop_generation():
     """Signals the generation loop to stop."""
     if state.is_generating:
         state.is_generating = False
+
+        if state.client.chat_history is not None:
+            eos_tensor = torch.tensor(
+                [[state.client.llm.preprocessor.tokenizer.eos_token_id]], device=state.client.device
+            )
+            state.client.chat_history = torch.cat([state.client.chat_history, eos_tensor], dim=1)
         ui.notify("Stopping generation...")
 
 

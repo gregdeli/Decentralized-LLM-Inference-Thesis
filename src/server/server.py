@@ -628,7 +628,7 @@ class Server:
 
         if not self.llm:
             return nodeservice_pb2.InferenceResponse(
-                error_message="A node in the chain does not have its layers loaded."
+                error_message="Server-side ERROR: A node in the chain does not have its layers loaded."
             )
 
         # Ensure inputs are on the same device as the model
@@ -647,7 +647,9 @@ class Server:
         ):
             self._connect_to_client(response_address)
             self.client_stub.ReceiveResponse(
-                nodeservice_pb2.InferenceResponse(error_message="KV Caches have been reallocated!")
+                nodeservice_pb2.InferenceResponse(
+                    error_message="Server-side ERROR: KV Caches have been reallocated!"
+                )
             )
             return
 
@@ -749,7 +751,7 @@ class Server:
                 self._connect_to_client(response_address)
                 self.client_stub.ReceiveResponse(
                     nodeservice_pb2.InferenceResponse(
-                        error_message=f"Node with address: {self.successor_stub_addr} has failed. The chain is being repaired..."
+                        error_message=f"Server-side ERROR: Node with address: {self.successor_stub_addr} has failed. The chain is being repaired..."
                     )
                 )
         return
@@ -1450,8 +1452,8 @@ def serve():
                     server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            if server_node.chain.get_chain_status() == ChainStatus.READY:
-                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            # if server_node.chain.get_chain_status() == ChainStatus.READY:
+            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
