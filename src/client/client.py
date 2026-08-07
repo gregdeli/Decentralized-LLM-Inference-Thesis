@@ -681,6 +681,8 @@ class Client:
         tokens_generated = 0  # Gets reset after a chain repair
 
         while all_tokens_generated < max_new_tokens:
+            self.chain.update_chain_status(ChainStatus.RUNNING)
+
             start_token_gen = time.perf_counter()
             x = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
             self.initial_inference_delay = time.perf_counter() - start_token_gen
@@ -738,7 +740,7 @@ class Client:
                 logger.error(f"{response.error_message}")
                 yield f"{response.error_message}"
 
-                self.chain.update_chain_status(ChainStatus.UNREADY)
+                # self.chain.update_chain_status(ChainStatus.UNREADY)
 
                 # Wait until the repair is done
                 attempts = 10

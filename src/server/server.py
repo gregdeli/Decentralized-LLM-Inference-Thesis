@@ -578,7 +578,7 @@ class Server:
             profiling_time = time.perf_counter() - prof_start_time
             if profiling_time >= profiling_duration_s:
                 break
-            
+
 
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
         self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay

@@ -869,33 +869,47 @@ class ChainManager:
         ):
             # Check if reallocation is possible
             # If any node with lower delay has memory to spare
-            actionable = False
-            for s in server_infos:
-                if s == bottleneck_node:
-                    continue
+            # actionable = False
+            # for s in server_infos:
+            #     if s == bottleneck_node:
+            #         continue
 
-                # Check if s has memory to spare for at least 1 layer
-                can_load_one = can_load(
-                    config=config,
-                    current_layers=s.get("layers"),
-                    output_layer_curr_loaded=s.get("output_layer_loaded"),
-                    avail_mem=s.get("available_memory"),
-                    mem_usage=s.get("memory_usage"),
-                    avail_vram=s.get("available_vram"),
-                    vram_usage=s.get("vram_usage"),
-                    num_layers=1,
-                )
+            #     # Check if s has memory to spare for at least 1 layer
+            #     can_load_one = can_load(
+            #         config=config,
+            #         current_layers=s.get("layers"),
+            #         output_layer_curr_loaded=s.get("output_layer_loaded"),
+            #         avail_mem=s.get("available_memory"),
+            #         mem_usage=s.get("memory_usage"),
+            #         avail_vram=s.get("available_vram"),
+            #         vram_usage=s.get("vram_usage"),
+            #         num_layers=1,
+            #     )
 
-                if (
-                    s.get("inference_delay") * (1 + IMBALANCE_THRESHOLD)
-                    < bottleneck_node.get("inference_delay")
-                    and can_load_one
-                ):
-                    actionable = True
-                    break
+            #     if (
+            #         s.get("inference_delay") * (1 + IMBALANCE_THRESHOLD)
+            #         < bottleneck_node.get("inference_delay")
+            #         and can_load_one
+            #     ):
+            #         actionable = True
+            #         break
+
+            # Check if the fastest node can load one more layer
+            # actionable = False
+            can_load_one = can_load(
+                config=config,
+                current_layers=fastest_node.get("layers"),
+                output_layer_curr_loaded=fastest_node.get("output_layer_loaded"),
+                avail_mem=fastest_node.get("available_memory"),
+                mem_usage=fastest_node.get("memory_usage"),
+                avail_vram=fastest_node.get("available_vram"),
+                vram_usage=fastest_node.get("vram_usage"),
+                num_layers=1,
+            )
 
             # Trigger the reallocation
-            if actionable:
+            # if actionable:
+            if can_load_one:
                 logger.info("Chain is imbalanced, triggering reallocation...")
                 logger.info(f"Slowest node delay: {bottleneck_node.get('inference_delay')}")
                 logger.info(f"Fastest node delay: {fastest_node.get('inference_delay')}")
