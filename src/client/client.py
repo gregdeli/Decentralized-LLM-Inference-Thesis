@@ -452,9 +452,8 @@ class Client:
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
-
-        requires_restart = True
-        while requires_restart:
+        attempts = 10
+        for attempt in range(attempts):
             self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
             self.total_rate = self.chain.gather_total_rate()

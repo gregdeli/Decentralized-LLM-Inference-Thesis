@@ -780,8 +780,8 @@ class Server:
             logger.info("Reallocation already in process. Returning...")
             return
 
-        requires_restart = True
-        while requires_restart:
+        attempts = 10
+        for attempt in range(attempts):
             self.chain.update_chain_status(ChainStatus.REALLOCATING)
 
             total_rate = self.chain.gather_total_rate()
@@ -809,19 +809,7 @@ class Server:
 
             logger.info(f"Triggering reallocation with Total Rate: {total_rate} layers/sec...")
 
-            # request = nodeservice_pb2.ReallocateRequest(
-            #     total_rate=total_rate,
-            #     start_layer_index=0,
-            #     load_max=load_max
-            # )
-
             try:
-                # head_server_addr = self.chain.get_head_server_info().get("address")
-                # channel = create_grpc_channel(head_server_addr)
-                # head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
-
-                # response = head_server_stub.Reallocate(request)
-
                 response = self.reallocate_layers(
                     total_system_rate=total_rate,
                     start_layer_index=0,
