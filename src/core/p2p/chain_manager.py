@@ -897,6 +897,8 @@ class ChainManager:
             # Trigger the reallocation
             if actionable:
                 logger.info("Chain is imbalanced, triggering reallocation...")
+                logger.info(f"Slowest node delay: {bottleneck_node.get('inference_delay')}")
+                logger.info(f"Fastest node delay: {fastest_node.get('inference_delay')}")
                 try:
                     head_server_addr = self.get_head_server_info().get("address")
                     channel = create_grpc_channel(head_server_addr)

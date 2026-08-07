@@ -677,15 +677,19 @@ class Server:
                 f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})..."
             )
 
-            start = time.perf_counter()
+            h, transformer_layer_delay, output_layer_delay = self.model.forward_server(input_tensor, seq_length, input_pos)
 
-            h = self.model.forward_server(input_tensor, seq_length, input_pos)
-            if self.added_delay:
-                time.sleep(self.added_delay)
+            # if self.added_delay:
+            #     time.sleep(self.added_delay)
 
-            self.inference_delay = time.perf_counter() - start
-
+            self.inference_delay = transformer_layer_delay + output_layer_delay
             self.chain.update_inference_delay(self.inference_delay)
+
+            # Recalculate Output Temporal TLE
+            if output_layer_delay > 0.0 and transformer_layer_delay > 0.0:
+                self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
+                self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
+
 
             self._calculate_processing_rate(self.inference_delay)
             self.chain.update_processing_rate(self.processing_rate)
@@ -908,7 +912,7 @@ class Server:
             remaining_num_trans_layers = (
                 num_total_layers - start_layer_index if start_layer_index > 0 else 0
             )
-            target_transformer_layer_count = target_tle_count - self.output_layer_memory_tle
+            target_transformer_layer_count = round(target_tle_count, 2) - round(self.output_layer_memory_tle, 2)
 
             if target_transformer_layer_count < remaining_num_trans_layers:
                 # adjust rate, restart realloc
@@ -932,6 +936,7 @@ class Server:
                 max_num_layers
                 if memory_limit_exceeded
                 else remaining_num_trans_layers + self.output_layer_memory_tle
+                # else target_tle_count
             )
 
             effective_rate = (
@@ -1453,8 +1458,8 @@ def serve():
                     server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            # if server_node.chain.get_chain_status() == ChainStatus.READY:
-            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            if server_node.chain.get_chain_status() == ChainStatus.READY:
+                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""

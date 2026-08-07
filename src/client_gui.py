@@ -174,6 +174,11 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                     f"Inference Delay: {inference_latency:.6f}s"
                 ).classes("font-mono text-sm")
 
+            if "output_layer_temporal_tle" in info:
+                labels["output_layer_temporal_tle"] = ui.label(
+                    f"Output Temporal TLE: {info.get('output_layer_temporal_tle')}"
+                ).classes("font-mono text-sm")
+
             if "grpc_overhead" in info:
                 grpc_overhead = info.get("grpc_overhead", 0.0)
                 labels["grpc_overhead"] = ui.label(f"GRPC Overhead: {grpc_overhead:.6f}s").classes(
@@ -343,6 +348,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                     if "inference_delay" in labels:
                         labels["inference_delay"].text = (
                             f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"
+                        )
+
+                    if "output_layer_temporal_tle" in labels:
+                        labels["output_layer_temporal_tle"].text = (
+                            f"Output Temporal TLE: {node_info.get('output_layer_temporal_tle')}"
                         )
 
                     if "grpc_overhead" in labels:

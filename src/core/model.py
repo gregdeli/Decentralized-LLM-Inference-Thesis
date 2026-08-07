@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional, Tuple
+import time
 
 from core.constants import GLOBAL_MAX_SEQ_LEN
 
@@ -149,7 +150,7 @@ class Llama3(nn.Module):
         input: torch.Tensor,
         seq_length: Optional[int] = None,
         input_pos: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, float, float]:
         """
         Executes the forward pass through the server's assigned transformer layers.
 
@@ -173,6 +174,15 @@ class Llama3(nn.Module):
 
         h = input
 
+        is_cuda = input.device.type == "cuda"
+
+        # Start timing the Transformer Layer
+
+        if is_cuda:
+            torch.cuda.synchronize(input.device)
+
+        trans_start_time = time.perf_counter()
+
         if self.num_layers > 0:
             T = seq_length
             # Get the RoPE embeddings for the current sequence
@@ -191,11 +201,23 @@ class Llama3(nn.Module):
             for block in self.layers.values():
                 h = block(h, cos, sin, mask, input_pos)
 
+        if is_cuda:
+            torch.cuda.synchronize(input.device)
+        trans_end_time = time.perf_counter()
+
         if self.output_layer_loaded:
             x = self.norm(h)
             h = self.lm_head(x)
 
-        return h
+        if is_cuda:
+            torch.cuda.synchronize(input.device)
+
+        end_time = time.perf_counter()
+
+        transformer_layer_delay = trans_end_time - trans_start_time if self.num_layers > 0 else 0.0
+        output_layer_delay = end_time - trans_end_time if self.output_layer_loaded else 0.0
+
+        return h, transformer_layer_delay, output_layer_delay
 
     def build_rope_cache(
         self, device: Optional[torch.device] = None
