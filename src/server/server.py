@@ -529,13 +529,14 @@ class Server:
             other_node_profiling = self.chain.get_chain_status() == ChainStatus.PROFILING
 
         # self.chain.become_chain_leader()
-        self.chain.update_chain_status(ChainStatus.PROFILING)
+        self.chain.update_chain_status(ChainStatus.PROFILING)        
 
         # ------ Transformer Layer Profiling ------
 
         # First profile a signle transformer layer to get the nodes processing rate and
         # the transformer layers inference delay
-        self._load_llm(layers_to_load=(0, 0), load_output_layer=False, update_on_dht=False)
+        # self._load_llm(layers_to_load=(0, 0), load_output_layer=False, update_on_dht=False)
+        self._load_llm(layers_to_load=(0, 0), load_output_layer=True, update_on_dht=False)
 
         # Inference with dummy input
         hidden_size = self.config["hidden_size"]
@@ -553,16 +554,15 @@ class Server:
 
         prof_start_time = time.perf_counter()
         for i in range(profiling_runs):
-            start = time.perf_counter()
-            _ = self.model.forward_server(
+            _, transformer_layer_delay, output_layer_delay = self.model.forward_server(
                 dummy_input, seq_length=dummy_seq_length, input_pos=dummy_input_pos
             )
-            if self.added_delay:
-                time.sleep(self.added_delay)
+            # if self.added_delay:
+            #     time.sleep(self.added_delay)
 
-            transformer_layer_delay = time.perf_counter() - start
+            inference_delay = transformer_layer_delay + output_layer_delay
 
-            self._calculate_processing_rate(transformer_layer_delay)
+            # self._calculate_processing_rate(inference_delay)
 
             logger.info(
                 f"Profiling: Layers {self.llm.layers_loaded}: "
@@ -578,37 +578,16 @@ class Server:
             profiling_time = time.perf_counter() - prof_start_time
             if profiling_time >= profiling_duration_s:
                 break
-
-        self._unload_llm()
-
-        # ---------- Output Layer Profiling ---------------
-        self._load_llm(load_output_layer=True, update_on_dht=False)
-
-        dummy_input = torch.randn(
-            1, dummy_seq_length, hidden_size, device=self.device, dtype=self.llm.dtype
-        )
-        prof_start_time = time.perf_counter()
-        for i in range(profiling_runs):
-            start = time.perf_counter()
-            _ = self.model.forward_server(dummy_input)
-            if self.added_delay:
-                time.sleep(self.added_delay)
-
-            output_layer_delay = time.perf_counter() - start
-
-            logger.info(f"Profiling: Output Layer: " f"Delay: {output_layer_delay}s ")
-
-            profiling_time = time.perf_counter() - prof_start_time
-            if profiling_time >= profiling_duration_s:
-                break
-
-        self._unload_llm()
+            
 
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
         self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
         self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
 
+        self._calculate_processing_rate(inference_delay)
         self.chain.update_processing_rate(self.processing_rate)
+
+        self._unload_llm()
 
         self._update_memory_usage()
 
@@ -983,6 +962,17 @@ class Server:
         ):
             self._reload_llm(layers=new_layers, load_output_layer=load_output_layer)
             self.chain.update_layers(new_layers)
+
+            # Estimate the nodes' new inference delay
+            num_layers = self.model.num_layers
+            
+            if self.model.output_layer_loaded:
+                num_layers += self.output_layer_temporal_tle
+
+            estimated_inference_delay = num_layers / self.processing_rate
+            self.chain.update_inference_delay(estimated_inference_delay)
+            
+
         else:
             logger.info(f"Layer Assignement Unchanged")
 
@@ -1137,14 +1127,14 @@ class Server:
                     self.chain.update_successor(succ_data)
                     self._connect_to_successor()
 
-                    if self.chain.is_head():
-                        self.trigger_reallocation()
-                    else:
-                        head_server_addr = self.chain.get_head_server_info().get("address")
-                        channel = create_grpc_channel(head_server_addr)
-                        head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                    # if self.chain.is_head():
+                    #     self.trigger_reallocation()
+                    # else:
+                    #     head_server_addr = self.chain.get_head_server_info().get("address")
+                    #     channel = create_grpc_channel(head_server_addr)
+                    #     head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
 
-                        head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
+                    #     head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
                 else:
                     # If the dead node was the tail, make this node the new tail
                     self.chain.update_chain_tail(self.chain.node_id)
@@ -1171,6 +1161,17 @@ class Server:
                                 f"A gRPC error occurred while connecting to {backup_addr}: {e.code().name}"
                             )
 
+                # Finally Trigger a Reallocation
+                if self.chain.is_head():
+                    self.trigger_reallocation()
+                else:
+                    head_server_addr = self.chain.get_head_server_info().get("address")
+                    channel = create_grpc_channel(head_server_addr)
+                    head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+
+                    head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
+
+                # Update Chain Status
                 if self.chain.get_all_layers_loaded():
                     self.chain.update_chain_status(ChainStatus.READY)
                 else:
