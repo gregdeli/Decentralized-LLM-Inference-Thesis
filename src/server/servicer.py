@@ -60,6 +60,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             daemon=True,
         ).start()
 
+        # self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos, response_address)
+
         # logger.info(f"End RunLayers handling from ({request.response_address})...")
         return nodeservice_pb2.Empty()
 

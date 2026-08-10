@@ -673,18 +673,15 @@ class Client:
     ) -> Iterator[str]:
         self.chain.update_chain_status(ChainStatus.RUNNING)
 
-        generated_ids = []
-
         input_tensor = input_ids
         input_pos = history_length
         seq_length = prompt_length
 
         start_time = time.perf_counter()
 
-        all_tokens_generated = 0  # Total tokens generated in this generation even after repair
-        tokens_generated = 0  # Gets reset after a chain repair
+        tokens_generated = 0  
 
-        while all_tokens_generated < max_new_tokens:
+        while tokens_generated < max_new_tokens:
             self.chain.update_chain_status(ChainStatus.RUNNING)
 
             start_token_gen = time.perf_counter()
@@ -772,9 +769,7 @@ class Client:
                     self.chat_history = None
                     return
 
-            # Capture the TOTAL PROCESSING RATE
-            self.total_rate = self.chain.gather_total_rate()
-
+            # Deserialize the token
             start = time.perf_counter()
             next_token = response_to_tensor(response)
             self.deserialization_delay = time.perf_counter() - start
@@ -798,9 +793,7 @@ class Client:
             decoded_token = self.llm.preprocessor.decode(next_token)
             self.decode_delay = time.perf_counter() - start
 
-            all_tokens_generated += 1
             tokens_generated += 1
-            generated_ids.append(next_token)
 
             start = time.perf_counter()
             yield decoded_token
@@ -816,7 +809,7 @@ class Client:
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
 
         self.last_inference_stats = {
-            "num_tokens_generated": all_tokens_generated,
+            "num_tokens_generated": tokens_generated,
             "latency": elapsed_time,
             "throughput": throughput,
         }

@@ -111,9 +111,9 @@ def discover_bootstrap_node_address(timeout: float = 5.0, is_client: bool = Fals
 def create_grpc_channel(address: str) -> grpc.Channel:
     channel = grpc.insecure_channel(
         address,
-        options=[
-            ("grpc.default_compression_algorithm", grpc.Compression.Deflate),  # Deflate, Gzip
-            ("grpc.default_compression_level", 3),  # 0: None, 1: Low, 2: Med, 3: High
-        ],
+        # options=[
+        #     ("grpc.default_compression_algorithm", grpc.Compression.Deflate),  # Deflate, Gzip
+        #     ("grpc.default_compression_level", 3),  # 0: None, 1: Low, 2: Med, 3: High
+        # ],
     )
     return channel
