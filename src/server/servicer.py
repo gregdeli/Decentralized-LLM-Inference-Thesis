@@ -6,6 +6,7 @@ import torch
 import time
 import json
 import threading
+import concurrent.futures
 import gc
 import ctypes
 
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def __init__(self, server_node: "Server"):
         self.server_node = server_node
+
+        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
     def GetPeerMultiaddr(self, request, context):
         visible_maddrs = self.server_node.dht.get_visible_maddrs()
@@ -54,11 +57,20 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
         response_address = request.response_address
 
-        threading.Thread(
-            target=self.server_node.run_local_layers,
-            args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address),
-            daemon=True,
-        ).start()
+        # threading.Thread(
+        #     target=self.server_node.run_local_layers,
+        #     args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address),
+        #     daemon=True,
+        # ).start()
+
+        self.inference_executor.submit(
+            self.server_node.run_local_layers,
+            input_tensor,
+            max_returned_tokens,
+            seq_length, 
+            input_pos, 
+            response_address
+        )
 
         # self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos, response_address)
 
