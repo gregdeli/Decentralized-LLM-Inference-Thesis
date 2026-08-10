@@ -292,7 +292,7 @@ class Server:
             if final_output_params is None:
                 final_output_params = calculate_final_output_params(self.model_path)
                 # update_config_final_output_param_count(self.model_path, final_output_params)
-                update_model_config(self.model, "final_output_params", final_output_params)
+                update_model_config(self.model_path, "final_output_params", final_output_params)
                 self._reload_config()
 
             total_params = self.config.get("num_hidden_layers") * layer_params + final_output_params
