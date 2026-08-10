@@ -59,20 +59,28 @@ def tensor_to_request(
     max_returned_tokens: int,
     seq_length: Optional[int],
     input_pos: Optional[int],
+    quantize_flag: bool=True,
 ) -> nodeservice_pb2.InferenceRequest:
     """Serializes a tensor and metadata into an InferenceRequest."""
-    quantized_indices, absmax = quantize_blockwise(tensor)
+    if quantize_flag:
+        quantized_indices, absmax = quantize_blockwise(tensor)
 
-    quantized_indices_bytes = quantized_indices.numpy().tobytes()
-    tensor_shape = list(tensor.shape)
-    dtype = DTYPE_MAP[tensor.dtype]
+        tensor_data = quantized_indices.numpy().tobytes()
+        tensor_shape = list(tensor.shape)
+        dtype = DTYPE_MAP[tensor.dtype]
 
-    view_dtype = torch.int16 if absmax.element_size() == 2 else absmax.dtype
-    block_scales = absmax.view(view_dtype).numpy().tobytes()
+        view_dtype = torch.int16 if absmax.element_size() == 2 else absmax.dtype
+        block_scales = absmax.view(view_dtype).numpy().tobytes()
+    else:
+        view_dtype = torch.int16 if tensor.element_size() == 2 else tensor.dtype
+        tensor_data = tensor.view(view_dtype).numpy().tobytes()
+        tensor_shape = list(tensor.shape)
+        dtype = DTYPE_MAP[tensor.dtype]
+        block_scales = None
 
     # Create the request with explicit arguments
     request_args = {
-        "tensor_data": quantized_indices_bytes,
+        "tensor_data": tensor_data,
         "tensor_shape": tensor_shape,
         "dtype": dtype,
         "max_returned_tokens": max_returned_tokens,
@@ -100,7 +108,7 @@ def tensor_to_response(tensor: torch.Tensor) -> nodeservice_pb2.InferenceRespons
     return nodeservice_pb2.InferenceResponse(**response)
 
 
-def request_to_tensor(request: nodeservice_pb2.InferenceRequest) -> torch.Tensor:
+def request_to_tensor(request: nodeservice_pb2.InferenceRequest, quantize_flag: bool=True) -> torch.Tensor:
     """Deserializes an InferenceRequest into a tensor"""
     shape = tuple(request.tensor_shape)
 
@@ -110,21 +118,27 @@ def request_to_tensor(request: nodeservice_pb2.InferenceRequest) -> torch.Tensor
     is_2byte = torch_dtype.itemsize == 2
     np_dtype = np.int16 if is_2byte else getattr(np, dtype_str)
 
-    # Load the quantized uint8 data
-    np_quantized_indices = np.frombuffer(request.tensor_data, dtype=np.uint8)
-    quantized_indices = torch.from_numpy(np_quantized_indices).view(-1, BLOCK_SIZE)
+    if quantize_flag:
+        # Load the quantized uint8 data
+        np_quantized_indices = np.frombuffer(request.tensor_data, dtype=np.uint8)
+        quantized_indices = torch.from_numpy(np_quantized_indices).view(-1, BLOCK_SIZE)
 
-    # Load the block scales
-    np_scales = np.frombuffer(request.block_scales, dtype=np_dtype)
-    absmax_tensor = torch.from_numpy(np_scales).view(-1, 1).view(torch_dtype)
+        # Load the block scales
+        np_scales = np.frombuffer(request.block_scales, dtype=np_dtype)
+        absmax_tensor = torch.from_numpy(np_scales).view(-1, 1).view(torch_dtype)
 
-    # Dequantize
-    tensor = dequantize_blockwise(
-        quantized_indices=quantized_indices,
-        absmax=absmax_tensor,
-        original_shape=shape,
-        target_dtype=torch_dtype,
-    )
+        # Dequantize
+        tensor = dequantize_blockwise(
+            quantized_indices=quantized_indices,
+            absmax=absmax_tensor,
+            original_shape=shape,
+            target_dtype=torch_dtype,
+        )
+    else:
+        tensor_data = bytearray(request.tensor_data)
+        tensor = torch.frombuffer(tensor_data, dtype=torch_dtype)
+        tensor = tensor.reshape(shape)
+
 
     return tensor
 

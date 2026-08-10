@@ -37,7 +37,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
 
         # Deserialize the incoming request to a tensor
-        input_tensor = request_to_tensor(request)
+        input_tensor = request_to_tensor(request, quantize_flag=self.server_node.quantize_flag)
 
         # Extract metadata
         max_returned_tokens = request.max_returned_tokens

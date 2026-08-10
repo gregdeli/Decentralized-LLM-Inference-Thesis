@@ -9,19 +9,20 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=5
+      # - NUM_LAYERS=1
       - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
     deploy:
       resources:
-      #   reservations:
-      #     devices:
-      #       - driver: nvidia
-      #         count: 1
-      #         capabilities: [gpu]
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
         limits:
           memory: 4G #11657M 
         #   cpus: '16.0'
@@ -39,8 +40,9 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=6
+      - NUM_LAYERS=1
       - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-A:5001
@@ -72,6 +74,7 @@ services:
       - GRPC_PORT=5001
       # - NUM_LAYERS=7
       - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-B:5001
@@ -105,6 +108,7 @@ services:
       - GRPC_PORT=5001
       # - NUM_LAYERS=4
       - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-C:5001
@@ -136,6 +140,7 @@ services:
       - GRPC_PORT=5001
       # - NUM_LAYERS=4
       - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
       - BOOTSTRAP_NODE_ADDR=worker-D:5001
@@ -166,6 +171,7 @@ services:
     hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}
+      - QUANTIZE=$QUANTIZE
       # - GRPC_PORT=5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -186,6 +192,7 @@ services:
     hostname: client-B
     environment:
       - MODEL_PATH=/${MODEL_PATH}
+      - QUANTIZE=$QUANTIZE
       # - GRPC_PORT = 5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -206,6 +213,7 @@ services:
     hostname: client-C
     environment:
       - MODEL_PATH=/${MODEL_PATH}
+      - QUANTIZE=$QUANTIZE
       # - GRPC_PORT = 5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001
@@ -226,6 +234,7 @@ services:
     hostname: client-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
+      - QUANTIZE=$QUANTIZE
       # - GRPC_PORT = 5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
       # - BOOTSTRAP_NODE_ADDR=head-server:5001

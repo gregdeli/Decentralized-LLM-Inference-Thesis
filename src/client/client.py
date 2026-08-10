@@ -41,7 +41,10 @@ class Client:
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
         time_it: bool = False,
+        quantize_flag: bool = True
     ) -> None:
+        self.quantize_flag = quantize_flag
+        
         # Set the device
         self.device = "cpu"
         if torch.cuda.is_available():
@@ -606,6 +609,7 @@ class Client:
                 max_returned_tokens=max_returned_tokens,
                 seq_length=seq_length,
                 input_pos=input_pos.item() if input_pos is not None else None,
+                quantize_flag=self.quantize_flag
             )
             request.response_address = self.grpc_addr
 
@@ -697,6 +701,7 @@ class Client:
                 max_returned_tokens=max_returned_tokens,
                 seq_length=seq_length,
                 input_pos=input_pos,
+                quantize_flag=self.quantize_flag
             )
             request.response_address = self.grpc_addr
 

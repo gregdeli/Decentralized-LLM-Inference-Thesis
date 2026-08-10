@@ -61,7 +61,10 @@ class Server:
         time_it: bool = False,
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
+        quantize_flag: bool = True,
     ):
+        self.quantize_flag = quantize_flag
+        
         self.added_delay = added_delay
 
         self.grpc_addr = grpc_addr
@@ -725,6 +728,7 @@ class Server:
             max_returned_tokens=max_returned_tokens,
             seq_length=seq_length,
             input_pos=input_pos[0].item(),
+            quantize_flag=self.quantize_flag
         )
 
         request.response_address = response_address
@@ -1359,6 +1363,10 @@ def serve():
     else:
         initial_peers = None  # Head server
 
+    # Read the quantize_flag to determine wether or not to apply 8bit quant to intermediate activations
+    quantize_flag_str = os.getenv("QUANTIZE", "1")
+    quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
+
     # Initialize the server object
     server_node = Server(
         model_path=model_path,
@@ -1367,6 +1375,7 @@ def serve():
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
+        quantize_flag=quantize_flag,
     )
 
     # Start GRPC server
@@ -1459,8 +1468,8 @@ def serve():
                     server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            if server_node.chain.get_chain_status() == ChainStatus.READY:
-                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            # if server_node.chain.get_chain_status() == ChainStatus.READY:
+            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
@@ -1501,8 +1510,8 @@ def serve():
     signal.signal(signal.SIGTERM, _handle_shutdown)  # docker stop
 
     # Profile the node to get processing rate measurements
-    profile_node_str = os.getenv("PROFILE")
-    profile_node = int(profile_node_str) if profile_node_str is not None else 1
+    profile_node_str = os.getenv("PROFILE", "1")
+    profile_node = profile_node_str.lower() in ("1", "true", "yes")
     if profile_node:
         server_node._profile_node(
             dummy_seq_length=1000, profiling_runs=50, profiling_duration_s=PROFILING_DURATION

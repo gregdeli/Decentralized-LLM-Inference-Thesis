@@ -85,11 +85,16 @@ def _sync_initialize_client():
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
 
+    # Read the quantize_flag to determine wether or not to apply 8bit quant to intermediate activations
+    quantize_flag_str = os.getenv("QUANTIZE", "1")
+    quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
+
     return Client(
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
+        quantize_flag=quantize_flag,
     )
     # logger.info("Client initialized.")
 

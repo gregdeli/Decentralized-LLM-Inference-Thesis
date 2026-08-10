@@ -112,8 +112,8 @@ def create_grpc_channel(address: str) -> grpc.Channel:
     channel = grpc.insecure_channel(
         address,
         options=[
-            ("grpc.default_compression_algorithm", grpc.Compression.Gzip),  # 2 = gzip
-            ("grpc.default_compression_level", 3),  # Medium
+            ("grpc.default_compression_algorithm", grpc.Compression.Deflate),  # Deflate, Gzip
+            ("grpc.default_compression_level", 3),  # 0: None, 1: Low, 2: Med, 3: High
         ],
     )
     return channel
