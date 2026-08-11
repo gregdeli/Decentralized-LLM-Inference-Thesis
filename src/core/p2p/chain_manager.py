@@ -35,11 +35,11 @@ TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_"  # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY = "chain_throughput_version"
 
-EXPIRATION_S = 50.0
-# EXPIRATION_S = 7200.0
-HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+# EXPIRATION_S = 50.0
+EXPIRATION_S = 7200.0
+# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
 # HEARTBEAT_INTERVAL_S = 15.0
-# HEARTBEAT_INTERVAL_S = 7200.0
+HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 # THROUGHPUT_EXPIRATION_S = 60.0
 
@@ -1278,15 +1278,20 @@ class ChainManager:
         self_info["processing_rate"] = processing_rate
         self._update_server_info(self.node_id, self_info)
 
+    def update_inference_executor_delay(self, inference_executor_delay: float = 0.0):
+        self_info = self.get_self_info()
+        self_info["inference_executor_delay"] = inference_executor_delay
+        self._update_server_info(self.node_id, self_info)    
+
     def update_inference_delay(self, inference_delay: float = 0.0):
         self_info = self.get_self_info()
         self_info["inference_delay"] = inference_delay
         self._update_server_info(self.node_id, self_info)
 
     def update_logit_sampling_delay(self, logit_sampling_delay: float = 0.0):
-            self_info = self.get_self_info()
-            self_info["logit_sampling_delay"] = logit_sampling_delay
-            self._update_server_info(self.node_id, self_info)
+        self_info = self.get_self_info()
+        self_info["logit_sampling_delay"] = logit_sampling_delay
+        self._update_server_info(self.node_id, self_info)
 
     def update_ensure_kv_cache_delay(self, ensure_kv_cache_delay: float = 0.0):
         self_info = self.get_self_info()

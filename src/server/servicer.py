@@ -27,7 +27,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def __init__(self, server_node: "Server"):
         self.server_node = server_node
 
-        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
     def GetPeerMultiaddr(self, request, context):
         visible_maddrs = self.server_node.dht.get_visible_maddrs()
@@ -64,7 +64,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             input_pos = input_pos.to(self.server_node.device)
 
         deserialization_delay = time.perf_counter() - start
-        self.server_node.chain.update_deserialization_delay(deserialization_delay)
+        logger.info(f"Deserialization Delay: {deserialization_delay:.6f}")
+        # self.server_node.chain.update_deserialization_delay(deserialization_delay)
 
         # threading.Thread(
         #     target=self.server_node.run_local_layers,
@@ -72,13 +73,15 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         #     daemon=True,
         # ).start()
 
+        submit_time = time.perf_counter()
         self.inference_executor.submit(
             self.server_node.run_local_layers,
             input_tensor,
             max_returned_tokens,
             seq_length, 
             input_pos, 
-            response_address
+            response_address,
+            submit_time
         )
 
         # self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos, response_address)

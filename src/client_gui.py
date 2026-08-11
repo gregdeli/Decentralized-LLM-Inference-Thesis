@@ -85,6 +85,10 @@ def _sync_initialize_client():
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
 
+    # Set log level
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.getLogger().setLevel(getattr(logging, log_level_str))
+
     # Read the quantize_flag to determine wether or not to apply 8bit quant to intermediate activations
     quantize_flag_str = os.getenv("QUANTIZE", "1")
     quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
@@ -172,6 +176,12 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                 labels["processing_rate"] = ui.label(
                     f"Processing Rate: {processing_rate:.2f} layers/sec"
                 ).classes("font-mono text-sm")
+
+            if "inference_executor_delay" in info:
+                inference_executor_delay = info.get("inference_executor_delay", 0.0)
+                labels["inference_executor_delay"] = ui.label(
+                    f"Inference Executor Delay: {inference_executor_delay:.6f}s"
+                ).classes("font-mono text-sm")                
 
             if "ensure_kv_cache_delay" in info:
                 ensure_kv_cache_delay = info.get("ensure_kv_cache_delay", 0.0)
@@ -373,6 +383,11 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                         labels["processing_rate"].text = (
                             f"Processing Rate: {node_info.get('processing_rate', 0):.2f} layers/sec"
                         )
+
+                    if "inference_executor_delay" in labels:
+                        labels["inference_executor_delay"].text = (
+                            f"Inference Executor Delay: {node_info.get('inference_executor_delay', 0.0):.6f}s"
+                        )                        
 
                     if "ensure_kv_cache_delay" in labels:
                         labels["ensure_kv_cache_delay"].text = (

@@ -607,12 +607,15 @@ class Server:
         seq_length: int = None,
         input_pos: torch.Tensor = None,
         response_address: str = None,
+        submit_time: float = None,
     ) -> nodeservice_pb2.InferenceResponse:
         """
         This function runs inference on the server's assigned transformer layers and send the output to the next node.
         """
-        # Set chain status
-        # self.chain.update_chain_status(ChainStatus.RUNNING)
+        if submit_time is not None:
+            queueing_delay = time.perf_counter() - submit_time
+            logger.info(f"Executor Queueing Delay: {queueing_delay:.6f}")
+            # self.chain.update_inference_executor_delay(queueing_delay)
 
         if not self.llm:
             return nodeservice_pb2.InferenceResponse(
@@ -643,12 +646,12 @@ class Server:
 
         # Set KV Cache and Process Layers
         with self._inference_lock:
-
             start = time.perf_counter()
             cache_ok = self._ensure_kv_cache(client_id=response_address, input_pos=input_pos)
 
             ensure_kv_cache_delay = time.perf_counter() - start
-            self.chain.update_ensure_kv_cache_delay(ensure_kv_cache_delay)
+            logger.info(f"Ensure KV Cache Delay: {ensure_kv_cache_delay:.6f}")
+            # self.chain.update_ensure_kv_cache_delay(ensure_kv_cache_delay)
 
             if not cache_ok:
                 self._connect_to_client(response_address)
@@ -672,22 +675,23 @@ class Server:
             #     time.sleep(self.added_delay)
 
             self.inference_delay = transformer_layer_delay + output_layer_delay
-            self.chain.update_inference_delay(self.inference_delay)
+            logger.info(f"Inference Delay: {self.inference_delay:.6f}")
+            # self.chain.update_inference_delay(self.inference_delay)
 
             # Recalculate Output Temporal TLE
             if output_layer_delay > 0.0 and transformer_layer_delay > 0.0:
-                self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
-                self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
+                self.output_layer_temporal_tle = output_layer_delay / (transformer_layer_delay / self.model.num_layers)
+                # self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
 
 
             self._calculate_processing_rate(self.inference_delay)
-            self.chain.update_processing_rate(self.processing_rate)
+            # self.chain.update_processing_rate(self.processing_rate)
 
-        logger.info(
-            f"Layers {self.model.num_layers + self.output_layer_temporal_tle if self.model.output_layer_loaded else self.model.num_layers}: "
-            f"Delay: {self.inference_delay:.4f}s "
-            f"Rate: {self.processing_rate} layers/sec"
-        )
+        # logger.info(
+        #     f"Layers {self.model.num_layers + self.output_layer_temporal_tle if self.model.output_layer_loaded else self.model.num_layers}: "
+        #     f"Delay: {self.inference_delay:.4f}s "
+        #     f"Rate: {self.processing_rate} layers/sec"
+        # )
 
         
         # h = h.cpu()
@@ -699,10 +703,15 @@ class Server:
             next_token = self.llm.sample_logits(logits)
 
             logit_sampling_delay = time.perf_counter() - start
-            self.chain.update_logit_sampling_delay(logit_sampling_delay)
+            logger.info(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
+            # self.chain.update_logit_sampling_delay(logit_sampling_delay)
 
             # Benchmarking
-            self.chain.update_chain_throughput()
+            start = time.perf_counter()
+            # self.chain.update_chain_throughput()
+
+            update_chain_throughput_delay = time.perf_counter() - start
+            logger.info(f"Update Chain Throughput Delay: {update_chain_throughput_delay:.6f}")
 
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
@@ -714,7 +723,8 @@ class Server:
             response = tensor_to_response(next_token)
 
             serialization_delay = time.perf_counter() - start
-            self.chain.update_serialization_delay(serialization_delay)
+            logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+            # self.chain.update_serialization_delay(serialization_delay)
 
             # Connect to Client
             try:
@@ -726,7 +736,8 @@ class Server:
                 self.client_stub.ReceiveResponse(response)
 
                 self.grpc_overhead = time.perf_counter() - start
-                self.chain.update_grpc_overhead(self.grpc_overhead)
+                logger.info(f"GRPC Overhead: {self.grpc_overhead:.6f}")
+                # self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
@@ -752,7 +763,8 @@ class Server:
         request.response_address = response_address
 
         serialization_delay = time.perf_counter() - start
-        self.chain.update_serialization_delay(serialization_delay)
+        logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+        # self.chain.update_serialization_delay(serialization_delay)
 
         try:
             logger.info(f"Forwarding RunLayers request to successor from ({response_address})...")
@@ -764,7 +776,8 @@ class Server:
             succ_deserialization_delay = response.deserialization_delay
 
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
-            self.chain.update_grpc_overhead(self.grpc_overhead)
+            logger.info(f"GRPC Overhead: {self.grpc_overhead:.6f}")
+            # self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (
                 e.code() == grpc.StatusCode.UNAVAILABLE
@@ -1363,6 +1376,10 @@ def serve():
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = f"{my_ip}:{grpc_port}"
 
+    # Set log level
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.getLogger().setLevel(getattr(logging, log_level_str))
+
     # host_maddrs = os.getenv("HOST_MADDRS")
     host_maddrs = f"/ip4/{my_ip}/tcp/0"
 
@@ -1507,18 +1524,18 @@ def serve():
             if data == b"DISCOVER_BOOTSTRAP":
                 sock.sendto(response_b, addr)
 
-    chain_monitor_thread = threading.Thread(
-        target=_chain_health_monitor_task, args=(server_node,), daemon=True
-    )
-    chain_monitor_thread.start()
+    # chain_monitor_thread = threading.Thread(
+    #     target=_chain_health_monitor_task, args=(server_node,), daemon=True
+    # )
+    # chain_monitor_thread.start()
 
-    dht_heartbeat_thread = threading.Thread(
-        target=_dht_heartbeat_task, args=(server_node,), daemon=True
-    )
-    dht_heartbeat_thread.start()
+    # dht_heartbeat_thread = threading.Thread(
+    #     target=_dht_heartbeat_task, args=(server_node,), daemon=True
+    # )
+    # dht_heartbeat_thread.start()
 
-    udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)
-    udp_discovery_thread.start()
+    # udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)
+    # udp_discovery_thread.start()
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):
@@ -1549,6 +1566,12 @@ def serve():
 
     # if server_node.chain.is_tail() and server_node.chain.get_all_layers_loaded():
     #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+
+
+    if server_node.chain.get_all_layers_loaded():
+        server_node.chain.update_chain_status(ChainStatus.READY)
+    else:
+        server_node.chain.update_chain_status(ChainStatus.UNREADY)
 
     grpc_server.wait_for_termination()
 
