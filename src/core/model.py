@@ -103,39 +103,29 @@ class Llama3(nn.Module):
         self,
         input_ids: torch.Tensor,
         # input_pos: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, float]:
         T = input_ids.size(1)
         if self.max_seq_length < T:
             raise ValueError(
                 f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}."
             )
 
-        # if self.rope_cache is None:
-        #     self.rope_cache = self.build_rope_cache(device=input_ids.device)
+        is_cuda = input_ids.device.type == "cuda"
 
-        # # Get the RoPE embeddings for the current sequence
-        # cos, sin = self.rope_cache
-        # if input_pos is None:  # prefill
-        #     cos = cos[:T]
-        #     sin = sin[:T]
-        # else:  # generation
-        #     cos = cos[input_pos]
-        #     sin = sin[input_pos]
+        if is_cuda:
+            torch.cuda.synchronize(input_ids.device)
 
-        # Get the attention mask
-        # mask = self.mask_cache
-        # if mask is not None and T > 1:  # prefill
-        #     mask = mask[:, :, :T, :T]
-        # else:
-        #     mask = None
+        embed_start_time = time.perf_counter()
 
         # Forward pass
         x = self.embed_tokens(input_ids)
 
-        # if self.num_layers > 0:
-        #     for block in self.layers.values():
-        #         x = block(x, cos, sin, mask, input_pos)
-        return x
+        if is_cuda:
+            torch.cuda.synchronize(input_ids.device)
+
+        embed_delay = time.perf_counter() - embed_start_time
+
+        return x, embed_delay
 
     def forward_client_final(
         self,

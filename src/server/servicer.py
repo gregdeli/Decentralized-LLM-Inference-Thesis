@@ -6,6 +6,7 @@ import torch
 import time
 import json
 import threading
+import concurrent.futures
 import gc
 import ctypes
 
@@ -26,6 +27,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def __init__(self, server_node: "Server"):
         self.server_node = server_node
 
+        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
     def GetPeerMultiaddr(self, request, context):
         visible_maddrs = self.server_node.dht.get_visible_maddrs()
         if not visible_maddrs:
@@ -37,6 +40,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
 
         # Deserialize the incoming request to a tensor
+        start = time.perf_counter()
         input_tensor = request_to_tensor(request, quantize_flag=self.server_node.quantize_flag)
 
         # Extract metadata
@@ -50,20 +54,37 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         else:
             input_pos = torch.tensor([input_pos_val])
 
-        # input_pos = torch.tensor([input_pos_val]) if input_pos_val is not None else None
-
         response_address = request.response_address
 
-        threading.Thread(
-            target=self.server_node.run_local_layers,
-            args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address),
-            daemon=True,
-        ).start()
+        # Ensure inputs are on the same device as the model
+        if input_tensor.device != self.server_node.device:
+            input_tensor = input_tensor.to(self.server_node.device)
+
+        if input_pos is not None and input_pos.device != self.server_node.device:
+            input_pos = input_pos.to(self.server_node.device)
+
+        deserialization_delay = time.perf_counter() - start
+        self.server_node.chain.update_deserialization_delay(deserialization_delay)
+
+        # threading.Thread(
+        #     target=self.server_node.run_local_layers,
+        #     args=(input_tensor, max_returned_tokens, seq_length, input_pos, response_address),
+        #     daemon=True,
+        # ).start()
+
+        self.inference_executor.submit(
+            self.server_node.run_local_layers,
+            input_tensor,
+            max_returned_tokens,
+            seq_length, 
+            input_pos, 
+            response_address
+        )
 
         # self.server_node.run_local_layers(input_tensor, max_returned_tokens, seq_length, input_pos, response_address)
 
         # logger.info(f"End RunLayers handling from ({request.response_address})...")
-        return nodeservice_pb2.Empty()
+        return nodeservice_pb2.Empty(deserialization_delay=deserialization_delay)
 
     def Check(self, request, context):
         """If the server is running it will return an Empty response"""

@@ -9,7 +9,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=1
+      - NUM_LAYERS=4
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
@@ -40,7 +40,7 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=1
+      - NUM_LAYERS=3
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       # - ADDED_DELAY=0.08
@@ -100,8 +100,8 @@ services:
   worker-D:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -132,8 +132,8 @@ services:
   worker-E:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-E
     environment:
       - MODEL_PATH=/${MODEL_PATH}

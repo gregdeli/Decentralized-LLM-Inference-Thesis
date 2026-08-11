@@ -466,7 +466,7 @@ class Server:
                     self.vram_usage_mb, self.vram_limit_mb, self.available_vram_mb
                 )
 
-    def _ensure_kv_cache(self, client_id: str, input_pos: torch.Tensor) -> None:
+    def _ensure_kv_cache(self, client_id: str, input_pos: torch.Tensor) -> bool:
         """Ensures the KV cache is initialized and large enough for the request."""
         # Initialize the client's kv cache if necessary
         if not self.model.client_has_cache(client_id):
@@ -620,13 +620,13 @@ class Server:
             )
 
         # Ensure inputs are on the same device as the model
-        device = self.llm.device
+        # device = self.llm.device
 
-        if input_tensor.device != device:
-            input_tensor = input_tensor.to(device)
+        # if input_tensor.device != device:
+        #     input_tensor = input_tensor.to(device)
 
-        if input_pos is not None and input_pos.device != device:
-            input_pos = input_pos.to(device)
+        # if input_pos is not None and input_pos.device != device:
+        #     input_pos = input_pos.to(device)
 
         # If KV caches have been reallocated the generation needs to stop because the context is lost
         if (
@@ -643,7 +643,14 @@ class Server:
 
         # Set KV Cache and Process Layers
         with self._inference_lock:
-            if not self._ensure_kv_cache(client_id=response_address, input_pos=input_pos):
+
+            start = time.perf_counter()
+            cache_ok = self._ensure_kv_cache(client_id=response_address, input_pos=input_pos)
+
+            ensure_kv_cache_delay = time.perf_counter() - start
+            self.chain.update_ensure_kv_cache_delay(ensure_kv_cache_delay)
+
+            if not cache_ok:
                 self._connect_to_client(response_address)
                 self.client_stub.ReceiveResponse(
                     nodeservice_pb2.InferenceResponse(
@@ -682,13 +689,17 @@ class Server:
             f"Rate: {self.processing_rate} layers/sec"
         )
 
-        # Move output tensor back to the cpu for serialization
-        h = h.cpu()
+        
+        # h = h.cpu()
 
         # If TAIL Node -> Send response to Client
         if self.chain.is_tail() and self.chain.get_output_layer_loaded():
+            start = time.perf_counter()
             logits = h
             next_token = self.llm.sample_logits(logits)
+
+            logit_sampling_delay = time.perf_counter() - start
+            self.chain.update_logit_sampling_delay(logit_sampling_delay)
 
             # Benchmarking
             self.chain.update_chain_throughput()
@@ -697,7 +708,13 @@ class Server:
                 logger.error("Tail node has no response_address for the client!")
                 return
 
+            # Serialize the next token
+            start = time.perf_counter()
+            next_token = next_token.cpu() # Move output tensor back to the cpu for serialization
             response = tensor_to_response(next_token)
+
+            serialization_delay = time.perf_counter() - start
+            self.chain.update_serialization_delay(serialization_delay)
 
             # Connect to Client
             try:
@@ -722,7 +739,9 @@ class Server:
         if not self.successor_stub and not self.chain.is_tail():
             self._connect_to_successor()
 
-        # Call the successor via gRPC
+        # Serialize the intermediate activations
+        start = time.perf_counter()
+        h = h.cpu() # Move output tensor back to the cpu for serialization
         request = tensor_to_request(
             h,
             max_returned_tokens=max_returned_tokens,
@@ -730,16 +749,21 @@ class Server:
             input_pos=input_pos[0].item(),
             quantize_flag=self.quantize_flag
         )
-
         request.response_address = response_address
+
+        serialization_delay = time.perf_counter() - start
+        self.chain.update_serialization_delay(serialization_delay)
 
         try:
             logger.info(f"Forwarding RunLayers request to successor from ({response_address})...")
 
+            # Forward to successor
             start = time.perf_counter()
-            self.successor_stub.RunLayers(request, timeout=GRPC_REQUEST_TIMEOUT)
+            response = self.successor_stub.RunLayers(request, timeout=GRPC_REQUEST_TIMEOUT)
 
-            self.grpc_overhead = time.perf_counter() - start
+            succ_deserialization_delay = response.deserialization_delay
+
+            self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
             self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (

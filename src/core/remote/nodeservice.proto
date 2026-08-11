@@ -46,7 +46,9 @@ service ClientService {
   rpc ReceiveResponse(InferenceResponse) returns (Empty) {}
 }
 
-message Empty {}
+message Empty {
+  optional float deserialization_delay = 1;
+}
 
 message MultiaddrResponse {
     string multiaddr = 1;

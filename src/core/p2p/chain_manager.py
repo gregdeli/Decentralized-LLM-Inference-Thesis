@@ -1283,11 +1283,32 @@ class ChainManager:
         self_info["inference_delay"] = inference_delay
         self._update_server_info(self.node_id, self_info)
 
+    def update_logit_sampling_delay(self, logit_sampling_delay: float = 0.0):
+            self_info = self.get_self_info()
+            self_info["logit_sampling_delay"] = logit_sampling_delay
+            self._update_server_info(self.node_id, self_info)
+
+    def update_ensure_kv_cache_delay(self, ensure_kv_cache_delay: float = 0.0):
+        self_info = self.get_self_info()
+        self_info["ensure_kv_cache_delay"] = ensure_kv_cache_delay
+        self._update_server_info(self.node_id, self_info)
+
+    def update_deserialization_delay(self, deserialization_delay: float = 0.0):
+        self_info = self.get_self_info()
+        self_info["deserialization_delay"] = deserialization_delay
+        self._update_server_info(self.node_id, self_info)
+
+    def update_serialization_delay(self, serialization_delay: float = 0.0):
+        self_info = self.get_self_info()
+        self_info["serialization_delay"] = serialization_delay
+        self._update_server_info(self.node_id, self_info)
+
     def update_grpc_overhead(self, grpc_overhead: float = 0.0):
         self_info = self.get_self_info()
         self_info["grpc_overhead"] = grpc_overhead
         self._update_server_info(self.node_id, self_info)
 
+    
     def make_node_backup(
         self, node_id: Optional[str] = None, server_info: Optional[Dict[str, Any]] = None
     ):

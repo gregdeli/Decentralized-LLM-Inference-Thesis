@@ -91,6 +91,7 @@ class Client:
         self.inference_response_event = threading.Event()
 
         self.initial_inference_delay = 0.0
+        self.chain_response_delay = 0.0
         self.serialization_delay = 0.0
         self.head_communication_latency = 0.0
         self.deserialization_delay = 0.0
@@ -99,6 +100,7 @@ class Client:
 
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
+        self.last_itl = 0.0 # inter token latency
 
         # Start GRPC server in a seperate thread
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
@@ -682,17 +684,17 @@ class Client:
         tokens_generated = 0  
 
         while tokens_generated < max_new_tokens:
+            start_itl = time.perf_counter()
+
             self.chain.update_chain_status(ChainStatus.RUNNING)
 
-            start_token_gen = time.perf_counter()
-            x = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
-            self.initial_inference_delay = time.perf_counter() - start_token_gen
+            x, self.initial_inference_delay = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
 
             # Move output tensor back to the cpu for serialization
+            start = time.perf_counter()
             x = x.cpu()
 
-            # Call the remote server chain
-            start = time.perf_counter()
+            # Serialize the embeddings
             request = tensor_to_request(
                 x,
                 max_returned_tokens=max_returned_tokens,
@@ -705,10 +707,13 @@ class Client:
             self.serialization_delay = time.perf_counter() - start
 
             try:
+                # Send inference request to the chain
                 start = time.perf_counter()
-                self.head_server_stub.RunLayers(request)
+                response = self.head_server_stub.RunLayers(request)
 
-                self.head_communication_latency = time.perf_counter() - start
+                head_deserialization_delay = response.deserialization_delay
+
+                self.head_communication_latency = time.perf_counter() - start - head_deserialization_delay
             except grpc.RpcError as e:
                 if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                     logger.warning(f"HEAD failure detected duting INFERENCE")
@@ -722,7 +727,10 @@ class Client:
                 return
 
             # Wait for the Tail to set the inference_response event
+            start_chain_time = time.perf_counter()
             is_set = self.inference_response_event.wait(timeout=15)
+
+            self.chain_response_delay = time.perf_counter() - start_chain_time
 
             if not is_set:
                 logger.error("Timeout waiting for response from Tail server.")
@@ -772,10 +780,11 @@ class Client:
             # Deserialize the token
             start = time.perf_counter()
             next_token = response_to_tensor(response)
-            self.deserialization_delay = time.perf_counter() - start
 
             if next_token.device != self.llm.device:
                 next_token = next_token.to(self.llm.device)
+
+            self.deserialization_delay = time.perf_counter() - start
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
@@ -783,6 +792,8 @@ class Client:
                     [[self.llm.preprocessor.tokenizer.eos_token_id]], device=self.device
                 )
                 self.chat_history = torch.cat([self.chat_history, eos_tensor], dim=1)
+
+                self.last_itl = time.perf_counter() - start_itl
                 break
 
             # Add the new token id to the chat history
@@ -798,6 +809,8 @@ class Client:
             start = time.perf_counter()
             yield decoded_token
             self.yield_delay = time.perf_counter() - start
+
+            self.last_itl = time.perf_counter() - start_itl
 
             input_tensor = next_token
             # current_pos = history_length + prompt_length + tokens_generated

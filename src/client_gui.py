@@ -173,16 +173,40 @@ def render_server_card(node_id: str, role: str, info: Dict[str, Any]) -> Dict[st
                     f"Processing Rate: {processing_rate:.2f} layers/sec"
                 ).classes("font-mono text-sm")
 
+            if "ensure_kv_cache_delay" in info:
+                ensure_kv_cache_delay = info.get("ensure_kv_cache_delay", 0.0)
+                labels["ensure_kv_cache_delay"] = ui.label(
+                    f"Ensure KV Cache Delay: {ensure_kv_cache_delay:.6f}s"
+                ).classes("font-mono text-sm")
+
             if "inference_delay" in info:
                 inference_latency = info.get("inference_delay", 0.0)
                 labels["inference_delay"] = ui.label(
                     f"Inference Delay: {inference_latency:.6f}s"
                 ).classes("font-mono text-sm")
 
+            if "logit_sampling_delay" in info:
+                logit_sampling_delay = info.get("logit_sampling_delay", 0.0)
+                labels["logit_sampling_delay"] = ui.label(
+                    f"Logit Sampling Delay: {logit_sampling_delay:.6f}s"
+                ).classes("font-mono text-sm")
+
             if "output_layer_temporal_tle" in info:
                 labels["output_layer_temporal_tle"] = ui.label(
                     f"Output Temporal TLE: {info.get('output_layer_temporal_tle')}"
                 ).classes("font-mono text-sm")
+
+            if "deserialization_delay" in info:
+                deserialization_delay = info.get("deserialization_delay", 0.0)
+                labels["deserialization_delay"] = ui.label(f"Deserialization Delay: {deserialization_delay:.6f}s").classes(
+                    "font-mono text-sm"
+                )
+
+            if "serialization_delay" in info:
+                serialization_delay = info.get("serialization_delay", 0.0)
+                labels["serialization_delay"] = ui.label(f"Serialization Delay: {serialization_delay:.6f}s").classes(
+                    "font-mono text-sm"
+                )
 
             if "grpc_overhead" in info:
                 grpc_overhead = info.get("grpc_overhead", 0.0)
@@ -350,14 +374,34 @@ async def refresh_chain_view(chain_container: ui.column, full_rebuild: bool = Fa
                             f"Processing Rate: {node_info.get('processing_rate', 0):.2f} layers/sec"
                         )
 
+                    if "ensure_kv_cache_delay" in labels:
+                        labels["ensure_kv_cache_delay"].text = (
+                            f"Ensure KV Cache Delay: {node_info.get('ensure_kv_cache_delay', 0.0):.6f}s"
+                        )
+
                     if "inference_delay" in labels:
                         labels["inference_delay"].text = (
                             f"Inference Delay: {node_info.get('inference_delay', 0.0):.6f}s"
                         )
 
+                    if "logit_sampling_delay" in labels:
+                        labels["logit_sampling_delay"].text = (
+                            f"Logit Sampling Delay: {node_info.get('logit_sampling_delay', 0.0):.6f}s"
+                        )
+
                     if "output_layer_temporal_tle" in labels:
                         labels["output_layer_temporal_tle"].text = (
                             f"Output Temporal TLE: {node_info.get('output_layer_temporal_tle')}"
+                        )
+
+                    if "deserialization_delay" in labels:
+                        labels["deserialization_delay"].text = (
+                            f"Deserialization Delay: {node_info.get('deserialization_delay', 0.0):.6f}s"
+                        )
+
+                    if "serialization_delay" in labels:
+                        labels["serialization_delay"].text = (
+                            f"Serialization Delay: {node_info.get('serialization_delay', 0.0):.6f}s"
                         )
 
                     if "grpc_overhead" in labels:
@@ -497,6 +541,7 @@ def refresh_client_stats(client_stats_container: ui.column):
         ui.label(f"Initial Inference Delay: {state.client.initial_inference_delay:.6f}s")
         ui.label(f"Serialization Delay: {state.client.serialization_delay:.6f}s")
         ui.label(f"Head Communication Latency: {state.client.head_communication_latency:.6f}s")
+        ui.label(f"Chain Response Delay: {state.client.chain_response_delay: .6f}s")
         ui.label(f"Deserialization Delay: {state.client.deserialization_delay:.6f}s")
         # ui.label(f"Final Inference Delay: {state.client.final_inference_delay:.6f}s")
         # ui.label(f"Logit Sampling Delay: {state.client.sample_delay:.6f}s")
@@ -685,7 +730,8 @@ async def generate(
         ui.label(f"Tokens Generated: {num_tokens} tokens")
         ui.label(f"Generation Time: {latency:.2f}s")
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
-        ui.label(f"Total Rate: {state.client.total_rate:.2f} layers/sec")
+        ui.label(f"Last ITL: {state.client.last_itl:.6f} sec")
+        ui.label(f"Total Rate: {state.client.chain.gather_total_rate():.2f} layers/sec")
 
         # if state.client.total_rate > 0:
         # ui.button(
