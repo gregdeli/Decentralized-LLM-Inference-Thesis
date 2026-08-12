@@ -35,11 +35,11 @@ TOKENS_GENERATED_KEY = "global_tokens_generated"
 THROUGHPUT_KEY = "chain_throughput_"  # "chain_throughput_1", "chain_throughput_2"
 THROUGHPUT_VERSION_KEY = "chain_throughput_version"
 
-# EXPIRATION_S = 50.0
-EXPIRATION_S = 7200.0
-# HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
+EXPIRATION_S = 50.0
+# EXPIRATION_S = 7200.0
+HEARTBEAT_INTERVAL_S = EXPIRATION_S / 4.0
 # HEARTBEAT_INTERVAL_S = 15.0
-HEARTBEAT_INTERVAL_S = 7200.0
+# HEARTBEAT_INTERVAL_S = 7200.0
 THROUGHPUT_EXPIRATION_S = 7200.0
 # THROUGHPUT_EXPIRATION_S = 60.0
 
@@ -258,8 +258,14 @@ class ChainManager:
             return
 
         # Update the old tail to point to the new server node
-        tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
-        self._update_server_info(tail_id, tail_info)
+        # tail_info["successor"] = {"id": self.node_id, "address": self_info["address"]}
+        # self._update_server_info(tail_id, tail_info)
+        self.update_server_subkey(
+            tail_id, 
+            "successor", 
+            value={"id": self.node_id, "address": self_info["address"]}
+        )
+
         logger.info(
             f"Updated previous tail's ({tail_id[:DIGITS_SHOW]}) successor to point to new node {self.node_id[:DIGITS_SHOW]}."
         )
@@ -354,13 +360,14 @@ class ChainManager:
             logger.warning("Could not find the head of the chain on the DHT.")
             return None
 
-        head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
+        # head_server_key = f"{SERVER_INFO_PREFIX}{head_id}"
 
         logger.info(f"Attempting to get head server info...")
-        head_info = self.dht.get(head_server_key)
-        if not head_info:
-            logger.error(f"Found head ID {head_id} but could not retrieve its info.")
-            return None
+        head_info = self.get_server_info(head_id)
+        # head_info = self.dht.get(head_server_key)
+        # if not head_info:
+        #     logger.error(f"Found head ID {head_id} but could not retrieve its info.")
+        #     return None
 
         # logger.info(f"Found head server {head_id[:DIGITS_SHOW]} with info: {head_info}")
 
@@ -453,7 +460,8 @@ class ChainManager:
 
     def get_self_info(self) -> Dict[str, Any]:
         """Get the server info dict for this node from the DHT"""
-        self_info = self.dht.get(f"{SERVER_INFO_PREFIX}{self.node_id}")
+        # self_info = self.dht.get(f"{SERVER_INFO_PREFIX}{self.node_id}")
+        self_info = self.get_server_info(self.node_id)
         return self_info
 
     def get_successor_data(self) -> Optional[Dict[str, Any]]:
@@ -471,7 +479,14 @@ class ChainManager:
         return succ_info
 
     def get_server_info(self, node_id: str) -> Optional[Dict[str, Any]]:
-        return self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
+        # return self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
+        raw_info = self.dht.get(f"{SERVER_INFO_PREFIX}{node_id}")
+
+        server_info = {}
+        for subkey, wrapped_value in raw_info.items():
+            server_info[subkey] = wrapped_value.value
+
+        return server_info
 
     def get_layers(self) -> Optional[Tuple[int, int]]:
         """Get the layers tuple for this node from the DHT"""
@@ -803,14 +818,19 @@ class ChainManager:
 
         # Update the replacee's predecessor's successor to point to the replacement node
         if replacee_pred_info:
-            replacee_pred_info["successor"] = {
-                "id": replacement_node_id,
-                "address": replacement_info.get("address"),
-            }
+            # replacee_pred_info["successor"] = {
+            #     "id": replacement_node_id,
+            #     "address": replacement_info.get("address"),
+            # }
             logger.info(
                 "Updating the replacee's predeseccor's successor to point to the replacement..."
             )
-            self._update_server_info(replacee_pred_info.get("id"), replacee_pred_info)
+            self.update_server_subkey(
+                node_id=replacee_pred_info.get("id"),
+                subkey="successor",
+                value={"id": replacement_node_id,"address": replacement_info.get("address")}
+            )
+            # self._update_server_info(replacee_pred_info.get("id"), replacee_pred_info)
 
         self._update_server_info(replacement_node_id, replacement_info)
 
@@ -986,11 +1006,12 @@ class ChainManager:
         """
         Periodically called to maintain the node's presence on the DHT and check chain integrity.
         """
-        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        # server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
         self_info = self.get_self_info()
 
         # Republish this servers' info
-        self.dht.store(server_key, self_info, EXPIRATION_S)
+        # self.dht.store(server_key, self_info, EXPIRATION_S)
+        self._update_server_info(self.node_id, self_info)
 
         # Set the chain leader
         # if self.dht.get(LEADER_KEY) is None:
@@ -1178,7 +1199,7 @@ class ChainManager:
         if tokens_generated is None:
             tokens_generated = 0
         tokens_generated += 1
-        self.dht.store(TOKENS_GENERATED_KEY, tokens_generated, THROUGHPUT_EXPIRATION_S)
+        self.dht.store(TOKENS_GENERATED_KEY, tokens_generated, THROUGHPUT_EXPIRATION_S, return_future=True)
 
         version = self.dht.get(THROUGHPUT_VERSION_KEY)
         key = f"{THROUGHPUT_KEY}{version}"
@@ -1187,6 +1208,7 @@ class ChainManager:
             subkey=time.perf_counter(),
             value=tokens_generated,
             expiration_s=THROUGHPUT_EXPIRATION_S,
+            return_future=True
         )
 
     def init_chain_thoughput(self):
@@ -1210,108 +1232,239 @@ class ChainManager:
     def _update_server_info(self, node_id: int, updated_server_info: Dict[str, Any]):
         """Helper that updates the server_info_(node_id) key of a specific node."""
         server_key = f"{SERVER_INFO_PREFIX}{node_id}"
-        self.dht.store(server_key, updated_server_info, EXPIRATION_S)
+        # self.dht.store(server_key, updated_server_info, EXPIRATION_S)
+        # for subkey, value in updated_server_info.items():
+        #     self.dht.store(key=server_key, subkey=subkey, value=value, expiration_s=EXPIRATION_S)
+        success = self.dht.store_many(
+            key=server_key, 
+            subkeys_values=updated_server_info, 
+            expiration_s=EXPIRATION_S
+        )
+        
+        if not success:
+            logger.warning(f"One or more subkeys failed to store for node {node_id[:DIGITS_SHOW]}")
+
+    def update_server_subkey(self, node_id: int, subkey: str, value: Any):
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{node_id}",
+            subkey=subkey,
+            value=value,
+            expiration_s=EXPIRATION_S
+        )
 
     def update_layers(self, new_layers: Tuple[int, int]):
-        self_info = self.get_self_info()
-        self_info["layers"] = new_layers
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["layers"] = new_layers
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="layers",
+            value=new_layers,
+            expiration_s=EXPIRATION_S
+        )
 
     def update_layers_loaded(self, layers_loaded: bool):
         """Subkey that that shows if all the server's assigned layers have been loaded"""
-        self_info = self.get_self_info()
-        self_info["layers_loaded"] = layers_loaded
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["layers_loaded"] = layers_loaded
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="layers_loaded",
+            value=layers_loaded,
+            expiration_s=EXPIRATION_S
+        )
 
     def update_load_output_layer(self, load_output_layer: bool):
-        self_info = self.get_self_info()
-        self_info["load_output_layer"] = load_output_layer
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["load_output_layer"] = load_output_layer
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="load_output_layer",
+            value=load_output_layer,
+            expiration_s=EXPIRATION_S
+        )       
 
     def update_output_layer_loaded(self, output_layer_loaded: bool):
-        self_info = self.get_self_info()
-        self_info["output_layer_loaded"] = output_layer_loaded
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["output_layer_loaded"] = output_layer_loaded
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="output_layer_loaded",
+            value=output_layer_loaded,
+            expiration_s=EXPIRATION_S
+        )            
 
-    def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float):
-        self_info = self.get_self_info()
-        self_info["output_layer_temporal_tle"] = output_layer_temporal_tle
-        self._update_server_info(self.node_id, self_info)
+    def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float, return_future):
+        # self_info = self.get_self_info()
+        # self_info["output_layer_temporal_tle"] = output_layer_temporal_tle
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="output_layer_temporal_tle",
+            value=output_layer_temporal_tle,
+            expiration_s=EXPIRATION_S,
+            return_future=return_future
+        )  
 
     def update_output_layer_memory_tle(self, output_layer_memory_tle: float):
-        self_info = self.get_self_info()
-        self_info["output_layer_memory_tle"] = output_layer_memory_tle
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["output_layer_memory_tle"] = output_layer_memory_tle
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="output_layer_memory_tle",
+            value=output_layer_memory_tle,
+            expiration_s=EXPIRATION_S
+        )         
 
     def update_device(self, device: str):
-        self_info = self.get_self_info()
-        self_info["device"] = device
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["device"] = device
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="device",
+            value=device,
+            expiration_s=EXPIRATION_S
+        )             
 
     def update_memory(self, mem_usage: float, mem_limit: float, avail_mem: float):
-        self_info = self.get_self_info()
-        self_info["memory_usage"] = mem_usage
-        self_info["memory_limit"] = mem_limit
-        self_info["available_memory"] = avail_mem
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["memory_usage"] = mem_usage
+        # self_info["memory_limit"] = mem_limit
+        # self_info["available_memory"] = avail_mem
+        # self._update_server_info(self.node_id, self_info)
+        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(key=server_key, subkey="memory_usage", value=mem_usage, expiration_s=EXPIRATION_S)
+        self.dht.store(key=server_key, subkey="memory_limit", value=mem_limit, expiration_s=EXPIRATION_S)
+        self.dht.store(key=server_key, subkey="available_memory", value=avail_mem, expiration_s=EXPIRATION_S)
 
     def update_vram(self, vram_usage: float, vram_limit: float, avail_vram: float):
-        self_info = self.get_self_info()
-        self_info["vram_usage"] = vram_usage
-        self_info["vram_limit"] = vram_limit
-        self_info["available_vram"] = avail_vram
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["vram_usage"] = vram_usage
+        # self_info["vram_limit"] = vram_limit
+        # self_info["available_vram"] = avail_vram
+        # self._update_server_info(self.node_id, self_info)
+        server_key = f"{SERVER_INFO_PREFIX}{self.node_id}"
+        self.dht.store(key=server_key, subkey="vram_usage", value=vram_usage, expiration_s=EXPIRATION_S)
+        self.dht.store(key=server_key, subkey="vram_limit", value=vram_limit, expiration_s=EXPIRATION_S)
+        self.dht.store(key=server_key, subkey="available_vram", value=avail_vram, expiration_s=EXPIRATION_S)
 
     def update_kv_cache_size(self, kv_cache_memories: Dict[str, float]):
         """kv_cache_memories = {"client-addr-1": 100.23 MB, "client-addr-2": 100.23 MB}"""
-        self_info = self.get_self_info()
-        self_info["kv_cache_memories"] = kv_cache_memories
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["kv_cache_memories"] = kv_cache_memories
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="kv_cache_memories",
+            value=kv_cache_memories,
+            expiration_s=EXPIRATION_S
+        )          
 
     def update_successor(self, new_successor_data: str = None):
-        self_info = self.get_self_info()
-        self_info["successor"] = new_successor_data
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["successor"] = new_successor_data
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="successor",
+            value=new_successor_data,
+            expiration_s=EXPIRATION_S
+        )         
 
-    def update_processing_rate(self, processing_rate: int = 0):
-        self_info = self.get_self_info()
-        self_info["processing_rate"] = processing_rate
-        self._update_server_info(self.node_id, self_info)
+    def update_processing_rate(self, processing_rate: int = 0, return_future: Optional[bool] = False):
+        # self_info = self.get_self_info()
+        # self_info["processing_rate"] = processing_rate
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="processing_rate",
+            value=processing_rate,
+            expiration_s=EXPIRATION_S,
+            return_future=return_future
+        )             
 
     def update_inference_executor_delay(self, inference_executor_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["inference_executor_delay"] = inference_executor_delay
-        self._update_server_info(self.node_id, self_info)    
+        # self_info = self.get_self_info()
+        # self_info["inference_executor_delay"] = inference_executor_delay
+        # self._update_server_info(self.node_id, self_info)    
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="inference_executor_delay",
+            value=inference_executor_delay,
+            expiration_s=EXPIRATION_S
+        )          
 
-    def update_inference_delay(self, inference_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["inference_delay"] = inference_delay
-        self._update_server_info(self.node_id, self_info)
+    def update_inference_delay(self, inference_delay: float = 0.0, return_future: Optional[bool] = False):
+        # self_info = self.get_self_info()
+        # self_info["inference_delay"] = inference_delay
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="inference_delay",
+            value=inference_delay,
+            expiration_s=EXPIRATION_S,
+            return_future=return_future
+        )           
 
     def update_logit_sampling_delay(self, logit_sampling_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["logit_sampling_delay"] = logit_sampling_delay
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["logit_sampling_delay"] = logit_sampling_delay
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="logit_sampling_delay",
+            value=logit_sampling_delay,
+            expiration_s=EXPIRATION_S
+        )         
 
     def update_ensure_kv_cache_delay(self, ensure_kv_cache_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["ensure_kv_cache_delay"] = ensure_kv_cache_delay
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["ensure_kv_cache_delay"] = ensure_kv_cache_delay
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="ensure_kv_cache_delay",
+            value=ensure_kv_cache_delay,
+            expiration_s=EXPIRATION_S
+        )        
 
     def update_deserialization_delay(self, deserialization_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["deserialization_delay"] = deserialization_delay
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["deserialization_delay"] = deserialization_delay
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="deserialization_delay",
+            value=deserialization_delay,
+            expiration_s=EXPIRATION_S
+        )          
 
     def update_serialization_delay(self, serialization_delay: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["serialization_delay"] = serialization_delay
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["serialization_delay"] = serialization_delay
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="serialization_delay",
+            value=serialization_delay,
+            expiration_s=EXPIRATION_S
+        )        
 
     def update_grpc_overhead(self, grpc_overhead: float = 0.0):
-        self_info = self.get_self_info()
-        self_info["grpc_overhead"] = grpc_overhead
-        self._update_server_info(self.node_id, self_info)
+        # self_info = self.get_self_info()
+        # self_info["grpc_overhead"] = grpc_overhead
+        # self._update_server_info(self.node_id, self_info)
+        self.dht.store(
+            key=f"{SERVER_INFO_PREFIX}{self.node_id}",
+            subkey="grpc_overhead",
+            value=grpc_overhead,
+            expiration_s=EXPIRATION_S
+        )              
 
     
     def make_node_backup(

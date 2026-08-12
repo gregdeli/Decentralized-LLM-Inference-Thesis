@@ -34,13 +34,21 @@ def main():
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
-    # Initialize the Client Node
     grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
+
+    quantize_flag_str = os.getenv("QUANTIZE", "1")
+    quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
+
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.getLogger().setLevel(getattr(logging, log_level_str))
+
+    # Initialize the Client Node
     client = Client(
         model_path=Path(model_path_str),
         host_maddrs=[host_maddrs],
         initial_peers=initial_peers,
-        grpc_addr = grpc_addr
+        grpc_addr = grpc_addr,
+        quantize_flag=quantize_flag
     )
     logger.info("Client initialized.")
 
@@ -61,15 +69,15 @@ def main():
                 continue
 
             print(f"\n---------Response---------")
-            response_text = ""
+            # response_text = ""
             try:
                 for token in token_generator:
-                    response_text += token
+                    # response_text += token
                     print(token, end="", flush=True)
             except KeyboardInterrupt:
                 print("\nStopping text generation...")
 
-            conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
+            # conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
 
             # Stats 
             stats = client.last_inference_stats

@@ -13,7 +13,7 @@ import ctypes
 from core.remote import nodeservice_pb2, nodeservice_pb2_grpc
 from core.remote.utils import create_grpc_channel
 from core.remote.serialization import request_to_tensor
-from core.constants import GLOBAL_MAX_SEQ_LEN
+from core.constants import GLOBAL_MAX_SEQ_LEN, GRPC_MAX_WORKERS
 
 from core.p2p.chain_manager import ChainStatus
 
@@ -27,7 +27,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def __init__(self, server_node: "Server"):
         self.server_node = server_node
 
-        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.inference_executor = concurrent.futures.ThreadPoolExecutor(max_workers=GRPC_MAX_WORKERS)
 
     def GetPeerMultiaddr(self, request, context):
         visible_maddrs = self.server_node.dht.get_visible_maddrs()

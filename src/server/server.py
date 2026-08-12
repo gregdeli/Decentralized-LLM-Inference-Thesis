@@ -513,7 +513,8 @@ class Server:
         if self.processing_rate == 0:
             self.processing_rate = current_rate
         else:
-            self.processing_rate = (0.7 * self.processing_rate) + (0.3 * current_rate)
+            # self.processing_rate = (0.7 * self.processing_rate) + (0.3 * current_rate)
+            self.processing_rate = (0.8 * self.processing_rate) + (0.2 * current_rate)
 
     @torch.no_grad()
     def _profile_node(
@@ -622,15 +623,6 @@ class Server:
                 error_message="Server-side ERROR: A node in the chain does not have its layers loaded."
             )
 
-        # Ensure inputs are on the same device as the model
-        # device = self.llm.device
-
-        # if input_tensor.device != device:
-        #     input_tensor = input_tensor.to(device)
-
-        # if input_pos is not None and input_pos.device != device:
-        #     input_pos = input_pos.to(device)
-
         # If KV caches have been reallocated the generation needs to stop because the context is lost
         if (
             self.model.client_cache_reallocated(client_id=response_address)
@@ -676,16 +668,20 @@ class Server:
 
             self.inference_delay = transformer_layer_delay + output_layer_delay
             logger.info(f"Inference Delay: {self.inference_delay:.6f}")
-            # self.chain.update_inference_delay(self.inference_delay)
+
+            self.chain.update_inference_delay(self.inference_delay, return_future=True)
 
             # Recalculate Output Temporal TLE
             if output_layer_delay > 0.0 and transformer_layer_delay > 0.0:
                 self.output_layer_temporal_tle = output_layer_delay / (transformer_layer_delay / self.model.num_layers)
-                # self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
+                self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle, return_future=True)
+                logger.info(f"Output Layer TLE: {self.output_layer_temporal_tle}")
 
 
             self._calculate_processing_rate(self.inference_delay)
-            # self.chain.update_processing_rate(self.processing_rate)
+            self.chain.update_processing_rate(self.processing_rate, return_future=True)
+
+            logger.info(f"Processing Rate: {self.processing_rate:2f} l/s")
 
         # logger.info(
         #     f"Layers {self.model.num_layers + self.output_layer_temporal_tle if self.model.output_layer_loaded else self.model.num_layers}: "
@@ -707,11 +703,7 @@ class Server:
             # self.chain.update_logit_sampling_delay(logit_sampling_delay)
 
             # Benchmarking
-            start = time.perf_counter()
             # self.chain.update_chain_throughput()
-
-            update_chain_throughput_delay = time.perf_counter() - start
-            logger.info(f"Update Chain Throughput Delay: {update_chain_throughput_delay:.6f}")
 
             if not response_address:
                 logger.error("Tail node has no response_address for the client!")
@@ -1524,18 +1516,18 @@ def serve():
             if data == b"DISCOVER_BOOTSTRAP":
                 sock.sendto(response_b, addr)
 
-    # chain_monitor_thread = threading.Thread(
-    #     target=_chain_health_monitor_task, args=(server_node,), daemon=True
-    # )
-    # chain_monitor_thread.start()
+    chain_monitor_thread = threading.Thread(
+        target=_chain_health_monitor_task, args=(server_node,), daemon=True
+    )
+    chain_monitor_thread.start()
 
-    # dht_heartbeat_thread = threading.Thread(
-    #     target=_dht_heartbeat_task, args=(server_node,), daemon=True
-    # )
-    # dht_heartbeat_thread.start()
+    dht_heartbeat_thread = threading.Thread(
+        target=_dht_heartbeat_task, args=(server_node,), daemon=True
+    )
+    dht_heartbeat_thread.start()
 
-    # udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)
-    # udp_discovery_thread.start()
+    udp_discovery_thread = threading.Thread(target=_udp_discovery_server, daemon=True)
+    udp_discovery_thread.start()
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):

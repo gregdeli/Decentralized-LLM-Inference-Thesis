@@ -686,7 +686,7 @@ class Client:
         while tokens_generated < max_new_tokens:
             start_itl = time.perf_counter()
 
-            self.chain.update_chain_status(ChainStatus.RUNNING)
+            # self.chain.update_chain_status(ChainStatus.RUNNING)
 
             x, self.initial_inference_delay = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
 
