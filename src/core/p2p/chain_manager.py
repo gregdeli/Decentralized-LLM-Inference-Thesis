@@ -1297,7 +1297,7 @@ class ChainManager:
             expiration_s=EXPIRATION_S
         )            
 
-    def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float, return_future):
+    def update_output_layer_temporal_tle(self, output_layer_temporal_tle: float, return_future: Optional[bool] = False):
         # self_info = self.get_self_info()
         # self_info["output_layer_temporal_tle"] = output_layer_temporal_tle
         # self._update_server_info(self.node_id, self_info)

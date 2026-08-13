@@ -1,19 +1,34 @@
+"""
+usage: distributed_chatbot.py [-h] [--prompt PROMPT] [--max_new_tokens MAX_NEW_TOKENS] [--stream]
+"""
+
 import os
+import argparse
 from dotenv import load_dotenv
 from pathlib import Path
 import logging
 
 from client.client import Client
-from core.remote.utils import get_bootstrap_peer_address, get_ip_address, discover_bootstrap_node_address
+from core.remote.utils import (
+    get_bootstrap_peer_address, 
+    get_ip_address, 
+    discover_bootstrap_node_address,
+    get_free_port
+)
 
 logger = logging.getLogger(__name__)
 
 # To not show netlinkrib errors on moto
 os.environ["GOLOG_LOG_LEVEL"] = "fatal"
 
-GPRC_PORT = 5001
-
 def main():
+    # Set up argument parsing
+    parser = argparse.ArgumentParser(description="Distributed LLM Inference Chatbot")
+    parser.add_argument("--prompt", type=str, default=None, help="Input prompt for the LLM. If provided, the script runs once and exits.")
+    parser.add_argument("--max_new_tokens", type=int, default=250, help="Maximum number of new tokens to generate.")
+    parser.add_argument("--stream", action="store_true", help="Enable token streaming output.")
+    args = parser.parse_args()
+
     load_dotenv()
     model_path_str = os.getenv("MODEL_PATH")
 
@@ -34,13 +49,17 @@ def main():
     bootstrap_peer_addr = get_bootstrap_peer_address(bootstrap_addr, attempts=5)
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
-    grpc_addr = grpc_addr = f"{my_ip}:{GPRC_PORT}"
+    # Initialize the Client Node
+    grpc_port = os.getenv("GRPC_PORT")
+    grpc_port = grpc_port if grpc_port else get_free_port()
+    grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
+
+    # Set log level
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.getLogger().setLevel(getattr(logging, log_level_str))
 
     quantize_flag_str = os.getenv("QUANTIZE", "1")
     quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
-
-    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
-    logging.getLogger().setLevel(getattr(logging, log_level_str))
 
     # Initialize the Client Node
     client = Client(
@@ -53,31 +72,49 @@ def main():
     logger.info("Client initialized.")
 
     try:
-        conversation = ""  # Chat history
+        # Single-shot execution if a prompt is passed via CLI
+        if args.prompt:
+            logger.info("Initiating text generation...")
+            token_generator = client.generate(
+                args.prompt, 
+                max_new_tokens=args.max_new_tokens, 
+                stream=args.stream
+            )
+
+            if token_generator:
+                print("\n---------Response---------")
+                try:
+                    for token in token_generator:
+                        print(token, end="", flush=True)
+                except KeyboardInterrupt:
+                    print("\nStopping text generation...")
+
+                stats = client.last_inference_stats
+                latency = stats.get("latency")
+                throughput = stats.get("throughput")
+                print(f"\n\nGeneration Time: {latency:.2f}s")
+                print(f"Throughput: {throughput:.2f} tokens/sec\n")
+            return
+
         while True:
-            client.print_chain_status()
+            # client.print_chain_status()
 
             prompt = input("\nEnter prompt: ")
 
             logger.info(f"Initiating text generation...")
-            # full_prompt = conversation + "\n" + prompt
-            full_prompt = prompt
-            token_generator = client.generate(full_prompt, max_new_tokens=250, stream=True)
+
+            token_generator = client.generate(prompt, max_new_tokens=args.max_new_tokens, stream=args.stream)
 
             if not token_generator:
                 input("Press Enter to continue...")
                 continue
 
             print(f"\n---------Response---------")
-            # response_text = ""
             try:
                 for token in token_generator:
-                    # response_text += token
                     print(token, end="", flush=True)
             except KeyboardInterrupt:
                 print("\nStopping text generation...")
-
-            # conversation += f"\nUser: {prompt}\nAssistant: {response_text}"
 
             # Stats 
             stats = client.last_inference_stats

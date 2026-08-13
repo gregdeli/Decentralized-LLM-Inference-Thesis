@@ -715,7 +715,7 @@ class Server:
             response = tensor_to_response(next_token)
 
             serialization_delay = time.perf_counter() - start
-            logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+            logger.warning(f"Serialization Delay: {serialization_delay:.12f}")
             # self.chain.update_serialization_delay(serialization_delay)
 
             # Connect to Client
@@ -728,7 +728,7 @@ class Server:
                 self.client_stub.ReceiveResponse(response)
 
                 self.grpc_overhead = time.perf_counter() - start
-                logger.info(f"GRPC Overhead: {self.grpc_overhead:.6f}")
+                logger.warning(f"GRPC Overhead: {self.grpc_overhead:.12f}")
                 # self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:
@@ -755,7 +755,7 @@ class Server:
         request.response_address = response_address
 
         serialization_delay = time.perf_counter() - start
-        logger.info(f"Serialization Delay: {serialization_delay:.6f}")
+        logger.warning(f"Serialization Delay: {serialization_delay:.12f}")
         # self.chain.update_serialization_delay(serialization_delay)
 
         try:
@@ -768,7 +768,7 @@ class Server:
             succ_deserialization_delay = response.deserialization_delay
 
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
-            logger.info(f"GRPC Overhead: {self.grpc_overhead:.6f}")
+            logger.warning(f"GRPC Overhead: {self.grpc_overhead:.12f}")
             # self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (
@@ -1354,8 +1354,8 @@ def serve():
     model_path_str = os.getenv("MODEL_PATH")
     model_path = Path(model_path_str)
 
-    num_layers_str = os.getenv("NUM_LAYERS")
-    num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str is not None else None
+    num_layers_str = os.getenv("NUM_LAYERS", None)
+    num_layers = int(os.getenv("NUM_LAYERS")) if num_layers_str else None
 
     added_delay_str = os.getenv("ADDED_DELAY")
     added_delay = float(os.getenv("ADDED_DELAY")) if added_delay_str is not None else None
@@ -1564,6 +1564,8 @@ def serve():
         server_node.chain.update_chain_status(ChainStatus.READY)
     else:
         server_node.chain.update_chain_status(ChainStatus.UNREADY)
+
+    logger.info("Server is running...")
 
     grpc_server.wait_for_termination()
 
