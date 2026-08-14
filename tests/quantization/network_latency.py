@@ -1,6 +1,6 @@
 """
 Tests the viability of intermediate activation quantization.
-Switch between 16-bit and 8-bit quantized for different bandwidths and measure the average decoding stage network latency.
+Switch between 16-bit and 8-bit quantized for different bandwidths for all the LLMs and measure the average network latency.
 
 worker-A: cpu 10GB
 worker-B: cuda 
@@ -16,15 +16,10 @@ MODELS = [
     "models/Llama-3.2-3B-Instruct",
     "models/Llama-3.1-8B-Instruct",
 ]
-BANDWIDTHS = ["1mbit", "10mbit", "100mbit", "1000mbit"]
+BANDWIDTHS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100", "1000"]
+# BANDWIDTHS = ["250mbit"]
 QUANTIZE_FLAGS = ["0", "1"]
 
-# def update_env(model_path, quantize_flag):
-#     with open(".env", "w") as f:
-#         f.write(f"MODEL_PATH={model_path}\n")
-#         f.write(f"QUANTIZE={quantize_flag}\n")
-#         f.write("PROFILE=0\n")
-#         f.write("LOG_LEVEL=WARNING\n")
 
 def wait_for_container_log(service_name, target_string, timeout=120):
     print(f"Waiting for {service_name} to initialize...")
@@ -52,9 +47,7 @@ def run_benchmarks():
     for model in MODELS:
         for bw in BANDWIDTHS:
             for quant in QUANTIZE_FLAGS:
-                print(f"Testing -> Model: {model} | Bandwidth: {bw} | Quantize: {quant}")
-
-                # update_env(model, quant)
+                print(f"Testing -> Model: {model} | Bandwidth: {bw} Mbps | Quantize: {quant}")
 
                 target_log = "Server is running..."
 
@@ -75,7 +68,7 @@ def run_benchmarks():
                     "docker", "run", "-d", "--rm", "--name", "pumba_netem",
                     "-v", "/var/run/docker.sock:/var/run/docker.sock",
                     "ghcr.io/alexei-led/pumba:latest",
-                    "netem", "--duration", "10m", "rate", "--rate", bw,
+                    "netem", "--duration", "10m", "rate", "--rate", f"{bw}mbit",
                     "re2:^decentralized-llm-inference-thesis"
                 ]
                 subprocess.run(pumba_cmd, check=True)
@@ -103,6 +96,8 @@ def run_benchmarks():
                 prefill_grpc = grpc_overheads[0]
                 prefill_deser = deser_delays[0]
 
+                total_prefill_latency = prefill_ser + prefill_grpc + prefill_deser
+
                 ser_delays = ser_delays[1:]
                 grpc_overheads = grpc_overheads[1:]
                 deser_delays = deser_delays[1:]
@@ -111,7 +106,7 @@ def run_benchmarks():
                 avg_grpc = sum(grpc_overheads) / len(grpc_overheads) if grpc_overheads else 0
                 avg_deser = sum(deser_delays) / len(deser_delays) if deser_delays else 0
 
-                total_latency = avg_ser + avg_grpc + avg_deser
+                total_decoding_latency = avg_ser + avg_grpc + avg_deser
 
                 results.append({
                     "Model": model,
@@ -120,10 +115,11 @@ def run_benchmarks():
                     "Prefill_Serialization_Delay": prefill_ser,
                     "Prefill_GRPC_Overhead": prefill_grpc,
                     "Prefill_Deserialization_Delay": prefill_deser,
+                    "Total_Prefill_Network_Latency": total_prefill_latency,
                     "Decoding_Avg_Serialization_Delay": avg_ser,
                     "Decoding_Avg_GRPC_Overhead": avg_grpc,
                     "Decoding_Avg_Deserialization_Delay": avg_deser,
-                    "Total_Decoding_Avg_Network_Latency": total_latency
+                    "Total_Decoding_Avg_Network_Latency": total_decoding_latency
                 })
 
                 # Teardown
@@ -131,7 +127,7 @@ def run_benchmarks():
                 subprocess.run(["docker", "compose", "down", "-v"], check=True)
                 time.sleep(5)
 
-    with open("src/tests/quantization/results.csv", "w", newline="") as f:
+    with open("tests/quantization/big_results.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)

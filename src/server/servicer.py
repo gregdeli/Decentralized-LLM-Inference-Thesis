@@ -64,7 +64,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             input_pos = input_pos.to(self.server_node.device)
 
         deserialization_delay = time.perf_counter() - start
-        logger.warning(f"Deserialization Delay: {deserialization_delay:.12f}")
+        logger.info(f"Deserialization Delay: {deserialization_delay:.12f}")
         # self.server_node.chain.update_deserialization_delay(deserialization_delay)
 
         # threading.Thread(

@@ -715,7 +715,7 @@ class Server:
             response = tensor_to_response(next_token)
 
             serialization_delay = time.perf_counter() - start
-            logger.warning(f"Serialization Delay: {serialization_delay:.12f}")
+            logger.info(f"Serialization Delay: {serialization_delay:.12f}")
             # self.chain.update_serialization_delay(serialization_delay)
 
             # Connect to Client
@@ -728,7 +728,7 @@ class Server:
                 self.client_stub.ReceiveResponse(response)
 
                 self.grpc_overhead = time.perf_counter() - start
-                logger.warning(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+                logger.info(f"GRPC Overhead: {self.grpc_overhead:.12f}")
                 # self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:
@@ -755,7 +755,7 @@ class Server:
         request.response_address = response_address
 
         serialization_delay = time.perf_counter() - start
-        logger.warning(f"Serialization Delay: {serialization_delay:.12f}")
+        logger.info(f"Serialization Delay: {serialization_delay:.12f}")
         # self.chain.update_serialization_delay(serialization_delay)
 
         try:
@@ -768,7 +768,7 @@ class Server:
             succ_deserialization_delay = response.deserialization_delay
 
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
-            logger.warning(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+            logger.info(f"GRPC Overhead: {self.grpc_overhead:.12f}")
             # self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (
