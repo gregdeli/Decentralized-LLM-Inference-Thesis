@@ -714,6 +714,10 @@ class Client:
             tokens_generated += 1
             self.last_itl = time.perf_counter() - start_itl
 
+            # TEEEEEST
+            logger.debug(f"Tokens Generated: {tokens_generated}")
+            logger.debug(f"Token Generated at: {time.perf_counter()}")
+
             input_tensor = next_token
             current_pos = prompt_length + len(generated_ids)
             input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
@@ -894,6 +898,10 @@ class Client:
             start = time.perf_counter()
             yield decoded_token
             self.yield_delay = time.perf_counter() - start
+
+            # TEEEEEst
+            logger.debug(f"Tokens Generated: {tokens_generated}")
+            logger.debug(f"Token Generated at: {time.perf_counter()}")
 
             self.last_itl = time.perf_counter() - start_itl
 

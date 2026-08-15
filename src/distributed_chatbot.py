@@ -81,8 +81,16 @@ def main():
                 stream=args.stream
             )
 
-            if token_generator:
-                print("\n---------Response---------")
+            if not token_generator:
+                print("Error!")
+                return
+
+            print("\n---------Response---------")
+
+            if isinstance(token_generator, str):
+                print(token_generator)
+
+            else:
                 try:
                     for token in token_generator:
                         print(token, end="", flush=True)
@@ -110,11 +118,18 @@ def main():
                 continue
 
             print(f"\n---------Response---------")
-            try:
-                for token in token_generator:
-                    print(token, end="", flush=True)
-            except KeyboardInterrupt:
-                print("\nStopping text generation...")
+            
+            # Buffered generation
+            if isinstance(token_generator, str):
+                print(token_generator)
+
+            # Streaming Generation
+            else:
+                try:
+                    for token in token_generator:
+                        print(token, end="", flush=True)
+                except KeyboardInterrupt:
+                    print("\nStopping text generation...")
 
             # Stats 
             stats = client.last_inference_stats
