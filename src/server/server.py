@@ -56,6 +56,7 @@ class Server:
         self,
         grpc_addr: str,
         model_path: Path,
+        device: str = None,
         num_layers: int = None,
         added_delay: float = None,  # Debugging
         time_it: bool = False,
@@ -70,22 +71,29 @@ class Server:
         self.grpc_addr = grpc_addr
 
         self.model_path = model_path
-        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = "cpu"
-        if torch.cuda.is_available():
-            try:
-                free_bytes, _ = torch.cuda.mem_get_info()
-                free_mb = free_bytes / (1024 * 1024)
 
-                # Force PyTorch's CUDACachingAllocator to initialize
-                _dummy = torch.empty(1, device="cuda")
+        # Set the device
+        if device is not None:
+            if device == "cpu":
+                self.device = "cpu"
+            elif device == "cuda" and torch.cuda.is_available():
+                self.device = "cuda"
+        else:
+            self.device = "cpu"
+            if torch.cuda.is_available():
+                try:
+                    free_bytes, _ = torch.cuda.mem_get_info()
+                    free_mb = free_bytes / (1024 * 1024)
 
-                free_bytes, _ = torch.cuda.mem_get_info()
-                free_mb = free_bytes / (1024 * 1024)
-                if free_mb >= RESERVED_MEM_MB:
-                    self.device = "cuda"
-            except RuntimeError as e:
-                logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
+                    # Force PyTorch's CUDACachingAllocator to initialize
+                    _dummy = torch.empty(1, device="cuda")
+
+                    free_bytes, _ = torch.cuda.mem_get_info()
+                    free_mb = free_bytes / (1024 * 1024)
+                    if free_mb >= RESERVED_MEM_MB:
+                        self.device = "cuda"
+                except RuntimeError as e:
+                    logger.warning(f"Failed to allocate CUDA context, defaulting to CPU. Error: {e}")
 
         # Locks
         self._repair_lock = threading.Lock()
@@ -1400,6 +1408,8 @@ def serve():
     quantize_flag_str = os.getenv("QUANTIZE", "1")
     quantize_flag = quantize_flag_str.lower() in ("1", "true", "yes")
 
+    device = os.getenv("DEVICE", None)
+
     # Initialize the server object
     server_node = Server(
         model_path=model_path,
@@ -1409,6 +1419,7 @@ def serve():
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
         quantize_flag=quantize_flag,
+        device=device
     )
 
     # Start GRPC server
