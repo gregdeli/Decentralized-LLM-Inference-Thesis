@@ -8,14 +8,14 @@ from core.llm_loader import LLM
 logger = logging.getLogger(__name__)
 
 # model_path = Path("/models/Llama-3.2-3B-Instruct")
-model_path = Path("models/Llama-3.2-1B")
+model_path = Path("models/Llama-3.2-1B-Instruct")
 
 with open(f"{model_path}/config.json", "r") as f:
     config = json.load(f)
 
 num_layers = config.get("num_hidden_layers")
 
-llm = LLM.load(model_path, layers_to_load=(0, num_layers - 1), time_it=True)
+llm = LLM.load(model_path, load_initial_layer=True, layers_to_load=(0, num_layers - 1), load_output_layer=True, time_it=True)
 
 # No Stream
 # prompt = "What is the capital of France?"
@@ -31,7 +31,7 @@ try:
 
         print(f"\n-----Response-----\n", end="", flush=True)
 
-        token_generator = llm.generate(prompt, max_new_tokens=500, stream=True)
+        token_generator = llm.generate(prompt, max_new_tokens=1024, stream=True)
 
         # Iterate over the generator and print each token as it arrives
         try:

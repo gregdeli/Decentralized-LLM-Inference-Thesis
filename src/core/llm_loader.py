@@ -52,7 +52,7 @@ class LLM:
         self.device = device
         self.dtype = dtype
 
-        self.chat_history = []
+        self.chat_history = None
 
     """
     High-level API for loading a Llama 3.2 model and generating text.
@@ -170,7 +170,6 @@ class LLM:
     def generate(
         self,
         prompt: Union[str, List[str]],
-        # sys_prompt: Optional[str] = None,
         max_new_tokens: int = 50,
         temperature: float = 0.6,
         top_p: float = 0.9,
@@ -179,10 +178,16 @@ class LLM:
     ) -> Union[str, Iterator[str]]:
 
         prompt = self.apply_chat_template(prompt)
-        self.chat_history.append(prompt)
 
-        full_prompt = "".join(self.chat_history)
-        input_ids = self.preprocessor.encode(full_prompt)
+        input_ids = self.preprocessor.encode(prompt)
+
+        if self.chat_history is None:
+            self.chat_history = input_ids
+            history_length = 0
+        else:
+            history_length = self.chat_history.size(1)
+            self.chat_history = torch.cat([self.chat_history, input_ids], dim=1)
+
         prompt_length = input_ids.size(1)
         max_returned_tokens = prompt_length + max_new_tokens
 
@@ -194,8 +199,6 @@ class LLM:
 
         # Ensure kv cache
         if not self.model.client_has_cache(client_id="test"):
-            # if self.chain.is_head():
-            #     self.chain.init_chain_thoughput()
 
             max_seq_length = GLOBAL_MAX_SEQ_LEN
 
@@ -210,7 +213,14 @@ class LLM:
         self.model.set_active_client(client_id="test")
 
         if stream:
-            return self._generate_stream(input_ids, max_new_tokens, temperature, top_p)
+            return self._generate_stream(
+                history_length,
+                prompt_length,
+                input_ids,
+                max_new_tokens, 
+                temperature, 
+                top_p
+            )
 
         # If not streaming the output
         decoded_text = self._generate_fn(
@@ -259,34 +269,44 @@ class LLM:
     @torch.no_grad()
     def _generate_stream(
         self,
+        history_length: int,
+        prompt_length: int,
         input_ids: torch.Tensor,
         max_new_tokens: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
     ) -> Iterator[str]:
         """A generator function that yields decoded string chunks."""
-        prompt_length = input_ids.size(1)
-        input = input_ids
-        input_pos = None
 
-        for i in range(max_new_tokens):
-            logits = self.model(input, input_pos=input_pos)
+        input_tensor = input_ids
+        seq_length = prompt_length
+
+        input_pos = torch.arange(history_length, history_length + seq_length, device=self.device)
+
+        tokens_generated = 0
+
+        while tokens_generated < max_new_tokens:
+            logits = self.model(input_tensor, seq_length, input_pos)
 
             next_token = self.sample_logits(logits, temperature, top_p)
 
+            self.chat_history = torch.cat([self.chat_history, next_token], dim=1)
+
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.preprocessor.tokenizer.eos_token_id:
-                self.chat_history.append(self.preprocessor.tokenizer.eos_token)
                 break
 
             # Decode and yield the new token
             decoded_token = self.preprocessor.decode(next_token)
+
+            tokens_generated += 1
+
             yield decoded_token
 
-            self.chat_history.append(decoded_token)
-            input = next_token
-            current_pos = prompt_length + (i + 1)
+            input_tensor = next_token
+            current_pos = self.chat_history.size(1) - 1
             input_pos = torch.tensor([current_pos], device=self.preprocessor.device)
+            seq_length = 1
 
     def apply_chat_template(self, prompt: str) -> str:
         """

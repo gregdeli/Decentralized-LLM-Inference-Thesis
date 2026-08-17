@@ -59,50 +59,44 @@ class Llama3(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input: torch.Tensor,
+        seq_length: Optional[int] = None,
         input_pos: Optional[torch.Tensor] = None,
-        # input_pos_maxp1: Optional[int] = None,  # Xrisimpopoieitai otan kanoume compile
     ) -> torch.Tensor:
-        T = input_ids.size(1)
-        if self.max_seq_length < T:
-            raise ValueError(
-                f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}."
-            )
-
         if self.rope_cache is None:
-            self.rope_cache = self.build_rope_cache(device=input_ids.device)
+            self.rope_cache = self.build_rope_cache(device=input.device)
 
-        # Get the RoPE embeddings for the current sequence
-        cos, sin = self.rope_cache
-        if input_pos is None:  # prefill
-            cos = cos[:T]
-            sin = sin[:T]
-        else:  # generation
+        # Get embeddings
+        h = self.embed_tokens(input)
+
+        if self.num_layers > 0:
+            T = seq_length
+            # Get the RoPE embeddings for the current sequence
+            cos, sin = self.rope_cache
             cos = cos[input_pos]
             sin = sin[input_pos]
 
-        # Get the attention mask
-        mask = self.mask_cache
-        if mask is not None and T > 1:  # prefill
-            mask = mask[:, :, :T, :T]
-        else:
-            mask = None
+            # Get the attention mask
+            mask = self.mask_cache
+            if mask is not None and T > 1:  # prefill
+                entire_seq_len = input_pos.max() + 1
+                mask = mask[:, :, input_pos, :entire_seq_len]
+            else:
+                mask = None
 
-        # Forward pass
-        x = self.embed_tokens(input_ids)
-
-        if self.num_layers > 0:
             for block in self.layers.values():
-                x = block(x, cos, sin, mask, input_pos)
+                h = block(h, cos, sin, mask, input_pos)
 
-        x = self.norm(x)
-        logits = self.lm_head(x)
+        # Output layer
+        if self.output_layer_loaded:
+            x = self.norm(h)
+            logits = self.lm_head(x)
+
         return logits
 
     def forward_client_initial(
         self,
         input_ids: torch.Tensor,
-        # input_pos: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, float]:
         T = input_ids.size(1)
         if self.max_seq_length < T:
