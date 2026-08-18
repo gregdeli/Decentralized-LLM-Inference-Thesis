@@ -53,7 +53,7 @@ plt.ylabel('Token Count')
 # Apply uniform Y-axis scale (0 to global maximum)
 # plt.ylim(0, global_y_max)
 
-# plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+plt.grid(True)
 plt.legend()
 
 # Automatically adjust layout and display the plot
