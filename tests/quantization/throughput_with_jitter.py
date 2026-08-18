@@ -13,14 +13,14 @@ import re
 import csv
 
 MODELS = [
-    "models/Llama-3.1-8B-Instruct",
+    "models/Llama-3.2-3B-Instruct",
 ]
-BANDWIDTHS = ["10"]
+BANDWIDTHS = ["3"]
 
 QUANTIZE_FLAGS = ["0", "1"]
 
 
-def wait_for_container_log(service_name, target_string, timeout=120):
+def wait_for_container_log(service_name: str, target_string: str, timeout: int=120):
     print(f"Waiting for {service_name} to output: {target_string}...")
     start = time.time()
 
@@ -51,7 +51,7 @@ def run_benchmarks():
                 target_log = "Server is running..."
 
                 # Run worker-A
-                worker_a_num_layers = 15
+                worker_a_num_layers = 5
                 subprocess.run(["./scripts/run_worker.sh", "-m", f"/{model}", "-q", f"{quant}", "-l", "INFO", "-n", f"{worker_a_num_layers}", "worker-A"], check=True)
 
                 wait_for_container_log("worker-A", target_log)
@@ -60,19 +60,12 @@ def run_benchmarks():
                 # Run worker-B
                 subprocess.run(["./scripts/run_worker.sh", "-m", f"/{model}", "-q", f"{quant}", "-l", "INFO", "worker-B"], check=True)
                 wait_for_container_log("worker-B", target_log)
-                
-
-                # Start pumba bandwidth limit
-                # pumba_cmd = [
-                #     "docker", "run", "-d", "--rm", "--name", "pumba_netem",
-                #     "-v", "/var/run/docker.sock:/var/run/docker.sock",
-                #     "ghcr.io/alexei-led/pumba:latest",
-                #     "netem", "--duration", "10m", "rate", "--rate", f"{bw}mbit",
-                #     "re2:^decentralized-llm-inference-thesis"
-                # ]
-                # subprocess.run(pumba_cmd, check=True)
+            
 
                 # Trigger client generation
+                # Sto docker-compose:
+                # command: python distributed_chatbot.py --prompt 'write a poem' --max_new_tokens 100
+
                 print("Triggering token generation...")
                 
                 env = os.environ.copy()
@@ -86,7 +79,7 @@ def run_benchmarks():
                     check=True
                 )
 
-                wait_for_container_log("client-A", "Tokens Generated: 20")
+                wait_for_container_log("client-A", "Tokens Generated: 100")
                 
                 
                 # Start pumba bandwidth limit
@@ -94,49 +87,28 @@ def run_benchmarks():
                     "docker", "run", "-d", "--rm", "--name", "pumba_netem",
                     "-v", "/var/run/docker.sock:/var/run/docker.sock",
                     "ghcr.io/alexei-led/pumba:latest",
-                    "netem", "--duration", "5s", "rate", "--rate", f"{bw}mbit",
+                    "netem", "--duration", "1m", "rate", "--rate", f"{bw}mbit",
                     "re2:^decentralized-llm-inference-thesis"
                 ]
                 subprocess.run(pumba_cmd, check=True)
 
-                # continueeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+                wait_for_container_log("client-A", "---------Response---------")
 
                 # Fetch logs
-                # worker_a_logs = subprocess.run(["docker", "compose", "logs", "worker-A"], capture_output=True, text=True).stdout
-                # worker_b_logs = subprocess.run(["docker", "compose", "logs", "worker-B"], capture_output=True, text=True).stdout
+                client_logs = subprocess.run(["docker", "compose", "logs", "client-A"], capture_output=True, text=True).stdout
 
-                # ser_delays = [float(x) for x in re.findall(r"Serialization Delay: (\d+\.\d+)", worker_a_logs)]
-                # grpc_overheads = [float(x) for x in re.findall(r"GRPC Overhead: (\d+\.\d+)", worker_a_logs)]
-                # deser_delays = [float(x) for x in re.findall(r"Deserialization Delay: (\d+\.\d+)", worker_b_logs)]
+                tokens_generated = [int(x) for x in re.findall(r"Tokens Generated: (\d+)", client_logs)]
+                timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", client_logs)]
 
-                # prefill_ser = ser_delays[0]
-                # prefill_grpc = grpc_overheads[0]
-                # prefill_deser = deser_delays[0]
-
-                # total_prefill_latency = prefill_ser + prefill_grpc + prefill_deser
-
-                # ser_delays = ser_delays[1:]
-                # grpc_overheads = grpc_overheads[1:]
-                # deser_delays = deser_delays[1:]
-
-                # avg_ser = sum(ser_delays) / len(ser_delays) if ser_delays else 0
-                # avg_grpc = sum(grpc_overheads) / len(grpc_overheads) if grpc_overheads else 0
-                # avg_deser = sum(deser_delays) / len(deser_delays) if deser_delays else 0
-
-                # total_decoding_latency = avg_ser + avg_grpc + avg_deser
+                max_timestamp = min(timestamps)
+                timestamps = [x - max_timestamp for x in timestamps]
 
                 results.append({
                     "Model": model,
-                    "Bandwidth": bw,
+                    "Bandwidth_Drop": bw,
                     "Quantize": quant,
-                    "Prefill_Serialization_Delay": prefill_ser,
-                    "Prefill_GRPC_Overhead": prefill_grpc,
-                    "Prefill_Deserialization_Delay": prefill_deser,
-                    "Total_Prefill_Network_Latency": total_prefill_latency,
-                    "Decoding_Avg_Serialization_Delay": avg_ser,
-                    "Decoding_Avg_GRPC_Overhead": avg_grpc,
-                    "Decoding_Avg_Deserialization_Delay": avg_deser,
-                    "Total_Decoding_Avg_Network_Latency": total_decoding_latency
+                    "Tokens_Generated": tokens_generated,
+                    "Timestamps": timestamps
                 })
 
                 # Teardown
@@ -144,7 +116,7 @@ def run_benchmarks():
                 subprocess.run(["docker", "compose", "down", "-v"], check=True)
                 time.sleep(5)
 
-    with open("tests/quantization/big_results.csv", "w", newline="") as f:
+    with open("tests/quantization/throughput_jitter.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)
