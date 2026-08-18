@@ -100,7 +100,6 @@ class Client:
 
         self.total_rate = 0.0
         self.last_inference_stats = {"latency": 0.0, "throughput": 0.0}
-        self.last_itl = 0.0 # inter token latency
 
         # Start GRPC server in a seperate thread
         grpc_thread = threading.Thread(target=self._run_grpc_server, args=(grpc_addr,), daemon=True)
@@ -559,20 +558,7 @@ class Client:
         if max_returned_tokens > GLOBAL_MAX_SEQ_LEN // num_clients:
             return f"<span style='color:red'>The combined prompt and max new tokens length ({max_returned_tokens} tokens) exceeds this client's max sequence length of {GLOBAL_MAX_SEQ_LEN//num_clients} tokens.<br>Please clear the chat history or reduce the number of new tokens to generate."
 
-        if stream:
-            return self._generate_stream(
-                history_length,
-                prompt_length,
-                input_ids,
-                max_new_tokens,
-                max_returned_tokens,
-                temperature,
-                top_p,
-                time_it,
-            )
-
-        # If not streaming the output
-        decoded_text = self._generate_fn(
+        token_generator = self._generate_stream(
             history_length,
             prompt_length,
             input_ids,
@@ -582,173 +568,12 @@ class Client:
             top_p,
             time_it,
         )
+
+        if stream:
+            return token_generator
+
+        decoded_text = "".join(token for token in token_generator)
         return decoded_text
-
-    @torch.no_grad()
-    def _generate_fn(
-        self,
-        history_length: int,
-        prompt_length: int,
-        input_ids: torch.Tensor,
-        max_new_tokens: int,
-        max_returned_tokens: int,
-        temperature: float = 0.6,
-        top_p: float = 0.9,
-        time_it: bool = False,
-    ) -> str:
-        self.chain.update_chain_status(ChainStatus.RUNNING)
-
-        generated_ids = []
-        input_tensor = input_ids
-        input_pos = history_length
-        seq_length = prompt_length
-
-        start_time = time.perf_counter()
-        tokens_generated = 0
-
-        while tokens_generated < max_new_tokens:
-            start_itl = time.perf_counter()
-
-            # Unpack the initial inference delay
-            x, self.initial_inference_delay = self.model.forward_client_initial(input_tensor)
-
-            start = time.perf_counter()
-            x = x.cpu()
-
-            request = tensor_to_request(
-                x,
-                max_returned_tokens=max_returned_tokens,
-                seq_length=seq_length,
-                input_pos=input_pos,
-                quantize_flag=self.quantize_flag
-            )
-            request.response_address = self.grpc_addr
-            
-            self.serialization_delay = time.perf_counter() - start
-
-            try:
-                # Send inference request and track Head latency
-                start = time.perf_counter()
-                ack_response = self.head_server_stub.RunLayers(request)
-                
-                head_deserialization_delay = ack_response.deserialization_delay
-                self.head_communication_latency = time.perf_counter() - start - head_deserialization_delay
-            except grpc.RpcError as e:
-                if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
-                    logger.warning("HEAD failure detected during INFERENCE")
-                    threading.Thread(target=self.replace_head_server, daemon=True).start()
-                else:
-                    logger.warning(f"A gRPC error occurred during inference: {e.code().name}")
-                    self.head_server_stub = None
-
-                self.chain.update_chain_status(ChainStatus.UNREADY)
-                logger.error("The HEAD server has failed. The chain is being repaired...")
-                return ""
-
-            # Wait for response from Tail server and capture delay
-            start_chain_time = time.perf_counter()
-            is_set = self.inference_response_event.wait(timeout=15)
-            self.chain_response_delay = time.perf_counter() - start_chain_time
-
-            if not is_set:
-                logger.error("Timeout waiting for response from Tail server.")
-                self.chain.update_chain_status(ChainStatus.UNREADY)
-                return ""
-
-            self.inference_response_event.clear()
-            response = self.inference_response
-
-            # Capture TOTAL RATE
-            self.total_rate = self.chain.gather_total_rate()
-
-            # ------ SERVER ERROR HANDLING ------
-            if response.HasField("error_message"):
-                logger.error(f"Server-side failure: {response.error_message}")
-                
-                # Wait until the repair is done
-                attempts = 10
-                for attempt in range(attempts):
-                    if self.chain.get_chain_status() in (
-                        ChainStatus.REPAIRING,
-                        ChainStatus.UNREADY,
-                    ):
-                        logger.info("The chain is not Ready yet. Waiting...")
-                        time.sleep(2)
-                    else:
-                        break
-                logger.info("Done Waiting...")
-
-                if self.chain.get_all_layers_loaded():
-                    input_tensor = self.chat_history
-                    # Calculate position and seq_length to re-process history
-                    seq_length = input_tensor.size(1)
-                    prompt_length = seq_length
-                    input_pos = None 
-                    continue
-                else:
-                    logger.error("Aborting generation task. Please try again.")
-                    self.chat_history = None
-                    return ""
-
-            start = time.perf_counter()
-            next_token = response_to_tensor(response)
-
-            if next_token.device != self.llm.device:
-                next_token = next_token.to(self.llm.device)
-                
-            self.deserialization_delay = time.perf_counter() - start
-
-            # Add the new token id to the chat history
-            self.chat_history = torch.cat([self.chat_history, next_token], dim=1)
-
-            # Stop if the end-of-sequence token is generated
-            if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
-                # eos_tensor = torch.tensor(
-                #     [[self.llm.preprocessor.tokenizer.eos_token_id]], device=self.device
-                # )
-                # self.chat_history = torch.cat([self.chat_history, eos_tensor], dim=1)
-                self.last_itl = time.perf_counter() - start_itl
-                break
-
-            generated_ids.append(next_token)
-            tokens_generated += 1
-            self.last_itl = time.perf_counter() - start_itl
-
-            # TEEEEEST
-            logger.debug(f"Tokens Generated: {tokens_generated}")
-            logger.debug(f"Token Generated at: {time.perf_counter()}")
-
-            input_tensor = next_token
-            current_pos = prompt_length + len(generated_ids)
-            input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
-            seq_length = 1
-
-        elapsed_time = time.perf_counter() - start_time
-        throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
-
-        # Decode all generated tokens at once
-        if generated_ids:
-            all_generated_ids = torch.cat(generated_ids, dim=1)
-
-            start = time.perf_counter()
-            all_generated_tokens = self.llm.preprocessor.decode(all_generated_ids)
-
-            self.decode_delay = time.perf_counter() - start
-        else:
-            all_generated_tokens = ""
-
-        self.last_inference_stats = {
-            "num_tokens_generated": tokens_generated,
-            "latency": elapsed_time, 
-            "throughput": throughput
-        }
-        
-        if self.chain.get_all_layers_loaded():
-            self.chain.update_chain_status(ChainStatus.READY)
-        else:
-            self.chain.update_chain_status(ChainStatus.UNREADY)
-
-        return all_generated_tokens
 
     @torch.no_grad()
     def _generate_stream(
@@ -771,11 +596,11 @@ class Client:
         start_time = time.perf_counter()
 
         tokens_generated = 0  
+        itls = 0.0 # inter-tokens latencies
+        ttft = 0.0 # time to fisrt token
 
         while tokens_generated < max_new_tokens:
             start_itl = time.perf_counter()
-
-            # self.chain.update_chain_status(ChainStatus.RUNNING)
 
             x, self.initial_inference_delay = self.model.forward_client_initial(input_tensor)  # input_pos=input_pos)
 
@@ -880,11 +705,6 @@ class Client:
 
             # Stop if the end-of-sequence token is generated
             if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
-                # eos_tensor = torch.tensor(
-                #     [[self.llm.preprocessor.tokenizer.eos_token_id]], device=self.device
-                # )
-                # self.chat_history = torch.cat([self.chat_history, eos_tensor], dim=1)
-
                 self.last_itl = time.perf_counter() - start_itl
                 break
 
@@ -899,11 +719,14 @@ class Client:
             yield decoded_token
             self.yield_delay = time.perf_counter() - start
 
-            # TEEEEEst
+            # TEEEEEST
             logger.debug(f"Tokens Generated: {tokens_generated}")
             logger.debug(f"Token Generated at: {time.perf_counter()}")
 
-            self.last_itl = time.perf_counter() - start_itl
+            itls += time.perf_counter() - start_itl
+
+            if seq_length > 1:
+                ttft = time.perf_counter() - start_itl
 
             input_tensor = next_token
             # current_pos = history_length + prompt_length + tokens_generated
@@ -913,14 +736,184 @@ class Client:
 
         elapsed_time = time.perf_counter() - start_time
         throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
+        avg_itl = itls / tokens_generated
 
         self.last_inference_stats = {
             "num_tokens_generated": tokens_generated,
             "latency": elapsed_time,
+            "ttft": ttft,
             "throughput": throughput,
+            "avg_itl": avg_itl
         }
         # self.chain.update_chain_status(ChainStatus.READY)
         if self.chain.get_all_layers_loaded():
             self.chain.update_chain_status(ChainStatus.READY)
         else:
             self.chain.update_chain_status(ChainStatus.UNREADY)
+
+
+    # @torch.no_grad()
+    # def _generate_fn(
+    #     self,
+    #     history_length: int,
+    #     prompt_length: int,
+    #     input_ids: torch.Tensor,
+    #     max_new_tokens: int,
+    #     max_returned_tokens: int,
+    #     temperature: float = 0.6,
+    #     top_p: float = 0.9,
+    #     time_it: bool = False,
+    # ) -> str:
+    #     self.chain.update_chain_status(ChainStatus.RUNNING)
+
+    #     generated_ids = []
+    #     input_tensor = input_ids
+    #     input_pos = history_length
+    #     seq_length = prompt_length
+
+    #     start_time = time.perf_counter()
+    #     tokens_generated = 0
+
+    #     while tokens_generated < max_new_tokens:
+    #         start_itl = time.perf_counter()
+
+    #         # Unpack the initial inference delay
+    #         x, self.initial_inference_delay = self.model.forward_client_initial(input_tensor)
+
+    #         start = time.perf_counter()
+    #         x = x.cpu()
+
+    #         request = tensor_to_request(
+    #             x,
+    #             max_returned_tokens=max_returned_tokens,
+    #             seq_length=seq_length,
+    #             input_pos=input_pos,
+    #             quantize_flag=self.quantize_flag
+    #         )
+    #         request.response_address = self.grpc_addr
+            
+    #         self.serialization_delay = time.perf_counter() - start
+
+    #         try:
+    #             # Send inference request and track Head latency
+    #             start = time.perf_counter()
+    #             ack_response = self.head_server_stub.RunLayers(request)
+                
+    #             head_deserialization_delay = ack_response.deserialization_delay
+    #             self.head_communication_latency = time.perf_counter() - start - head_deserialization_delay
+    #         except grpc.RpcError as e:
+    #             if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+    #                 logger.warning("HEAD failure detected during INFERENCE")
+    #                 threading.Thread(target=self.replace_head_server, daemon=True).start()
+    #             else:
+    #                 logger.warning(f"A gRPC error occurred during inference: {e.code().name}")
+    #                 self.head_server_stub = None
+
+    #             self.chain.update_chain_status(ChainStatus.UNREADY)
+    #             logger.error("The HEAD server has failed. The chain is being repaired...")
+    #             return ""
+
+    #         # Wait for response from Tail server and capture delay
+    #         start_chain_time = time.perf_counter()
+    #         is_set = self.inference_response_event.wait(timeout=15)
+    #         self.chain_response_delay = time.perf_counter() - start_chain_time
+
+    #         if not is_set:
+    #             logger.error("Timeout waiting for response from Tail server.")
+    #             self.chain.update_chain_status(ChainStatus.UNREADY)
+    #             return ""
+
+    #         self.inference_response_event.clear()
+    #         response = self.inference_response
+
+    #         # Capture TOTAL RATE
+    #         self.total_rate = self.chain.gather_total_rate()
+
+    #         # ------ SERVER ERROR HANDLING ------
+    #         if response.HasField("error_message"):
+    #             logger.error(f"Server-side failure: {response.error_message}")
+                
+    #             # Wait until the repair is done
+    #             attempts = 10
+    #             for attempt in range(attempts):
+    #                 if self.chain.get_chain_status() in (
+    #                     ChainStatus.REPAIRING,
+    #                     ChainStatus.UNREADY,
+    #                 ):
+    #                     logger.info("The chain is not Ready yet. Waiting...")
+    #                     time.sleep(2)
+    #                 else:
+    #                     break
+    #             logger.info("Done Waiting...")
+
+    #             if self.chain.get_all_layers_loaded():
+    #                 input_tensor = self.chat_history
+    #                 # Calculate position and seq_length to re-process history
+    #                 seq_length = input_tensor.size(1)
+    #                 prompt_length = seq_length
+    #                 input_pos = None 
+    #                 continue
+    #             else:
+    #                 logger.error("Aborting generation task. Please try again.")
+    #                 self.chat_history = None
+    #                 return ""
+
+    #         start = time.perf_counter()
+    #         next_token = response_to_tensor(response)
+
+    #         if next_token.device != self.llm.device:
+    #             next_token = next_token.to(self.llm.device)
+                
+    #         self.deserialization_delay = time.perf_counter() - start
+
+    #         # Add the new token id to the chat history
+    #         self.chat_history = torch.cat([self.chat_history, next_token], dim=1)
+
+    #         # Stop if the end-of-sequence token is generated
+    #         if next_token.item() == self.llm.preprocessor.tokenizer.eos_token_id:
+    #             # eos_tensor = torch.tensor(
+    #             #     [[self.llm.preprocessor.tokenizer.eos_token_id]], device=self.device
+    #             # )
+    #             # self.chat_history = torch.cat([self.chat_history, eos_tensor], dim=1)
+    #             self.last_itl = time.perf_counter() - start_itl
+    #             break
+
+    #         generated_ids.append(next_token)
+    #         tokens_generated += 1
+    #         self.last_itl = time.perf_counter() - start_itl
+
+    #         # TEEEEEST
+    #         logger.debug(f"Tokens Generated: {tokens_generated}")
+    #         logger.debug(f"Token Generated at: {time.perf_counter()}")
+
+    #         input_tensor = next_token
+    #         current_pos = prompt_length + len(generated_ids)
+    #         input_pos = torch.tensor([current_pos], device=self.llm.preprocessor.device)
+    #         seq_length = 1
+
+    #     elapsed_time = time.perf_counter() - start_time
+    #     throughput = tokens_generated / elapsed_time if elapsed_time > 0 else 0
+
+    #     # Decode all generated tokens at once
+    #     if generated_ids:
+    #         all_generated_ids = torch.cat(generated_ids, dim=1)
+
+    #         start = time.perf_counter()
+    #         all_generated_tokens = self.llm.preprocessor.decode(all_generated_ids)
+
+    #         self.decode_delay = time.perf_counter() - start
+    #     else:
+    #         all_generated_tokens = ""
+
+    #     self.last_inference_stats = {
+    #         "num_tokens_generated": tokens_generated,
+    #         "latency": elapsed_time, 
+    #         "throughput": throughput
+    #     }
+        
+    #     if self.chain.get_all_layers_loaded():
+    #         self.chain.update_chain_status(ChainStatus.READY)
+    #     else:
+    #         self.chain.update_chain_status(ChainStatus.UNREADY)
+
+    #     return all_generated_tokens

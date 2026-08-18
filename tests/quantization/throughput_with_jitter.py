@@ -63,9 +63,6 @@ def run_benchmarks():
             
 
                 # Trigger client generation
-                # Sto docker-compose:
-                # command: python distributed_chatbot.py --prompt 'write a poem' --max_new_tokens 100
-
                 print("Triggering token generation...")
                 
                 env = os.environ.copy()
@@ -73,6 +70,8 @@ def run_benchmarks():
                 env["LOG_LEVEL"] = "DEBUG"
                 env["QUANTIZE"] = str(quant)
 
+                # Sto docker-compose:
+                # command: python distributed_chatbot.py --prompt 'write a long paper on sharks' --max_new_tokens 1000
                 subprocess.run(
                     ["docker", "compose", "up", "-d", "client-A"], 
                     env=env,

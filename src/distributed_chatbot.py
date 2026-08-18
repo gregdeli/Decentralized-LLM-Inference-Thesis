@@ -100,50 +100,61 @@ def main():
                 except KeyboardInterrupt:
                     print("\nStopping text generation...")
 
-                stats = client.last_inference_stats
-                latency = stats.get("latency")
-                throughput = stats.get("throughput")
-                print(f"\n\nGeneration Time: {latency:.2f}s")
-                print(f"Throughput: {throughput:.2f} tokens/sec\n")
-            return
+                # stats = client.last_inference_stats
+                # latency = stats.get("latency")
+                # throughput = stats.get("throughput")
+                # print(f"\n\nGeneration Time: {latency:.2f}s")
+                # print(f"Throughput: {throughput:.2f} tokens/sec\n")
+            # return
 
-        while True:
-            # client.print_chain_status()
+        else:
+            while True:
+                # client.print_chain_status()
 
-            prompt = input("\nEnter prompt: ")
+                prompt = input("\nEnter prompt: ")
 
-            logger.info(f"Initiating text generation...")
+                logger.info(f"Initiating text generation...")
 
-            token_generator = client.generate(prompt, max_new_tokens=args.max_new_tokens, stream=args.stream)
+                token_generator = client.generate(prompt, max_new_tokens=args.max_new_tokens, stream=args.stream)
 
-            if not token_generator:
-                input("Press Enter to continue...")
-                continue
+                if not token_generator:
+                    input("Press Enter to continue...")
+                    continue
 
-            print(f"\n---------Response---------")
-            
-            # Buffered generation
-            if isinstance(token_generator, str):
-                print(token_generator)
+                print(f"\n---------Response---------")
+                
+                # Buffered generation
+                if isinstance(token_generator, str):
+                    print(token_generator)
 
-            # Streaming Generation
-            else:
-                try:
-                    for token in token_generator:
-                        print(token, end="", flush=True)
-                except KeyboardInterrupt:
-                    print("\nStopping text generation...")
+                # Streaming Generation
+                else:
+                    try:
+                        for token in token_generator:
+                            print(token, end="", flush=True)
+                    except KeyboardInterrupt:
+                        print("\nStopping text generation...")
 
-            # Stats 
-            stats = client.last_inference_stats
-            latency = stats.get("latency")
-            throughput = stats.get("throughput")
-            print(f"\n\nGeneration Time: {latency:.2f}s")
-            print(f"Throughput: {throughput:.2f} tokens/sec")
-            print("\n")
 
-            # Layer Reallocation
-            #client.trigger_reallocation()
+                # Layer Reallocation
+                #client.trigger_reallocation()
+        
+        # Stats 
+        stats = client.last_inference_stats
+        num_tokens = stats.get("num_tokens_generated")
+        latency = stats.get("latency")
+        ttft = stats.get("ttft")
+        throughput = stats.get("throughput")
+        avg_itl = stats.get("avg_itl")
+
+        print(f"\n\nTokens Generated: {num_tokens}")
+        print(f"Generation Time: {latency:.2f}s")
+        print(f"Time To First Token: {ttft:.6f}s")
+        print(f"Throughput: {throughput:.2f} tokens/sec")
+        print(f"Average ITL: {avg_itl:.6f}s")
+        print("\n")
+        
+
 
     except KeyboardInterrupt:
         print("\nExiting...")  # Ctrl+C

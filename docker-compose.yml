@@ -168,10 +168,10 @@ services:
   client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 1000
+    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 1000
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    # command: sleep infinity 
+    command: sleep infinity 
     hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}

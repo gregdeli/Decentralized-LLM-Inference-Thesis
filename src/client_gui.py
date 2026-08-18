@@ -737,7 +737,9 @@ async def generate(
     stats = state.client.last_inference_stats
     num_tokens = stats.get("num_tokens_generated")
     latency = stats.get("latency")
+    ttft = stats.get("ttft")
     throughput = stats.get("throughput")
+    avg_itl = stats.get("avg_itl")
 
     generation_stats_container.clear()
     with generation_stats_container:
@@ -745,8 +747,9 @@ async def generate(
         ui.separator()
         ui.label(f"Tokens Generated: {num_tokens} tokens")
         ui.label(f"Generation Time: {latency:.2f}s")
+        ui.label(f"Time To First Token: {ttft:.2f}s")
         ui.label(f"Throughput: {throughput:.2f} tokens/sec")
-        ui.label(f"Last ITL: {state.client.last_itl:.6f} sec")
+        ui.label(f"Average ITL: {avg_itl:.6f} sec")
         ui.label(f"Total Rate: {state.client.chain.gather_total_rate():.2f} layers/sec")
 
         # if state.client.total_rate > 0:
