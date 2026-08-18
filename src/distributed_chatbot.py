@@ -50,7 +50,10 @@ def main():
     initial_peers = [bootstrap_peer_addr] if bootstrap_peer_addr else None
 
     # Initialize the Client Node
-    grpc_port = os.getenv("GRPC_PORT")
+    # grpc_port = os.getenv("GRPC_PORT")
+    # grpc_port = grpc_port if grpc_port else get_free_port()
+    # grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
+    grpc_port = os.getenv("CLIENT_PORT")
     grpc_port = grpc_port if grpc_port else get_free_port()
     grpc_addr = grpc_addr = f"{my_ip}:{grpc_port}"
 
