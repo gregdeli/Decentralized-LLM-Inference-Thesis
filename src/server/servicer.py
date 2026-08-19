@@ -38,6 +38,9 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
 
     def RunLayers(self, request, context):
         # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
+        # Memory Debug
+        logger.debug(f"Memory Usage: {self.server_node.memory_usage_mb} MB")
+        logger.debug(f"VRAM Usage: {self.server_node.vram_usage_mb} MB")
 
         # Deserialize the incoming request to a tensor
         start = time.perf_counter()

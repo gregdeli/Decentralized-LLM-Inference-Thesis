@@ -25,7 +25,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 10G #11657M 
+          memory: 4G #11657M 
         #   cpus: '16.0'
     ports:
       - "5671:5678"
@@ -41,64 +41,64 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      # - NUM_LAYERS=
+      - NUM_LAYERS=$NUM_LAYERS
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
       # - ADDED_DELAY=0.08
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-A:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-A:5001
     volumes:
       - ./models:/models:ro 
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      #   reservations:
+      #     devices:
+      #       - driver: nvidia
+      #         count: 1
+      #         capabilities: [gpu]
         limits:
-          memory: 10G # 2.2
+          memory: 4G # 2.2
           # cpus: '1.0'
     ports:
       - "5672:5678"  
       # - 9999:9999 
 
-  # worker-C:
-  #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-  #   # command: sleep infinity
-  #   # network_mode: "host"
-  #   hostname: worker-C
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - GRPC_PORT=5001
-  #     # - NUM_LAYERS=15
-  #     - PROFILE=$PROFILE
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - ADDED_DELAY=0.08
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=worker-B:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   deploy:
-  #     resources:
-  #       # reservations:
-  #       #     devices:
-  #       #       - driver: nvidia
-  #       #         count: 1
-  #       #         capabilities: [gpu]
-  #       limits:
-  #         memory: 3G
-  #         # cpus: '1.0'
-  #   depends_on:
-  #     - worker-A
-  #     - worker-B
-  #   ports:
-  #     - "5673:5678"
-  #     # - 9999:9999 
+  worker-C:
+    image: decentralized-llm-thesis:latest
+    # command: python server/server.py
+    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    # command: sleep infinity
+    # network_mode: "host"
+    hostname: worker-C
+    environment:
+      - MODEL_PATH=/${MODEL_PATH}
+      - GRPC_PORT=5001
+      - NUM_LAYERS=$NUM_LAYERS
+      - PROFILE=$PROFILE
+      - QUANTIZE=$QUANTIZE
+      - LOG_LEVEL=$LOG_LEVEL
+      # - ADDED_DELAY=0.08
+      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+      # - BOOTSTRAP_NODE_ADDR=worker-B:5001
+    volumes:
+      - ./models:/models:ro
+    deploy:
+      resources:
+        reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+        limits:
+          memory: 3G
+          # cpus: '1.0'
+    # depends_on:
+      # - worker-A
+      # - worker-B
+    ports:
+      - "5673:5678"
+      # - 9999:9999 
 
   # worker-D:
   #   image: decentralized-llm-thesis:latest
@@ -168,10 +168,10 @@ services:
   client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 1000
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 1000
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    command: sleep infinity 
+    # command: sleep infinity 
     hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -179,7 +179,7 @@ services:
       - LOG_LEVEL=$LOG_LEVEL
       # - GRPC_PORT=5001
       # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-      - BOOTSTRAP_NODE_ADDR=worker-A:5001
+      # - BOOTSTRAP_NODE_ADDR=worker-A:5001
       # - BOOTSTRAP_NODE_ADDR=150.140.139.205:5001
     volumes:
       - ./models:/models:ro

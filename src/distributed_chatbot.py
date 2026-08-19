@@ -94,18 +94,10 @@ def main():
                 print(token_generator)
 
             else:
-                try:
-                    for token in token_generator:
-                        print(token, end="", flush=True)
-                except KeyboardInterrupt:
-                    print("\nStopping text generation...")
+                for token in token_generator:
+                    print(token, end="", flush=True)
 
-                # stats = client.last_inference_stats
-                # latency = stats.get("latency")
-                # throughput = stats.get("throughput")
-                # print(f"\n\nGeneration Time: {latency:.2f}s")
-                # print(f"Throughput: {throughput:.2f} tokens/sec\n")
-            # return
+                
 
         else:
             while True:
