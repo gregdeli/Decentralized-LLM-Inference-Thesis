@@ -41,8 +41,8 @@ plt.plot(
 )
 
 # Format the plot
-plt.title(f"Throughput: Token Count vs. Timestamp\nModel: {model_str.split('/')[-1]}")
-plt.xlabel('Timestamp (s)')
+plt.title(f"Throughput: Token Count vs. Time\nModel: {model_str.split('/')[-1]}")
+plt.xlabel('Time (s)')
 plt.ylabel('Token Count')
 
 # Apply logarithmic scale to the X-axis for clearer point spacing
@@ -57,7 +57,7 @@ plt.grid(True)
 plt.legend()
 
 # Automatically adjust layout and display the plot
-# plt.tight_layout()
+plt.tight_layout()
 
 # Generate a safe filename by extracting the model name after the slash
 safe_model_name = model_str.split('/')[-1]

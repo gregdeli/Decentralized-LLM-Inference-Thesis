@@ -15,7 +15,7 @@ MODELS = [
     "models/Llama-3.2-3B-Instruct",
 ]
 
-ALLOCATIONS = ["single", "greedy", "optimal"]
+ALLOCATIONS = ["single node", "greedy", "optimal"]
 
 BANDWIDTH = "250" # mbit
 QUANTIZE_FLAG = "1"
@@ -60,7 +60,7 @@ def run_benchmarks():
         for allocation in ALLOCATIONS:
             print(f"\nTesting -> Model: {model} | Allocation Strategy: {allocation}\n")
 
-            if allocation == "single":
+            if allocation == "single node":
                 env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG")
                 subprocess.run(
                     ["docker", "compose", "up", "-d", "worker-C"], 
@@ -156,11 +156,13 @@ def run_benchmarks():
             throughput = float(re.findall(r"Throughput: (\d+\.\d+)", client_a_logs)[0])
             avg_itl = float(re.findall(r"Average ITL: (\d+\.\d+)", client_a_logs)[0])
 
-            tokens_generated = [int(x) for x in re.findall(r"Tokens Generated: (\d+)", client_a_logs)]
+            # tokens_generated = [int(x) for x in re.findall(r"Tokens Generated: (\d+)", client_a_logs)]
 
             timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", client_a_logs)]
             min_timestamp = min(timestamps)
             timestamps = [x - min_timestamp for x in timestamps]
+
+            tokens_generated = [x for x in range(len(timestamps))]
 
             client_results.append({
                 "Model": model,
@@ -172,7 +174,7 @@ def run_benchmarks():
                 "Avg_ITL": avg_itl
             })
 
-            if allocation == "single":
+            if allocation == "single node":
                 workers = ["worker-C"]
             else:
                 workers = ["worker-A", "worker-B", "worker-C"]
@@ -193,11 +195,11 @@ def run_benchmarks():
                 ser_delays = [float(x) for x in re.findall(r"Serialization Delay: (\d+\.\d+)", worker_logs)]
                 grpc_overheads = [float(x) for x in re.findall(r"GRPC Overhead: (\d+\.\d+)", worker_logs)]
 
-                avg_deser_delay = sum(deser_delays) / len(deser_delays)
-                avg_inference_delay = sum(inference_delays) / len(inference_delays)
-                avg_logit_sampling_delay = sum(logit_sampling_delays) / len(logit_sampling_delays)
-                avg_ser_delay = sum(ser_delays) / len(ser_delays)
-                avg_grpc_overhead = sum(grpc_overheads) / len(grpc_overheads)
+                avg_deser_delay = sum(deser_delays) / len(deser_delays) * 1000.0
+                avg_inference_delay = sum(inference_delays) / len(inference_delays) * 1000.0
+                avg_logit_sampling_delay = sum(logit_sampling_delays) / len(logit_sampling_delays) * 1000.0
+                avg_ser_delay = sum(ser_delays) / len(ser_delays) * 1000.0
+                avg_grpc_overhead = sum(grpc_overheads) / len(grpc_overheads) * 1000.0
 
                 worker_results.append({
                     "Model": model,
@@ -206,11 +208,11 @@ def run_benchmarks():
                     "Layers": layers,
                     "Memory_Usage": mem_usage,
                     "VRAM_Usage": vram_usage,
-                    "Avg_Deserialization_Delay": avg_deser_delay,
-                    "Avg_Inference_Delay": avg_inference_delay,
-                    "Avg_Logit_Sampling_Delay": avg_logit_sampling_delay,
-                    "Avg_Serialization_Delay": avg_ser_delay,
-                    "Avg_GRPC_Overhead": avg_grpc_overhead
+                    "Avg Deserialization Delay": avg_deser_delay,
+                    "Avg Inference Delay": avg_inference_delay,
+                    "Avg Logit Sampling Delay": avg_logit_sampling_delay,
+                    "Avg Serialization Delay": avg_ser_delay,
+                    "Avg Transmission Delay": avg_grpc_overhead
 
                 })
 
