@@ -21,7 +21,7 @@ def plot_client_results(csv_path="client_results.csv"):
             timestamps = ast.literal_eval(subset.iloc[0]['Timestamps'])
             tokens = ast.literal_eval(subset.iloc[0]['Tokens_Generated'])
             
-            plt.plot(timestamps, tokens, label=allocation.title(), marker='o', markersize=2)
+            plt.plot(timestamps, tokens, label=allocation.title())#, marker='o', markersize=2)
 
     plt.title("Token Count vs. Time per Allocation Strategy")
     plt.xlabel("Times (s)")

@@ -77,6 +77,7 @@ def run_benchmarks():
             )
             wait_for_container_log("worker-B", "Server is running...")
 
+            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG", NUM_LAYERS="27")
             subprocess.run(
                 ["docker", "compose", "up", "-d", "worker-C"], 
                 env=env,
@@ -84,13 +85,13 @@ def run_benchmarks():
             )
             wait_for_container_log("worker-C", "Server is running...")
 
-            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG", NUM_LAYERS="23")
-            subprocess.run(
-                ["docker", "compose", "up", "-d", "worker-D"], 
-                env=env,
-                check=True
-            )
-            wait_for_container_log("worker-D", "Server is running...")
+            # env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG", NUM_LAYERS="23")
+            # subprocess.run(
+            #     ["docker", "compose", "up", "-d", "worker-D"], 
+            #     env=env,
+            #     check=True
+            # )
+            # wait_for_container_log("worker-D", "Server is running...")
 
             # Start pumba bandwidth limit
             pumba_cmd = [
@@ -144,12 +145,20 @@ def run_benchmarks():
                 )                         
                 last_client = "client-E"
 
+            if num_clients >= 6:                                         
+                subprocess.run(
+                    ["docker", "compose", "up", "-d", "client-F"], 
+                    env=env,
+                    check=True
+                )                         
+                last_client = "client-F"
+
             wait_for_container_log(last_client, "Average ITL:")
 
             # Tail server measurements
-            worker_d_logs = subprocess.run(["docker", "compose", "logs", "worker-D"], capture_output=True, text=True).stdout
+            worker_c_logs = subprocess.run(["docker", "compose", "logs", "worker-C"], capture_output=True, text=True).stdout
 
-            timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", worker_d_logs)]
+            timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", worker_c_logs)]
 
             client_a_logs = subprocess.run(["docker", "compose", "logs", "client-A"], capture_output=True, text=True).stdout
 

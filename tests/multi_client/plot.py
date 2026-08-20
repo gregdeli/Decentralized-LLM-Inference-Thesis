@@ -21,7 +21,7 @@ def generate_plot():
         tokens = row['Tokens_Generated']
         timestamps = row['Timestamps']
         
-        plt.plot(timestamps, tokens,  label=f'{num_clients} Client')
+        plt.plot(timestamps, tokens,  label=f'{num_clients}')#, marker="o", markersize=2)
     
     plt.xlabel('Time (s)')
     plt.ylabel('Token Count')
