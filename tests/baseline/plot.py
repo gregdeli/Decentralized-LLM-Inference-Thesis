@@ -72,7 +72,7 @@ def plot_worker_results(csv_path="worker_results.csv"):
         
         plt.title(f"Worker Delays - {allocation.title()} Allocation")
         plt.xlabel("Worker and Assigned Layers")
-        plt.ylabel("Delay (s)")
+        plt.ylabel("Delay (ms)")
         
         # Move legend outside the plot for better visibility
         plt.legend(title="Delay Type", bbox_to_anchor=(1.05, 1), loc='upper left')
