@@ -599,6 +599,8 @@ class Client:
         itls = 0.0 # inter-tokens latencies
         ttft = 0.0 # time to fisrt token
 
+        logger.debug(f"Start Token Generation at: {time.perf_counter()}")
+
         while tokens_generated < max_new_tokens:
             start_itl = time.perf_counter()
 
@@ -720,8 +722,8 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             # -----TEEEEEST-----
-            logger.debug(f"Tokens Generated: {tokens_generated}")
-            logger.debug(f"Token Generated at: {time.perf_counter()}")
+            # logger.debug(f"Tokens Generated: {tokens_generated}")
+            # logger.debug(f"Token Generated at: {time.perf_counter()}")
 
             itls += time.perf_counter() - start_itl
 

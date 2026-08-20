@@ -623,7 +623,7 @@ class Server:
         """
         if submit_time is not None:
             queueing_delay = time.perf_counter() - submit_time
-            logger.debug(f"Executor Queueing Delay: {queueing_delay:.6f}")
+            # logger.debug(f"Executor Queueing Delay: {queueing_delay:.6f}")
             # self.chain.update_inference_executor_delay(queueing_delay)
 
         if not self.llm:
@@ -650,7 +650,7 @@ class Server:
             cache_ok = self._ensure_kv_cache(client_id=response_address, input_pos=input_pos)
 
             ensure_kv_cache_delay = time.perf_counter() - start
-            logger.debug(f"Ensure KV Cache Delay: {ensure_kv_cache_delay:.6f}")
+            # logger.debug(f"Ensure KV Cache Delay: {ensure_kv_cache_delay:.6f}")
             # self.chain.update_ensure_kv_cache_delay(ensure_kv_cache_delay)
 
             if not cache_ok:
@@ -665,9 +665,9 @@ class Server:
             self.model.set_active_client(client_id=response_address)
 
             # --- Inference ---
-            logger.debug(
-                f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})..."
-            )
+            # logger.debug(
+            #     f"Processing Layers {self.llm.layers_loaded} | Output: {self.llm.output_layer_loaded} from ({response_address})..."
+            # )
 
             h, transformer_layer_delay, output_layer_delay = self.model.forward_server(input_tensor, seq_length, input_pos)
 
@@ -675,7 +675,7 @@ class Server:
             #     time.sleep(self.added_delay)
 
             self.inference_delay = transformer_layer_delay + output_layer_delay
-            logger.debug(f"Inference Delay: {self.inference_delay:.6f}")
+            # logger.debug(f"Inference Delay: {self.inference_delay:.6f}")
 
             self.chain.update_inference_delay(self.inference_delay, return_future=True)
 
@@ -683,13 +683,13 @@ class Server:
             if output_layer_delay > 0.0 and transformer_layer_delay > 0.0:
                 self.output_layer_temporal_tle = output_layer_delay / (transformer_layer_delay / self.model.num_layers)
                 self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle, return_future=True)
-                logger.debug(f"Output Layer TLE: {self.output_layer_temporal_tle}")
+                # logger.debug(f"Output Layer TLE: {self.output_layer_temporal_tle}")
 
 
             self._calculate_processing_rate(self.inference_delay)
             self.chain.update_processing_rate(self.processing_rate, return_future=True)
 
-            logger.debug(f"Processing Rate: {self.processing_rate:2f} l/s")
+            # logger.debug(f"Processing Rate: {self.processing_rate:2f} l/s")
 
         # logger.info(
         #     f"Layers {self.model.num_layers + self.output_layer_temporal_tle if self.model.output_layer_loaded else self.model.num_layers}: "
@@ -707,10 +707,11 @@ class Server:
             next_token = self.llm.sample_logits(logits)
 
             logit_sampling_delay = time.perf_counter() - start
-            logger.debug(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
+            # logger.debug(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
             # self.chain.update_logit_sampling_delay(logit_sampling_delay)
 
             # Benchmarking
+            logger.debug(f"Token Generated at: {time.perf_counter()}")
             # self.chain.update_chain_throughput()
 
             if not response_address:
@@ -723,20 +724,20 @@ class Server:
             response = tensor_to_response(next_token)
 
             serialization_delay = time.perf_counter() - start
-            logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
+            # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
             # self.chain.update_serialization_delay(serialization_delay)
 
             # Connect to Client
             try:
                 self._connect_to_client(client_addr=response_address)
 
-                logger.debug(f"Sending Response to client ({self.client_stub_addr})...")
+                # logger.debug(f"Sending Response to client ({self.client_stub_addr})...")
 
                 start = time.perf_counter()
                 self.client_stub.ReceiveResponse(response)
 
                 self.grpc_overhead = time.perf_counter() - start
-                logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+                # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
                 # self.chain.update_grpc_overhead(self.grpc_overhead)
 
             except grpc.RpcError as e:

@@ -1,5 +1,5 @@
 """
-worker-A: cpu 4GB
+worker-A: cpu 3GB
 worker-B: cpu 4GB 
 worker-C: cuda
 """

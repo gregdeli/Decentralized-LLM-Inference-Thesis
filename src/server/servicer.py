@@ -39,8 +39,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
     def RunLayers(self, request, context):
         # logger.info(f"Begin RunLayers handling from ({request.response_address})...")
         # Memory Debug
-        logger.debug(f"Memory Usage: {self.server_node.memory_usage_mb} MB")
-        logger.debug(f"VRAM Usage: {self.server_node.vram_usage_mb} MB")
+        # logger.debug(f"Memory Usage: {self.server_node.memory_usage_mb} MB")
+        # logger.debug(f"VRAM Usage: {self.server_node.vram_usage_mb} MB")
 
         # Deserialize the incoming request to a tensor
         start = time.perf_counter()
@@ -67,7 +67,7 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
             input_pos = input_pos.to(self.server_node.device)
 
         deserialization_delay = time.perf_counter() - start
-        logger.debug(f"Deserialization Delay: {deserialization_delay:.12f}")
+        # logger.debug(f"Deserialization Delay: {deserialization_delay:.12f}")
         # self.server_node.chain.update_deserialization_delay(deserialization_delay)
 
         # threading.Thread(
