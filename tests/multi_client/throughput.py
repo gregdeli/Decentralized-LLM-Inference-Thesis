@@ -1,8 +1,7 @@
 """
 worker-A: cpu 4GB
 worker-B: cpu 4GB 
-worker-C: cpu 4GB
-worker-D: cuda
+worker-C: cuda
 """
 
 import subprocess
@@ -17,6 +16,7 @@ MODELS = [
 ]
 
 NUM_CLIENTS = [1, 2, 3, 4, 5]
+MAX_TOKENS_PER_CLIENTS = 500
 
 BANDWIDTH = "250" # mbit
 QUANTIZE_FLAG = "1"
@@ -54,7 +54,7 @@ def set_env(MODEL_PATH: str, PROFILE: str, QUANTIZE: str, LOG_LEVEL: str,  NUM_L
 
 
 def run_benchmarks():
-    results = []
+    throughput_results = []
 
     for model in MODELS:
         for num_clients in NUM_CLIENTS:
@@ -77,7 +77,7 @@ def run_benchmarks():
             )
             wait_for_container_log("worker-B", "Server is running...")
 
-            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG", NUM_LAYERS="27")
+            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="INFO", NUM_LAYERS="27")
             subprocess.run(
                 ["docker", "compose", "up", "-d", "worker-C"], 
                 env=env,
@@ -104,7 +104,8 @@ def run_benchmarks():
             subprocess.run(pumba_cmd, check=True)
 
             # Start the clients
-            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG")
+            # Kanw debugging kai bazw xeirokinita to max_new_tokens stous clients sto docker-compose.yml
+            env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="INFO")
             if num_clients >= 1:
                 subprocess.run(
                     ["docker", "compose", "up", "-d", "client-A"], 
@@ -155,27 +156,18 @@ def run_benchmarks():
 
             wait_for_container_log(last_client, "Average ITL:")
 
-            # Tail server measurements
-            worker_c_logs = subprocess.run(["docker", "compose", "logs", "worker-C"], capture_output=True, text=True).stdout
-
-            timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", worker_c_logs)]
-
             client_a_logs = subprocess.run(["docker", "compose", "logs", "client-A"], capture_output=True, text=True).stdout
+            token_gen_time = float(re.search(r"Generation Time: (\d+\.\d+)", client_a_logs).group(1))
 
-            token_gen_start_time = float(re.search(r"Start Token Generation at: (\d+\.\d+)", client_a_logs).group(1))
+            tokens_generated = num_clients * MAX_TOKENS_PER_CLIENTS
 
-            timestamps.insert(0, token_gen_start_time)
+            system_throughput = tokens_generated / token_gen_time
 
-            min_timestamp = min(timestamps)
-            timestamps = [x - min_timestamp for x in timestamps]
 
-            tokens_generated = [x for x in range(len(timestamps))]
-
-            results.append({
+            throughput_results.append({
                 "Model": model,
                 "Num Clients": num_clients,
-                "Tokens_Generated": tokens_generated,
-                "Timestamps": timestamps
+                "Throughput": system_throughput
 
             })
 
@@ -184,10 +176,10 @@ def run_benchmarks():
             subprocess.run(["docker", "compose", "down", "-v"], check=True)
             time.sleep(5)
 
-    with open("tests/multi_client/results.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=results[0].keys())
+    with open("tests/multi_client/throughput_results.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=throughput_results[0].keys())
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(throughput_results)
                 
 
 

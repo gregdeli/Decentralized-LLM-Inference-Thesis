@@ -764,11 +764,11 @@ class Server:
         request.response_address = response_address
 
         serialization_delay = time.perf_counter() - start
-        logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
+        # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
         # self.chain.update_serialization_delay(serialization_delay)
 
         try:
-            logger.debug(f"Forwarding RunLayers request to successor from ({response_address})...")
+            # logger.debug(f"Forwarding RunLayers request to successor from ({response_address})...")
 
             # Forward to successor
             start = time.perf_counter()
@@ -777,7 +777,7 @@ class Server:
             succ_deserialization_delay = response.deserialization_delay
 
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
-            logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+            # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
             # self.chain.update_grpc_overhead(self.grpc_overhead)
         except grpc.RpcError as e:
             if (

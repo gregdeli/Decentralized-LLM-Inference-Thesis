@@ -24,8 +24,8 @@ def generate_plot():
         plt.plot(timestamps, tokens,  label=f'{num_clients}')#, marker="o", markersize=2)
     
     plt.xlabel('Time (s)')
-    plt.ylabel('Token Count')
-    plt.title('Token Count vs Time by Number of Clients')
+    plt.ylabel('Total Token Count')
+    plt.title('Total Token Count vs Time by Number of Clients')
     plt.legend(title='Concurrent Clients')
     plt.grid(True, linestyle='--')
     

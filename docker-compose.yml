@@ -74,7 +74,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=27
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
@@ -169,7 +170,7 @@ services:
   client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 
@@ -192,7 +193,7 @@ services:
   client-B:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 
@@ -214,7 +215,7 @@ services:
   client-C:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 
@@ -236,7 +237,7 @@ services:
   client-D:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 
@@ -258,7 +259,7 @@ services:
   client-E:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 

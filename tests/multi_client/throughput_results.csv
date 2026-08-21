@@ -1,0 +1,6 @@
+Model,Num Clients,Throughput
+models/Llama-3.2-3B-Instruct,1,12.080212611741967
+models/Llama-3.2-3B-Instruct,2,17.96299622777079
+models/Llama-3.2-3B-Instruct,3,19.703139366872456
+models/Llama-3.2-3B-Instruct,4,18.35704451583295
+models/Llama-3.2-3B-Instruct,5,18.133023863059403
