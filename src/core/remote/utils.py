@@ -68,7 +68,7 @@ def get_bootstrap_peer_address(address: str, attempts: int = 5) -> str | None:
                 logger.info("Bootstrap node not ready yet, retrying in 5 seconds...")
                 time.sleep(5)
             else:
-                print(f"An unexpected gRPC error occurred while contacting bootstrap node: {e}")
+                logger.info(f"An unexpected gRPC error occurred while contacting bootstrap node: {e}")
                 return None
 
     logger.error(

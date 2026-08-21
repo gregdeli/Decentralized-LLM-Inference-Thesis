@@ -526,7 +526,7 @@ class Server:
 
     @torch.no_grad()
     def _profile_node(
-        self, dummy_seq_length: int = 30, profiling_runs: int = 100, profiling_duration_s: int = 3
+        self, dummy_seq_length: int = 30, profiling_runs: int = 500, profiling_duration_s: int = 5
     ):
         """Measures a backup node's processing rate by doing a fake generation on a dummy input."""
 
@@ -564,6 +564,9 @@ class Server:
 
         starting_dummy_seq_len = dummy_seq_length
 
+        transformer_layer_delays = []
+        output_layer_delays = []
+
         prof_start_time = time.perf_counter()
         for i in range(profiling_runs):
             _, transformer_layer_delay, output_layer_delay = self.model.forward_server(
@@ -572,14 +575,15 @@ class Server:
             # if self.added_delay:
             #     time.sleep(self.added_delay)
 
-            inference_delay = transformer_layer_delay + output_layer_delay
+            transformer_layer_delays.append(transformer_layer_delay)
+            output_layer_delays.append(output_layer_delay)
 
             # self._calculate_processing_rate(inference_delay)
 
             logger.info(
-                f"Profiling: Layers {self.llm.layers_loaded}: "
-                f"Delay: {transformer_layer_delay}s "
-                f"Layers/sec: {self.processing_rate} "
+                f"Profiling: "
+                f"Transformer Layer Delay: {transformer_layer_delay}s "
+                f"Output Layer Delay: {output_layer_delay} s"
             )
 
             dummy_input = torch.randn(1, 1, hidden_size, device=self.device, dtype=self.llm.dtype)
@@ -592,12 +596,17 @@ class Server:
                 break
 
 
+        avg_trans_layer_delay = sum(transformer_layer_delays) / len(transformer_layer_delays)
+        avg_output_layer_delay = sum(output_layer_delays) / len(output_layer_delays)
+        avg_inference_delay = avg_trans_layer_delay + avg_output_layer_delay
+        
         # Calculate the output layer's Transformer Layer Equivilant (TLE)
-        self.output_layer_temporal_tle = output_layer_delay / transformer_layer_delay
+        self.output_layer_temporal_tle = avg_output_layer_delay / avg_trans_layer_delay
         self.chain.update_output_layer_temporal_tle(self.output_layer_temporal_tle)
 
-        self._calculate_processing_rate(inference_delay)
+        self._calculate_processing_rate(avg_inference_delay)
         self.chain.update_processing_rate(self.processing_rate)
+        logger.info(f"Profiling: Processing Rate: {self.processing_rate} l/s")
 
         self._unload_llm()
 
@@ -1454,9 +1463,13 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             server_node._update_memory_usage()
-            if server_node.llm is not None and hasattr(server_node.llm, "output_layer_loaded"):
-                server_node.chain.update_layers_loaded(server_node.model.num_layers > 0)
-                server_node.chain.update_output_layer_loaded(server_node.llm.output_layer_loaded)
+
+            current_llm = server_node.llm
+            current_model = server_node.model
+
+            if current_llm is not None and hasattr(current_llm, "output_layer_loaded") and current_model is not None:
+                server_node.chain.update_layers_loaded(current_model.num_layers > 0)
+                server_node.chain.update_output_layer_loaded(current_llm.output_layer_loaded)
             server_node.chain.republish_keys()
 
     def _chain_health_monitor_task(server_node: Server):
@@ -1467,7 +1480,7 @@ def serve():
                 # --- Backup Opportunistic Takeover ---
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
-                if weak_node_info and server_node.chain.get_chain_status() == ChainStatus.READY:
+                if weak_node_info: #and server_node.chain.get_chain_status() == ChainStatus.READY:
                     server_node.opportunistic_takeover(weak_node_info, predecessor_info)
 
             elif server_node.chain.is_tail():
@@ -1559,8 +1572,8 @@ def serve():
     profile_node = profile_node_str.lower() in ("1", "true", "yes")
     if profile_node:
         server_node._profile_node(
-            dummy_seq_length=1000, profiling_runs=50, profiling_duration_s=PROFILING_DURATION
-        )
+            dummy_seq_length=30, profiling_runs=500, profiling_duration_s=PROFILING_DURATION
+        ) # 1000, 50
 
     # Load the server's assigned layers
     # if not server_node.chain.is_backup():

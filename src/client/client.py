@@ -644,7 +644,7 @@ class Client:
 
             # Wait for the Tail to set the inference_response event
             start_chain_time = time.perf_counter()
-            is_set = self.inference_response_event.wait(timeout=15)
+            is_set = self.inference_response_event.wait(timeout=INFERENCE_RESPONSE_TIMEOUT)
 
             self.chain_response_delay = time.perf_counter() - start_chain_time
 
@@ -673,6 +673,7 @@ class Client:
                 for attempt in range(attempts):
                     if self.chain.get_chain_status() in (
                         ChainStatus.REPAIRING,
+                        ChainStatus.TAKEOVER,
                         ChainStatus.UNREADY,
                     ):
                         logger.info("The chain is not Ready yet. Waiting...")
