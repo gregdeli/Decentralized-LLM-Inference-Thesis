@@ -665,6 +665,7 @@ class Client:
             if response.HasField("error_message"):
                 logger.error(f"{response.error_message}")
                 yield f"{response.error_message}"
+                time.sleep(2)
 
                 # self.chain.update_chain_status(ChainStatus.UNREADY)
 
@@ -723,7 +724,7 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             # -----TEEEEEST-----
-            # logger.debug(f"Tokens Generated: {tokens_generated}")
+            logger.debug(f"Tokens Generated: {tokens_generated}")
             # logger.debug(f"Token Generated at: {time.perf_counter()}")
 
             itls += time.perf_counter() - start_itl

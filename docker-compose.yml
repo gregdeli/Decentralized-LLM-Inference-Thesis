@@ -9,8 +9,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=21
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=10
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
@@ -26,7 +26,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 4G #11657M 
+          memory: 8G #11657M 
           # cpus: '4.0'
     ports:
       - "5671:5678"
@@ -42,7 +42,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=10
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
@@ -60,7 +61,7 @@ services:
       #         capabilities: [gpu]
         limits:
           memory: 4G # 2.2
-          cpus: '4.0'
+          # cpus: '4.0'
     ports:
       - "5672:5678"  
       # - 9999:9999 
@@ -75,8 +76,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=27
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=12
       - PROFILE=$PROFILE
       # - PROFILE=1
       - QUANTIZE=$QUANTIZE
@@ -112,8 +113,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=17
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=17
       - PROFILE=$PROFILE
       # - PROFILE=1
       - QUANTIZE=$QUANTIZE
@@ -174,10 +175,10 @@ services:
   client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    # command: sleep infinity 
+    command: sleep infinity 
     hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}
