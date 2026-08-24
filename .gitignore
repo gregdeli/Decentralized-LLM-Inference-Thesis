@@ -13,3 +13,5 @@ models
 __pycache__/
 
 downloads
+
+node_delays.csv
