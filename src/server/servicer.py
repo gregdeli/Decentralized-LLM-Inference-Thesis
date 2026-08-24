@@ -69,6 +69,8 @@ class NodeServicer(nodeservice_pb2_grpc.NodeServiceServicer):
         deserialization_delay = time.perf_counter() - start
         # logger.debug(f"Deserialization Delay: {deserialization_delay:.12f}")
         # self.server_node.chain.update_deserialization_delay(deserialization_delay)
+        if self.server_node.benchmark:
+            self.server_node.deserialization_delays.append(deserialization_delay)
 
         # threading.Thread(
         #     target=self.server_node.run_local_layers,

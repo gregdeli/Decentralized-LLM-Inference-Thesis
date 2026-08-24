@@ -1,6 +1,7 @@
 """Main server application logic"""
 
 import json
+import csv
 import logging
 import sys
 import os
@@ -63,6 +64,7 @@ class Server:
         host_maddrs: List[str] = ["/ip4/0.0.0.0/tcp/4001"],
         initial_peers: List[str] = None,
         quantize_flag: bool = True,
+        benchmark: bool = False
     ):
         self.quantize_flag = quantize_flag
         
@@ -168,7 +170,13 @@ class Server:
         self.inference_delay = 0.0
         self.processing_rate = 0
         self.grpc_overhead = 0.0
-        # self.succ_network_latency = 0.0
+
+        self.benchmark = benchmark
+        self.deserialization_delays = []
+        self.inference_delays = []
+        self.logit_sampling_delays = []
+        self.serialization_delays = []
+        self.transmission_delays = []
 
         # Successor Stub
         self.successor_stub = None
@@ -688,6 +696,9 @@ class Server:
 
             self.chain.update_inference_delay(self.inference_delay, return_future=True)
 
+            if self.benchmark:
+                self.inference_delays.append(self.inference_delay)
+
             # Recalculate Output Temporal TLE
             if output_layer_delay > 0.0 and transformer_layer_delay > 0.0:
                 self.output_layer_temporal_tle = output_layer_delay / (transformer_layer_delay / self.model.num_layers)
@@ -718,6 +729,8 @@ class Server:
             logit_sampling_delay = time.perf_counter() - start
             # logger.debug(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
             # self.chain.update_logit_sampling_delay(logit_sampling_delay)
+            if self.benchmark:
+                self.logit_sampling_delays.append(logit_sampling_delay)
 
             # Benchmarking
             logger.debug(f"Token Generated at: {time.perf_counter()}")
@@ -735,6 +748,8 @@ class Server:
             serialization_delay = time.perf_counter() - start
             # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
             # self.chain.update_serialization_delay(serialization_delay)
+            if self.benchmark:
+                self.serialization_delays.append(serialization_delay)
 
             # Connect to Client
             try:
@@ -748,6 +763,8 @@ class Server:
                 self.grpc_overhead = time.perf_counter() - start
                 # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
                 # self.chain.update_grpc_overhead(self.grpc_overhead)
+                if self.benchmark:
+                    self.transmission_delays.append(self.grpc_overhead)
 
             except grpc.RpcError as e:
                 logger.error(f"Failed to send result to client at {response_address}: {e}")
@@ -775,6 +792,8 @@ class Server:
         serialization_delay = time.perf_counter() - start
         # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
         # self.chain.update_serialization_delay(serialization_delay)
+        if self.benchmark:
+            self.serialization_delays.append(serialization_delay)
 
         try:
             # logger.debug(f"Forwarding RunLayers request to successor from ({response_address})...")
@@ -788,6 +807,8 @@ class Server:
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
             # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
             # self.chain.update_grpc_overhead(self.grpc_overhead)
+            if self.benchmark:
+                self.transmission_delays.append(self.grpc_overhead)         
         except grpc.RpcError as e:
             if (
                 e.code() == grpc.StatusCode.UNAVAILABLE
@@ -1420,6 +1441,10 @@ def serve():
 
     device = os.getenv("DEVICE", None)
 
+    # Read the BENCHMARK env var
+    benchmark_str = os.getenv("BENCHMARK", "0")
+    benchmark = benchmark_str.lower() in ("1", "true", "yes")
+
     # Initialize the server object
     server_node = Server(
         model_path=model_path,
@@ -1429,6 +1454,7 @@ def serve():
         initial_peers=initial_peers,
         grpc_addr=grpc_addr,
         quantize_flag=quantize_flag,
+        benchmark=benchmark,
         device=device
     )
 
@@ -1556,7 +1582,33 @@ def serve():
 
     # Shutdown handler
     def _handle_shutdown(signum, frame):
-        # server.stop(grace=2)
+        # Save measured delays to a file
+        def calculate_avg(delay_list):
+            return (sum(delay_list) / len(delay_list)) * 1000.0 if delay_list else 0.0
+
+        avg_deserialization_delay = calculate_avg(server_node.deserialization_delays)
+        avg_inference_delay = calculate_avg(server_node.inference_delays)
+        avg_logit_sampling_delay = calculate_avg(server_node.logit_sampling_delays)
+        avg_serialization_delay = calculate_avg(server_node.serialization_delays)
+        avg_transmission_delay = calculate_avg(server_node.transmission_delays)
+
+        delay_metrics = {
+            "Avg Deserialization Delay": avg_deserialization_delay,
+            "Avg Inference Delay": avg_inference_delay,
+            "Avg Logit Sampling Delay": avg_logit_sampling_delay,
+            "Avg Serialization Delay": avg_serialization_delay,
+            "Avg Transmission Delay": avg_transmission_delay
+        }
+
+        try:
+            with open("node_delays.csv", mode="w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, fieldnames=delay_metrics.keys())
+                writer.writeheader()
+                writer.writerow(delay_metrics)
+            logger.info(f"Delay measurements successfully saved to node_delays.csv")
+        except IOError as e:
+            logger.error(f"Failed to write delay metrics to csv: {e}")
+
 
         # Its not realistic to expect a grace period in a real distributed system node failure
         logger.info("Shutting down gRPC server...")
