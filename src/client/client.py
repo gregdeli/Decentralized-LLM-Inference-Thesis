@@ -670,7 +670,7 @@ class Client:
                 # self.chain.update_chain_status(ChainStatus.UNREADY)
 
                 # Wait until the repair is done
-                attempts = 10
+                attempts = 20
                 for attempt in range(attempts):
                     if self.chain.get_chain_status() in (
                         ChainStatus.REPAIRING,
@@ -724,7 +724,7 @@ class Client:
             self.yield_delay = time.perf_counter() - start
 
             # -----TEEEEEST-----
-            logger.debug(f"Tokens Generated: {tokens_generated}")
+            # logger.debug(f"Tokens Generated: {tokens_generated}")
             # logger.debug(f"Token Generated at: {time.perf_counter()}")
 
             itls += time.perf_counter() - start_itl

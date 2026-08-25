@@ -9,8 +9,8 @@ services:
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
+      # - NUM_LAYERS=$NUM_LAYERS
+      - NUM_LAYERS=10
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
@@ -26,7 +26,7 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 2G #11657M 
+          memory: 11G #11657M 
           # cpus: '4.0'
     ports:
       - "5671:5678"
@@ -60,7 +60,7 @@ services:
       #         count: 1
       #         capabilities: [gpu]
         limits:
-          memory: 2G # 2.2
+          memory: 5.5G # 2.2
           # cpus: '4.0'
     ports:
       - "5672:5678"  
@@ -89,11 +89,11 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        # reservations:
-        #     devices:
-        #       - driver: nvidia
-        #         count: 1
-        #         capabilities: [gpu]
+        reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
         limits:
           memory: 2G
           # cpus: '4.0'
@@ -104,219 +104,219 @@ services:
       - "5673:5678"
       # - 9999:9999 
 
-  worker-D:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-D
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
-      - PROFILE=$PROFILE
-      # - PROFILE=1
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-C:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-          # cpus: '4.0'
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5674:5678"
+  # worker-D:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-D
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=2
+  #     - PROFILE=$PROFILE
+  #     # - PROFILE=1
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-C:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #         # cpus: '4.0'
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5674:5678"
   
-  worker-E:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-E
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
-      - PROFILE=$PROFILE
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-D:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5675:5678"
+  # worker-E:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-E
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=2
+  #     - PROFILE=$PROFILE
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-D:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5675:5678"
 
-  worker-F:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-F
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
-      - PROFILE=$PROFILE
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-E:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5682:5678"
+  # worker-F:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-F
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=2
+  #     - PROFILE=$PROFILE
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-E:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5682:5678"
 
-  worker-G:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-G
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
-      - PROFILE=$PROFILE
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-F:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5683:5678"
+  # worker-G:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-G
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=2
+  #     - PROFILE=$PROFILE
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-F:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5683:5678"
 
-  worker-H:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-H
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=2
-      - PROFILE=$PROFILE
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-G:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5684:5678"
+  # worker-H:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-H
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=2
+  #     - PROFILE=$PROFILE
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-G:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5684:5678"
 
-  worker-I:
-    image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
-    hostname: worker-I
-    environment:
-      - MODEL_PATH=/${MODEL_PATH}
-      - GRPC_PORT=5001
-      - NUM_LAYERS=$NUM_LAYERS
-      # - NUM_LAYERS=4
-      - PROFILE=$PROFILE
-      - QUANTIZE=$QUANTIZE
-      - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      - BOOTSTRAP_NODE_ADDR=worker-H:5001
-    volumes:
-      - ./models:/models:ro
-    deploy:
-      resources:
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
-        limits:
-          memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
-    ports:
-      - "5685:5678"                           
+  # worker-I:
+  #   image: decentralized-llm-thesis:latest
+  #   # command: python server/server.py
+  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+  #   # command: sleep infinity
+  #   hostname: worker-I
+  #   environment:
+  #     - MODEL_PATH=/${MODEL_PATH}
+  #     - GRPC_PORT=5001
+  #     - NUM_LAYERS=$NUM_LAYERS
+  #     # - NUM_LAYERS=4
+  #     - PROFILE=$PROFILE
+  #     - QUANTIZE=$QUANTIZE
+  #     - LOG_LEVEL=$LOG_LEVEL
+  #     # - ADDED_DELAY=0.08
+  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
+  #     - BOOTSTRAP_NODE_ADDR=worker-H:5001
+  #   volumes:
+  #     - ./models:/models:ro
+  #   deploy:
+  #     resources:
+  #       # reservations:
+  #       #   devices:
+  #       #     - driver: nvidia
+  #       #       count: 1
+  #       #       capabilities: [gpu]
+  #       limits:
+  #         memory: 2G
+  #   # depends_on:
+  #   #   - worker-A
+  #   #   - worker-B
+  #   ports:
+  #     - "5685:5678"                           
 
   client-A:
     image: decentralized-llm-thesis:latest 
     # command: python dht_test.py 
-    command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
+    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
     # command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-    # command: sleep infinity 
+    command: sleep infinity 
     hostname: client-A
     environment:
       - MODEL_PATH=/${MODEL_PATH}
