@@ -692,7 +692,7 @@ class Server:
             #     time.sleep(self.added_delay)
 
             self.inference_delay = transformer_layer_delay + output_layer_delay
-            # logger.debug(f"Inference Delay: {self.inference_delay:.6f}")
+            logger.debug(f"Inference Delay: {self.inference_delay:.6f}")
 
             self.chain.update_inference_delay(self.inference_delay, return_future=True)
 
@@ -727,7 +727,7 @@ class Server:
             next_token = self.llm.sample_logits(logits)
 
             logit_sampling_delay = time.perf_counter() - start
-            # logger.debug(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
+            logger.debug(f"Logit Sampling Delay: {logit_sampling_delay:.6f}")
             # self.chain.update_logit_sampling_delay(logit_sampling_delay)
             if self.benchmark:
                 self.logit_sampling_delays.append(logit_sampling_delay)
@@ -746,7 +746,7 @@ class Server:
             response = tensor_to_response(next_token)
 
             serialization_delay = time.perf_counter() - start
-            # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
+            logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
             # self.chain.update_serialization_delay(serialization_delay)
             if self.benchmark:
                 self.serialization_delays.append(serialization_delay)
@@ -761,7 +761,7 @@ class Server:
                 self.client_stub.ReceiveResponse(response)
 
                 self.grpc_overhead = time.perf_counter() - start
-                # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+                logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
                 # self.chain.update_grpc_overhead(self.grpc_overhead)
                 if self.benchmark:
                     self.transmission_delays.append(self.grpc_overhead)
@@ -790,7 +790,7 @@ class Server:
         request.response_address = response_address
 
         serialization_delay = time.perf_counter() - start
-        # logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
+        logger.debug(f"Serialization Delay: {serialization_delay:.12f}")
         # self.chain.update_serialization_delay(serialization_delay)
         if self.benchmark:
             self.serialization_delays.append(serialization_delay)
@@ -805,7 +805,7 @@ class Server:
             succ_deserialization_delay = response.deserialization_delay
 
             self.grpc_overhead = time.perf_counter() - start - succ_deserialization_delay
-            # logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
+            logger.debug(f"GRPC Overhead: {self.grpc_overhead:.12f}")
             # self.chain.update_grpc_overhead(self.grpc_overhead)
             if self.benchmark:
                 self.transmission_delays.append(self.grpc_overhead)         
@@ -1424,7 +1424,7 @@ def serve():
 
     # Connect to the bootstrap node to get its p2p Multiaddress
     if bootstrap_node_addr_str:
-        peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=15)
+        peer_addr = get_bootstrap_peer_address(bootstrap_node_addr_str, attempts=GET_BOOTSTRAP_ADDRESS_ATTEMPTS)
 
         if not peer_addr:
             return
