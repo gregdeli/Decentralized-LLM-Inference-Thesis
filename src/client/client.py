@@ -725,7 +725,7 @@ class Client:
 
             # -----TEEEEEST-----
             # logger.debug(f"Tokens Generated: {tokens_generated}")
-            # logger.debug(f"Token Generated at: {time.perf_counter()}")
+            logger.debug(f"Token Generated at: {time.perf_counter()}")
 
             itls += time.perf_counter() - start_itl
 

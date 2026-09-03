@@ -1,4 +1,8 @@
 """
+single cpu node:
+worker-A: cpu 12GB
+
+rest:
 worker-A: cpu 3GB
 worker-B: cpu 4GB 
 worker-C: cuda
@@ -15,7 +19,7 @@ MODELS = [
     "models/Llama-3.2-3B-Instruct",
 ]
 
-ALLOCATIONS = ["single node", "greedy", "optimal"]
+ALLOCATIONS = ["single cpu node", "single gpu node", "greedy", "optimal"]
 
 BANDWIDTH = "250" # mbit
 QUANTIZE_FLAG = "1"
@@ -60,7 +64,17 @@ def run_benchmarks():
         for allocation in ALLOCATIONS:
             print(f"\nTesting -> Model: {model} | Allocation Strategy: {allocation}\n")
 
-            if allocation == "single node":
+            if allocation == "single cpu node":
+                env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG")
+                subprocess.run(
+                    ["docker", "compose", "up", "-d", "worker-A"], 
+                    env=env,
+                    check=True
+                )
+
+                wait_for_container_log("worker-A", "Server is running...")
+
+            elif allocation == "single gpu node":
                 env = set_env(MODEL_PATH=model, PROFILE="0", QUANTIZE="1", LOG_LEVEL="DEBUG")
                 subprocess.run(
                     ["docker", "compose", "up", "-d", "worker-C"], 
@@ -157,9 +171,12 @@ def run_benchmarks():
             avg_itl = float(re.findall(r"Average ITL: (\d+\.\d+)", client_a_logs)[0])
 
             # tokens_generated = [int(x) for x in re.findall(r"Tokens Generated: (\d+)", client_a_logs)]
+            token_gen_start_time = float(re.search(r"Start Token Generation at: (\d+\.\d+)", client_a_logs).group(1))
 
             timestamps = [float(x) for x in re.findall(r"Token Generated at: (\d+\.\d+)", client_a_logs)]
-            min_timestamp = min(timestamps)
+            timestamps.insert(0, token_gen_start_time)
+
+            min_timestamp = timestamps[0]
             timestamps = [x - min_timestamp for x in timestamps]
 
             tokens_generated = [x for x in range(len(timestamps))]
@@ -174,7 +191,9 @@ def run_benchmarks():
                 "Avg_ITL": avg_itl
             })
 
-            if allocation == "single node":
+            if allocation == "single cpu node":
+                workers = ["worker-A"]
+            elif allocation == "single gpu node":
                 workers = ["worker-C"]
             else:
                 workers = ["worker-A", "worker-B", "worker-C"]
@@ -221,12 +240,12 @@ def run_benchmarks():
             subprocess.run(["docker", "compose", "down", "-v"], check=True)
             time.sleep(5)
 
-    with open("tests/baseline/client_results.csv", "w", newline="") as f:
+    with open("tests/baseline/client_results2.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=client_results[0].keys())
         writer.writeheader()
         writer.writerows(client_results)
 
-    with open("tests/baseline/worker_results.csv", "w", newline="") as f:
+    with open("tests/baseline/worker_results2.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=worker_results[0].keys())
         writer.writeheader()
         writer.writerows(worker_results)

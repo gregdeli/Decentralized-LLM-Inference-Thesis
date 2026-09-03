@@ -21,7 +21,7 @@ def plot_client_results(csv_path="client_results.csv"):
             timestamps = ast.literal_eval(subset.iloc[0]['Timestamps'])
             tokens = ast.literal_eval(subset.iloc[0]['Tokens_Generated'])
             
-            plt.plot(timestamps, tokens, label=allocation.title())#, marker='o', markersize=2)
+            plt.plot(timestamps, tokens, label=allocation)#, marker='o', markersize=2)
 
     plt.title("Token Count vs. Time per Allocation Strategy")
     plt.xlabel("Times (s)")
@@ -29,7 +29,7 @@ def plot_client_results(csv_path="client_results.csv"):
     plt.legend(title="Allocation Strategy")
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
-    plt.savefig("tests/baseline/tokens_vs_time.png")
+    plt.savefig("tests/baseline/tokens_vs_time2.png")
     plt.close()
 
 def plot_worker_results(csv_path="worker_results.csv"):
@@ -70,7 +70,7 @@ def plot_worker_results(csv_path="worker_results.csv"):
             colormap='viridis'
         )
         
-        plt.title(f"Worker Delays - {allocation.title()} Allocation")
+        plt.title(f"Worker Delays - {allocation} Allocation")
         plt.xlabel("Worker and Assigned Layers")
         plt.ylabel("Delay (ms)")
         
@@ -79,9 +79,9 @@ def plot_worker_results(csv_path="worker_results.csv"):
         
         plt.xticks(rotation=0)
         plt.tight_layout()
-        plt.savefig(f"tests/baseline/worker_delays_{allocation}.png")
+        plt.savefig(f"tests/baseline/worker_delays_{allocation}2.png")
         plt.close()
 
 if __name__ == "__main__":
-    plot_client_results("tests/baseline/client_results.csv")
-    plot_worker_results("tests/baseline/worker_results.csv")
+    plot_client_results("tests/baseline/client_results2.csv")
+    plot_worker_results("tests/baseline/worker_results2.csv")
