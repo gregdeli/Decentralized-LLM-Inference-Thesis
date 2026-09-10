@@ -638,9 +638,14 @@ class Client:
                     logger.warning(f"A gRPC error occurred during inference: {e.code().name}")
                     self.head_server_stub = None
 
-                yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
-                self.chain.update_chain_status(ChainStatus.UNREADY)
-                return
+                # yield f"<br><span style='color:red'>The HEAD server has failed. The chain is being repaired..."
+                # self.chain.update_chain_status(ChainStatus.UNREADY)
+
+                self.inference_response_event.set()
+                self.inference_response = nodeservice_pb2.InferenceResponse(
+                    error_message=f"Server-side ERROR: The Head server ({self.head_server_stub_addr}) has failed. The chain is being repaired..."
+                )
+                # return
 
             # Wait for the Tail to set the inference_response event
             start_chain_time = time.perf_counter()
@@ -670,10 +675,11 @@ class Client:
                 # self.chain.update_chain_status(ChainStatus.UNREADY)
 
                 # Wait until the repair is done
-                attempts = 20
+                attempts = CLIENT_WAIT_FOR_REPAIR_ATTEMPTS
                 for attempt in range(attempts):
                     if self.chain.get_chain_status() in (
                         ChainStatus.REPAIRING,
+                        ChainStatus.REALLOCATING,
                         ChainStatus.TAKEOVER,
                         ChainStatus.UNREADY,
                     ):
@@ -689,10 +695,12 @@ class Client:
                     seq_length = input_tensor.size(1)
 
                     prompt_length = seq_length
+
+                    self.chain.update_chain_status(ChainStatus.RUNNING)
                     continue
                 else:
                     yield f'<br><span style="color:red">{response.error_message} Aborting generation task. Please try again.</span>'
-                    self.chat_history = None
+                    # self.chat_history = None
                     return
 
             # Deserialize the token

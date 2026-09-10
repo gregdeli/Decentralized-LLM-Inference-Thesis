@@ -1539,21 +1539,21 @@ def serve():
                         server_node.successor_stub = None
 
             # --- Active Node Successor Opportunistic Takeover ---
-            if server_node.chain.get_chain_status() == ChainStatus.READY:
-                succ_info = server_node.chain.get_successor_info()
-                if not succ_info:
-                    continue
+            # if server_node.chain.get_chain_status() == ChainStatus.READY:
+            succ_info = server_node.chain.get_successor_info()
+            if not succ_info:
+                continue
 
-                successor_proc_rate = succ_info.get("processing_rate")
-                if (
-                    server_node.processing_rate
-                    > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD
-                ):
-                    server_node.opportunistic_takeover(succ_info, predecessor_info=None)
+            successor_proc_rate = succ_info.get("processing_rate")
+            if (
+                server_node.processing_rate
+                > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD
+            ):
+                server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
             # Check if Reallocation is necessary
-            # if server_node.chain.get_chain_status() == ChainStatus.READY:
-            #     server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
+            if server_node.chain.get_chain_status() == ChainStatus.READY:
+                server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
 
     def _udp_discovery_server():
         """Background task that listens for bootstrap discovery requests and responds with the servers grpc address"""
