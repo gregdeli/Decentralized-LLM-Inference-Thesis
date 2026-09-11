@@ -61,7 +61,7 @@ services:
       #         capabilities: [gpu]
         limits:
           memory: 4G # 2.2
-          # cpus: '8.0'
+          cpus: '8.0'
     ports:
       - "5672:5678"  
       # - 9999:9999 
@@ -89,13 +89,13 @@ services:
       - ./models:/models:ro
     deploy:
       resources:
-        # reservations:
-        #     devices:
-        #       - driver: nvidia
-        #         count: 1
-        #         capabilities: [gpu]
+        reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
         limits:
-          memory: 4G
+          memory: 2G
           # cpus: '6.0'
     # depends_on:
       # - worker-A

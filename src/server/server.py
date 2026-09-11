@@ -1509,15 +1509,17 @@ def serve():
                 if weak_node_info: #and server_node.chain.get_chain_status() == ChainStatus.READY:
                     server_node.opportunistic_takeover(weak_node_info, predecessor_info)
 
-            elif server_node.chain.is_tail():
                 continue
+
+            # elif server_node.chain.is_tail():
+            #     continue
 
             # Perform the health check on the successor
             if server_node.chain.get_chain_status() in (
                 ChainStatus.READY,
                 ChainStatus.UNREADY,
                 ChainStatus.NONE,
-            ):
+            ) and not server_node.chain.is_tail():
                 try:
                     server_node._connect_to_successor()
                     if server_node.successor_stub is not None:
@@ -1541,16 +1543,15 @@ def serve():
             # --- Active Node Successor Opportunistic Takeover ---
             # if server_node.chain.get_chain_status() == ChainStatus.READY:
             succ_info = server_node.chain.get_successor_info()
-            if not succ_info:
-                continue
 
-            successor_proc_rate = succ_info.get("processing_rate")
-            if (
+            # successor_proc_rate = succ_info.get("processing_rate")
+            if succ_info and succ_info.get("processing_rate") and (
                 server_node.processing_rate
-                > successor_proc_rate * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD
+                > succ_info.get("processing_rate") * ACTIVE_NODE_TAKEOVER_MULT_THRESHOLD
             ):
                 server_node.opportunistic_takeover(succ_info, predecessor_info=None)
 
+            # --- Dynamic Layer Reallocation ---
             # Check if Reallocation is necessary
             if server_node.chain.get_chain_status() == ChainStatus.READY:
                 server_node.chain.evaluate_and_trigger_reallocation(server_node.config)
@@ -1622,7 +1623,7 @@ def serve():
     # Profile the node to get processing rate measurements
     profile_node_str = os.getenv("PROFILE", "1")
     profile_node = profile_node_str.lower() in ("1", "true", "yes")
-    if profile_node:
+    if profile_node and server_node.chain.is_backup():
         server_node._profile_node(
             dummy_seq_length=30, profiling_runs=500, profiling_duration_s=PROFILING_DURATION
         ) # 1000, 50

@@ -850,21 +850,21 @@ class ChainManager:
             if not server_info:
                 break
 
-            if not server_info.get("inference_delay"):
-                if not server_info.get("processing_rate"):
-                    return
+            # if not server_info.get("inference_delay"):
+            #     if not server_info.get("processing_rate"):
+            #         return
 
-                layers = server_info.get("layers")
-                current_num_layers = layers[1] - layers[0] + 1 if layers else 0
-                current_num_layers += (
-                    server_info.get("output_layer_temporal_tle")
-                    if server_info.get("output_layer_loaded")
-                    else 0
-                )
+            #     layers = server_info.get("layers")
+            #     current_num_layers = layers[1] - layers[0] + 1 if layers else 0
+            #     current_num_layers += (
+            #         server_info.get("output_layer_temporal_tle")
+            #         if server_info.get("output_layer_loaded")
+            #         else 0
+            #     )
 
-                server_info["inference_delay"] = current_num_layers / server_info.get(
-                    "processing_rate"
-                )
+            #     server_info["inference_delay"] = current_num_layers / server_info.get(
+            #         "processing_rate"
+            #     )
 
             server_infos.append(server_info)
 
@@ -878,74 +878,85 @@ class ChainManager:
         if len(server_infos) == 0:
             return
 
+        # Check if the servers have inference delay recorded
+        for info in server_infos:
+            if info.get("inference_delay") is None:
+                logger.info(f"Inference delay not recorder for server: {info.get('id')[:DIGITS_SHOW]}")    
+                return
+
         # Identify the node with the highest inference delay
         bottleneck_node = max(server_infos, key=lambda x: x.get("inference_delay"))
         fastest_node = min(server_infos, key=lambda x: x.get("inference_delay"))
         # avg_delay = sum(s.get("inference_delay") for s in server_infos) / len(server_infos)
 
-        # Check imbalance
-        if bottleneck_node.get("inference_delay") > fastest_node.get("inference_delay") * (
-            1 + IMBALANCE_THRESHOLD
-        ):
-            # Check if reallocation is possible
-            # If any node with lower delay has memory to spare
-            # actionable = False
-            # for s in server_infos:
-            #     if s == bottleneck_node:
-            #         continue
+        my_inference_delay = self.get_self_info().get("inference_delay")
 
-            #     # Check if s has memory to spare for at least 1 layer
-            #     can_load_one = can_load(
-            #         config=config,
-            #         current_layers=s.get("layers"),
-            #         output_layer_curr_loaded=s.get("output_layer_loaded"),
-            #         avail_mem=s.get("available_memory"),
-            #         mem_usage=s.get("memory_usage"),
-            #         avail_vram=s.get("available_vram"),
-            #         vram_usage=s.get("vram_usage"),
-            #         num_layers=1,
-            #     )
+        # Trigger reallocation if this node is the bottleneck node
+        if my_inference_delay == bottleneck_node.get("inference_delay"):
 
-            #     if (
-            #         s.get("inference_delay") * (1 + IMBALANCE_THRESHOLD)
-            #         < bottleneck_node.get("inference_delay")
-            #         and can_load_one
-            #     ):
-            #         actionable = True
-            #         break
+            # Check imbalance
+            if bottleneck_node.get("inference_delay") > fastest_node.get("inference_delay") * (
+                1 + IMBALANCE_THRESHOLD
+            ):
+                # Check if reallocation is possible
+                # If any node with lower delay has memory to spare
+                # actionable = False
+                # for s in server_infos:
+                #     if s == bottleneck_node:
+                #         continue
 
-            # Check if the fastest node can load one more layer
-            # actionable = False
-            can_load_one = can_load(
-                config=config,
-                current_layers=fastest_node.get("layers"),
-                output_layer_curr_loaded=fastest_node.get("output_layer_loaded"),
-                avail_mem=fastest_node.get("available_memory"),
-                mem_usage=fastest_node.get("memory_usage"),
-                avail_vram=fastest_node.get("available_vram"),
-                vram_usage=fastest_node.get("vram_usage"),
-                num_layers=1,
-            )
+                #     # Check if s has memory to spare for at least 1 layer
+                #     can_load_one = can_load(
+                #         config=config,
+                #         current_layers=s.get("layers"),
+                #         output_layer_curr_loaded=s.get("output_layer_loaded"),
+                #         avail_mem=s.get("available_memory"),
+                #         mem_usage=s.get("memory_usage"),
+                #         avail_vram=s.get("available_vram"),
+                #         vram_usage=s.get("vram_usage"),
+                #         num_layers=1,
+                #     )
 
-            # Trigger the reallocation
-            # if actionable:
-            if can_load_one:
-                logger.info("Chain is imbalanced, triggering reallocation...")
-                logger.info(f"Slowest node delay: {bottleneck_node.get('inference_delay')}")
-                logger.info(f"Fastest node delay: {fastest_node.get('inference_delay')}")
-                try:
-                    head_server_addr = self.get_head_server_info().get("address")
-                    channel = create_grpc_channel(head_server_addr)
-                    head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+                #     if (
+                #         s.get("inference_delay") * (1 + IMBALANCE_THRESHOLD)
+                #         < bottleneck_node.get("inference_delay")
+                #         and can_load_one
+                #     ):
+                #         actionable = True
+                #         break
 
-                    head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
-                except grpc.RpcError as e:
-                    logger.error("HEAD failed to trigger the reallocation process")
+                # Check if the fastest node can load one more layer
+                # actionable = False
+                can_load_one = can_load(
+                    config=config,
+                    current_layers=fastest_node.get("layers"),
+                    output_layer_curr_loaded=fastest_node.get("output_layer_loaded"),
+                    avail_mem=fastest_node.get("available_memory"),
+                    mem_usage=fastest_node.get("memory_usage"),
+                    avail_vram=fastest_node.get("available_vram"),
+                    vram_usage=fastest_node.get("vram_usage"),
+                    num_layers=1,
+                )
+
+                # Trigger the reallocation
+                # if actionable:
+                if can_load_one:
+                    logger.info("Chain is imbalanced, triggering reallocation...")
+                    logger.info(f"Slowest node delay: {bottleneck_node.get('inference_delay')}")
+                    logger.info(f"Fastest node delay: {fastest_node.get('inference_delay')}")
+                    try:
+                        head_server_addr = self.get_head_server_info().get("address")
+                        channel = create_grpc_channel(head_server_addr)
+                        head_server_stub = nodeservice_pb2_grpc.NodeServiceStub(channel)
+
+                        head_server_stub.TriggerReallocation(nodeservice_pb2.Empty())
+                    except grpc.RpcError as e:
+                        logger.error("HEAD failed to trigger the reallocation process")
+                else:
+                    logger.info("Chain is imbalanced but cant be balanced.")
+
             else:
-                logger.info("Chain is imbalanced but cant be balanced.")
-
-        else:
-            logger.info("Chain is balanced!")
+                logger.info("Chain is balanced!")
 
     def evaluate_takeover_eligibility(
         self,
