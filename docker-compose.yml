@@ -107,8 +107,8 @@ services:
   worker-D:
     image: decentralized-llm-thesis:latest
     # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    # command: sleep infinity
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: sleep infinity
     hostname: worker-D
     environment:
       - MODEL_PATH=/${MODEL_PATH}
