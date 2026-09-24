@@ -238,6 +238,16 @@ class Server:
         self.num_local_params = 0
 
         # Release freed memory
+        self._release_mem()
+
+        self._update_memory_usage()
+        # if update_on_dht:
+        #     self.chain.update_layers(None)
+        #     self.chain.update_layers_loaded(False)
+        #     self.chain.update_output_layer_loaded(False)
+
+    def _release_mem(self):
+        # Release freed memory
         gc.collect()
 
         try:
@@ -248,12 +258,6 @@ class Server:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-        self._update_memory_usage()
-        # if update_on_dht:
-        #     self.chain.update_layers(None)
-        #     self.chain.update_layers_loaded(False)
-        #     self.chain.update_output_layer_loaded(False)
 
     def _reload_llm(self, layers: Tuple[int, int], load_output_layer: bool = False):
         """Helper to reload the model with explicit GC"""
@@ -824,7 +828,7 @@ class Server:
                 )
         return
 
-    def trigger_reallocation(self):
+    def trigger_reallocation(self, load_max: bool = False):
         """
         Triggers the layer reallocation process starting from the HEAD.
         """
@@ -851,7 +855,7 @@ class Server:
                 self.config, layer_mem_size_mb, output_layer_mem_size
             )
 
-            load_max = False
+            # load_max = False
             if total_chain_memory < model_mem_size:
                 load_max = True
                 logger.info(
@@ -1503,6 +1507,8 @@ def serve():
         while True:
             time.sleep(HEARTBEAT_INTERVAL_S)
             if server_node.chain.is_backup():
+                server_node._release_mem()
+
                 # --- Backup Opportunistic Takeover ---
                 weak_node_info, predecessor_info = server_node.chain.evaluate_takeover_eligibility()
 
@@ -1539,6 +1545,10 @@ def serve():
                             f"A gRPC error occurred during health check: {e.code().name}"
                         )
                         server_node.successor_stub = None
+
+            # --- Head, all layers can be loaded with a reallocation do it---
+            # if server_node.chain.is_head() and server_node.chain.get_all_layers_loaded() == False:
+            #     server_node.trigger_reallocation(load_max=True)
 
             # --- Active Node Successor Opportunistic Takeover ---
             # if server_node.chain.get_chain_status() == ChainStatus.READY:
