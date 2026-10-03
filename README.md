@@ -56,7 +56,7 @@ python download_models/<your_selected_script>.py
 2. **Configuration:** Create a `.env` file in the root directory and configure your specific node parameters. You can use `.env.example` as a reference. *(Note: Ensure `MODEL_PATH` points to the exact same model across all participating nodes).*
 3. **Start a Server Node:**
    ```bash
-   python server/server.py
+   python src/server/server.py
    ```
 4. **Start a Client Node:**
    * To run the Graphical User Interface (GUI) version:
