@@ -1,7 +1,0 @@
-# Build image
-docker build -t decentralized-llm-thesis:latest . 
-
-# Create and run containers
-docker compose up
-
-* Ta evala sto scripts/build_and_run.sh

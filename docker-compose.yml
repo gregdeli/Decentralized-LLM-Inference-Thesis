@@ -1,11 +1,10 @@
 services:
   worker-A:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: python server/server.py
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     hostname: worker-A
-    # network_mode: "host"
     environment:
       - MODEL_PATH=/${MODEL_PATH}
       - GRPC_PORT=5001
@@ -14,8 +13,6 @@ services:
       - PROFILE=$PROFILE
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
-      # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
     volumes:
       - ./models:/models:ro 
     deploy:
@@ -26,18 +23,16 @@ services:
         #       count: 1
         #       capabilities: [gpu]
         limits:
-          memory: 3.5G #11657M 
+          memory: 3.5G 
           # cpus: '8.0'
     ports:
       - "5671:5678"
-      # - "9999:9999"
 
   worker-B:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: python server/server.py
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
-    # network_mode: "host"
     hostname: worker-B
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -48,8 +43,7 @@ services:
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
       # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-A:5001
+      - BOOTSTRAP_NODE_ADDR=worker-A:5001
     volumes:
       - ./models:/models:ro 
     deploy:
@@ -64,14 +58,12 @@ services:
           # cpus: '8.0'
     ports:
       - "5672:5678"  
-      # - 9999:9999 
 
   worker-C:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: python server/server.py
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
-    # network_mode: "host"
     hostname: worker-C
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -83,8 +75,6 @@ services:
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
       # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-B:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -97,17 +87,13 @@ services:
         limits:
           memory: 2G
           # cpus: '6.0'
-    # depends_on:
-      # - worker-A
-      # - worker-B
     ports:
       - "5673:5678"
-      # - 9999:9999 
 
   worker-D:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
-    command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
+    command: python server/server.py
+    # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
     # command: sleep infinity
     hostname: worker-D
     environment:
@@ -120,8 +106,7 @@ services:
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
       # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-C:5001
+      - BOOTSTRAP_NODE_ADDR=worker-C:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -134,17 +119,14 @@ services:
         limits:
           memory: 4G
           # cpus: '6.0'
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
     ports:
       - "5674:5678"
   
   worker-E:
     image: decentralized-llm-thesis:latest
-    # command: python server/server.py
+    command: python server/server.py
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-    command: sleep infinity
+    # command: sleep infinity
     hostname: worker-E
     environment:
       - MODEL_PATH=/${MODEL_PATH}
@@ -155,8 +137,7 @@ services:
       - QUANTIZE=$QUANTIZE
       - LOG_LEVEL=$LOG_LEVEL
       # - ADDED_DELAY=0.08
-      # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-      # - BOOTSTRAP_NODE_ADDR=worker-D:5001
+      - BOOTSTRAP_NODE_ADDR=worker-D:5001
     volumes:
       - ./models:/models:ro
     deploy:
@@ -168,153 +149,14 @@ services:
         #       capabilities: [gpu]
         limits:
           memory: 2G
-    # depends_on:
-    #   - worker-A
-    #   - worker-B
     ports:
       - "5675:5678"
 
-  # worker-F:
-  #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-  #   # command: sleep infinity
-  #   hostname: worker-F
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - GRPC_PORT=5001
-  #     - NUM_LAYERS=$NUM_LAYERS
-  #     # - NUM_LAYERS=2
-  #     - PROFILE=$PROFILE
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - ADDED_DELAY=0.08
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=worker-E:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   deploy:
-  #     resources:
-  #       # reservations:
-  #       #   devices:
-  #       #     - driver: nvidia
-  #       #       count: 1
-  #       #       capabilities: [gpu]
-  #       limits:
-  #         memory: 2G
-  #   # depends_on:
-  #   #   - worker-A
-  #   #   - worker-B
-  #   ports:
-  #     - "5682:5678"
-
-  # worker-G:
-  #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-  #   # command: sleep infinity
-  #   hostname: worker-G
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - GRPC_PORT=5001
-  #     - NUM_LAYERS=$NUM_LAYERS
-  #     # - NUM_LAYERS=2
-  #     - PROFILE=$PROFILE
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - ADDED_DELAY=0.08
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=worker-F:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   deploy:
-  #     resources:
-  #       # reservations:
-  #       #   devices:
-  #       #     - driver: nvidia
-  #       #       count: 1
-  #       #       capabilities: [gpu]
-  #       limits:
-  #         memory: 2G
-  #   # depends_on:
-  #   #   - worker-A
-  #   #   - worker-B
-  #   ports:
-  #     - "5683:5678"
-
-  # worker-H:
-  #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-  #   # command: sleep infinity
-  #   hostname: worker-H
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - GRPC_PORT=5001
-  #     - NUM_LAYERS=$NUM_LAYERS
-  #     # - NUM_LAYERS=2
-  #     - PROFILE=$PROFILE
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - ADDED_DELAY=0.08
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=worker-G:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   deploy:
-  #     resources:
-  #       # reservations:
-  #       #   devices:
-  #       #     - driver: nvidia
-  #       #       count: 1
-  #       #       capabilities: [gpu]
-  #       limits:
-  #         memory: 2G
-  #   # depends_on:
-  #   #   - worker-A
-  #   #   - worker-B
-  #   ports:
-  #     - "5684:5678"
-
-  # worker-I:
-  #   image: decentralized-llm-thesis:latest
-  #   # command: python server/server.py
-  #   command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 server/server.py
-  #   # command: sleep infinity
-  #   hostname: worker-I
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - GRPC_PORT=5001
-  #     - NUM_LAYERS=$NUM_LAYERS
-  #     # - NUM_LAYERS=4
-  #     - PROFILE=$PROFILE
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - ADDED_DELAY=0.08
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0
-  #     - BOOTSTRAP_NODE_ADDR=worker-H:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #   deploy:
-  #     resources:
-  #       # reservations:
-  #       #   devices:
-  #       #     - driver: nvidia
-  #       #       count: 1
-  #       #       capabilities: [gpu]
-  #       limits:
-  #         memory: 2G
-  #   # depends_on:
-  #   #   - worker-A
-  #   #   - worker-B
-  #   ports:
-  #     - "5685:5678"                           
 
   client-A:
     image: decentralized-llm-thesis:latest 
-    # command: python dht_test.py 
-    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 1000
     command: python client_gui.py 
+    # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
     # command: sleep infinity 
     hostname: client-A
@@ -335,7 +177,6 @@ services:
 
   client-B:
     image: decentralized-llm-thesis:latest 
-    # command: python dht_test.py 
     # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
     command: python client_gui.py 
     # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
@@ -353,93 +194,5 @@ services:
       - ./src:/app # To make live changes to the client gui code
     ports:
       - "8081:8080" # NiceGUI
-  #     - "5677:5678"
-  
-  # client-C:
-  #   image: decentralized-llm-thesis:latest 
-  #   # command: python dht_test.py 
-  #   # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
-  #   # command: python client_gui.py 
-  #   # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-  #   command: sleep infinity 
-  #   hostname: client-C
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - GRPC_PORT = 5001
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-  #     # - BOOTSTRAP_NODE_ADDR=head-server:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #     - ./src:/app # To make live changes to the client gui code
-  #   ports:
-  #     - "8082:8080" # NiceGUI
-  #     - "5678:5678"
-
-  # client-D:
-  #   image: decentralized-llm-thesis:latest 
-  #   # command: python dht_test.py 
-  #   # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 250
-  #   # command: python client_gui.py 
-  #   # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-  #   command: sleep infinity 
-  #   hostname: client-D
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - GRPC_PORT = 5001
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-  #     # - BOOTSTRAP_NODE_ADDR=head-server:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #     - ./src:/app # To make live changes to the client gui code
-  #   ports:
-  #     - "8083:8080" # NiceGUI
-  #     - "5679:5678"
-
-  # client-E:
-  #   image: decentralized-llm-thesis:latest 
-  #   # command: python dht_test.py 
-  #   # command: python distributed_chatbot./py --prompt 'write a long thesis on sharks' --max_new_tokens 250
-  #   # command: python client_gui.py 
-  #   # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-  #   command: sleep infinity 
-  #   hostname: client-E
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - GRPC_PORT = 5001
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-  #     # - BOOTSTRAP_NODE_ADDR=head-server:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #     - ./src:/app # To make live changes to the client gui code
-  #   ports:
-  #     - "8084:8080" # NiceGUI
-  #     - "5680:5678"
-
-  # client-F:
-  #   image: decentralized-llm-thesis:latest 
-  #   # command: python dht_test.py 
-  #   # command: python distributed_chatbot.py --prompt 'write a long thesis on sharks' --max_new_tokens 500
-  #   # command: python client_gui.py 
-  #   # command: python -Xfrozen_modules=off -m debugpy --listen 0.0.0.0:5678 client_gui.py
-  #   command: sleep infinity 
-  #   hostname: client-F
-  #   environment:
-  #     - MODEL_PATH=/${MODEL_PATH}
-  #     - QUANTIZE=$QUANTIZE
-  #     - LOG_LEVEL=$LOG_LEVEL
-  #     # - GRPC_PORT = 5001
-  #     # - HOST_MADDRS=/ip4/0.0.0.0/tcp/0 
-  #     # - BOOTSTRAP_NODE_ADDR=head-server:5001
-  #   volumes:
-  #     - ./models:/models:ro
-  #     - ./src:/app # To make live changes to the client gui code
-  #   ports:
-  #     - "8085:8080" # NiceGUI
-  #     - "5681:5678"      
+      - "5677:5678"  
 

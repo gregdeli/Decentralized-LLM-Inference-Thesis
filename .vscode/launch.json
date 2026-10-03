@@ -145,54 +145,6 @@
                 }
             ],
             "justMyCode": true
-        },
-        {
-            "name": "Python: Attach to Container client-C",
-            "type": "debugpy",
-            "request": "attach",
-            "connect": {
-                "host": "localhost",
-                "port": 5678
-            },
-            "pathMappings": [
-                {
-                    "localRoot": "${workspaceFolder}/src",
-                    "remoteRoot": "/app"
-                }
-            ],
-            "justMyCode": true
-        },
-        {
-            "name": "Python: Attach to Container client-D",
-            "type": "debugpy",
-            "request": "attach",
-            "connect": {
-                "host": "localhost",
-                "port": 5679
-            },
-            "pathMappings": [
-                {
-                    "localRoot": "${workspaceFolder}/src",
-                    "remoteRoot": "/app"
-                }
-            ],
-            "justMyCode": true
-        },
-        {
-            "name": "Python: Attach to Container client-E",
-            "type": "debugpy",
-            "request": "attach",
-            "connect": {
-                "host": "localhost",
-                "port": 5680
-            },
-            "pathMappings": [
-                {
-                    "localRoot": "${workspaceFolder}/src",
-                    "remoteRoot": "/app"
-                }
-            ],
-            "justMyCode": true
         }
     ]
 }

@@ -1,8 +1,0 @@
-Περιορισμός Bandwidth για όλα τα nodes:
-
-docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/alexei-led/pumba:latest \
-netem --duration 10m rate --rate 250mbit "re2:^decentralized-llm-inference-thesis"
-
-docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/alexei-led/pumba:latest \
-stress --duration 10m --stressors="--cpu 4 --timeout 10m" "decentralized-llm-inference-thesis-worker-B-1"
-
